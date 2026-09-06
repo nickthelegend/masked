@@ -15,6 +15,8 @@ export interface RevealCurtainProps {
 }
 
 const BARS = 14;
+/** quick + beat + beat, matching the sequence below. */
+const TOTAL_MS = DURATION.quick + DURATION.beat + DURATION.beat;
 
 /**
  * The buzzer moment: the fog is torn away in horizontal bands.
@@ -44,13 +46,23 @@ export default function RevealCurtain({ active, label = 'TAPE UNSEALED', sublabe
       Animated.delay(DURATION.beat),
       Animated.timing(progress, { toValue: 1, duration: DURATION.beat, easing: Easing.in(Easing.quad), useNativeDriver: USE_NATIVE_DRIVER }),
     ]);
-    anim.start(({ finished }) => {
-      if (finished && !done.current) {
+    anim.start();
+
+    // Completion is driven by a timer, never by the animation callback.
+    // JS-driven Animated runs on requestAnimationFrame, which browsers do not
+    // fire in a hidden tab — so gating state on it means alt-tabbing during a
+    // reveal leaves this curtain stuck over the whole UI forever.
+    const timer = setTimeout(() => {
+      if (!done.current) {
         done.current = true;
         onDone?.();
       }
-    });
-    return () => anim.stop();
+    }, TOTAL_MS);
+
+    return () => {
+      anim.stop();
+      clearTimeout(timer);
+    };
   }, [active, reduced, progress, onDone]);
 
   if (!active || reduced) return null;

@@ -41,6 +41,8 @@ const TONE = {
 } as const;
 
 const LIFETIME_MS = 4200;
+const ENTER_MS = 160;
+const EXIT_MS = 140;
 const MAX_VISIBLE = 3;
 
 /** One toast: slides up into place, holds, slides out. No fade — the house
@@ -50,13 +52,21 @@ function ToastRow({ toast, onDone }: { toast: Toast; onDone: (id: number) => voi
   const spec = TONE[toast.tone];
 
   useEffect(() => {
-    Animated.timing(slide, { toValue: 1, duration: 160, easing: Easing.out(Easing.quad), useNativeDriver: USE_NATIVE_DRIVER }).start();
-    const id = setTimeout(() => {
-      Animated.timing(slide, { toValue: 0, duration: 140, easing: Easing.in(Easing.quad), useNativeDriver: USE_NATIVE_DRIVER }).start(
-        () => onDone(toast.id)
-      );
+    Animated.timing(slide, { toValue: 1, duration: ENTER_MS, easing: Easing.out(Easing.quad), useNativeDriver: USE_NATIVE_DRIVER }).start();
+
+    // Play the exit, but remove the toast on a timer rather than in the
+    // animation's completion callback. Animated runs on requestAnimationFrame
+    // here, which does not fire in a hidden tab — a toast whose removal hung
+    // off that callback would stay on screen indefinitely after a tab switch.
+    const exit = setTimeout(() => {
+      Animated.timing(slide, { toValue: 0, duration: EXIT_MS, easing: Easing.in(Easing.quad), useNativeDriver: USE_NATIVE_DRIVER }).start();
     }, LIFETIME_MS);
-    return () => clearTimeout(id);
+    const remove = setTimeout(() => onDone(toast.id), LIFETIME_MS + EXIT_MS);
+
+    return () => {
+      clearTimeout(exit);
+      clearTimeout(remove);
+    };
   }, [slide, toast.id, onDone]);
 
   return (
