@@ -1,0 +1,311 @@
+/**
+ * Typed client for the fogduel program.
+ *
+ * Holds two connections: the base layer, and the Ephemeral Rollup. Which one a
+ * call goes to is not a detail the screens should have to know, so it is
+ * decided here — lifecycle instructions (create/join/settle) go to L1, and
+ * in-round instructions (fills) go to the ER, where the position is delegated
+ * and private.
+ */
+import { AnchorProvider, BN, Program, type Idl, type Wallet } from '@coral-xyz/anchor';
+import { Connection, PublicKey, SystemProgram, type Commitment } from '@solana/web3.js';
+import { FOGDUEL_IDL as idl } from './idl';
+import { ACTIVE_CLUSTER, type ClusterConfig } from './config';
+import { feedPda, matchPda, positionPda, tapePda, treasuryPda, vaultPda } from './pdas';
+
+const COMMITMENT: Commitment = 'confirmed';
+
+/** Prices and base quantities are integers scaled by 1e6 on-chain. */
+export const PRICE_SCALE = 1_000_000;
+export const BASE_SCALE = 1_000_000;
+export const BPS = 10_000;
+
+export type Side = 'buy' | 'sell';
+
+export interface FillRecord {
+  side: string;
+  qty: number;
+  px: number;
+  ts: number;
+}
+
+export interface MatchState {
+  address: PublicKey;
+  creator: PublicKey;
+  joiner: PublicKey | null;
+  matchId: number;
+  startTs: number;
+  duration: number;
+  entry: number;
+  status: 'open' | 'live' | 'settling' | 'settled' | 'cancelled';
+  pot: number;
+  winner: PublicKey | null;
+  pnlABps: number;
+  pnlBBps: number;
+}
+
+export interface PositionState {
+  owner: PublicKey;
+  quoteBalance: number;
+  baseQty: number;
+  avgPx: number;
+  realized: number;
+  lastPx: number;
+  fillCount: number;
+  fills: FillRecord[];
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any -- Anchor's generated
+   account namespace is dynamically typed; the shapes are narrowed below. */
+type AnyProgram = Program<Idl> & { account: Record<string, any>; methods: Record<string, any> };
+
+const sideArg = (side: Side) => (side === 'buy' ? { buy: {} } : { sell: {} });
+
+const decodeStatus = (raw: Record<string, unknown>): MatchState['status'] =>
+  (Object.keys(raw)[0] as MatchState['status']) ?? 'open';
+
+export class FogduelClient {
+  readonly cluster: ClusterConfig;
+  readonly l1: Connection;
+  readonly er: Connection;
+  private readonly l1Program: AnyProgram;
+  private readonly erProgram: AnyProgram;
+
+  constructor(wallet: Wallet, cluster: ClusterConfig = ACTIVE_CLUSTER) {
+    this.cluster = cluster;
+    this.l1 = new Connection(cluster.l1, COMMITMENT);
+    this.er = new Connection(cluster.er, COMMITMENT);
+
+    const l1Provider = new AnchorProvider(this.l1, wallet, { commitment: COMMITMENT });
+    const erProvider = new AnchorProvider(this.er, wallet, { commitment: COMMITMENT });
+    this.l1Program = new Program(idl as Idl, l1Provider) as AnyProgram;
+    this.erProgram = new Program(idl as Idl, erProvider) as AnyProgram;
+  }
+
+  get programId(): PublicKey {
+    return this.l1Program.programId;
+  }
+
+  /* ------------------------------ lifecycle ------------------------------ */
+
+  async ensureTreasury(payer: PublicKey): Promise<void> {
+    const treasury = treasuryPda();
+    if (await this.l1.getAccountInfo(treasury)) return;
+    await this.l1Program.methods
+      .initTreasury()
+      .accounts({ payer, treasury, systemProgram: SystemProgram.programId })
+      .rpc();
+  }
+
+  async createMatch(args: {
+    creator: PublicKey;
+    matchId: number;
+    mint: PublicKey;
+    durationSecs: number;
+    entryLamports: number;
+    startPrice: number;
+  }): Promise<PublicKey> {
+    const match = matchPda(args.creator, args.matchId);
+    await this.l1Program.methods
+      .createMatch(
+        new BN(args.matchId),
+        args.mint,
+        new BN(args.durationSecs),
+        new BN(args.entryLamports),
+        new BN(Math.round(args.startPrice * PRICE_SCALE))
+      )
+      .accounts({
+        creator: args.creator,
+        matchAccount: match,
+        vault: vaultPda(match),
+        priceFeed: feedPda(match),
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+    return match;
+  }
+
+  async joinMatch(match: PublicKey, joiner: PublicKey, creator: PublicKey): Promise<void> {
+    await this.l1Program.methods
+      .joinMatch()
+      .accounts({
+        joiner,
+        matchAccount: match,
+        vault: vaultPda(match),
+        priceFeed: feedPda(match),
+        positionA: positionPda(match, creator),
+        positionB: positionPda(match, joiner),
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+  }
+
+  async cancelMatch(match: PublicKey, creator: PublicKey): Promise<void> {
+    await this.l1Program.methods
+      .cancelIfUnjoined()
+      .accounts({ creator, matchAccount: match, vault: vaultPda(match) })
+      .rpc();
+  }
+
+  /* ------------------------- ephemeral rollup ---------------------------- */
+
+  async delegatePosition(match: PublicKey, owner: PublicKey, payer: PublicKey): Promise<void> {
+    await this.l1Program.methods
+      .delegatePositionToEr(owner, this.cluster.validator, 1_000)
+      .accounts({ payer, matchAccount: match })
+      .rpc();
+  }
+
+  /** Fills run on the ER, against delegated (and on a TEE, private) state. */
+  async applyFill(match: PublicKey, player: PublicKey, side: Side, qty: number): Promise<string> {
+    return this.erProgram.methods
+      .applyFill(sideArg(side), new BN(Math.round(qty * BASE_SCALE)))
+      .accounts({
+        player,
+        matchAccount: match,
+        priceFeed: feedPda(match),
+        position: positionPda(match, player),
+      })
+      .rpc();
+  }
+
+  async commitAndUndelegate(match: PublicKey, payer: PublicKey, creator: PublicKey, joiner: PublicKey): Promise<void> {
+    await this.erProgram.methods
+      .commitAndUndelegatePositions()
+      .accounts({
+        payer,
+        positionA: positionPda(match, creator),
+        positionB: positionPda(match, joiner),
+      })
+      .rpc();
+  }
+
+  /* ------------------------------ settlement ----------------------------- */
+
+  async requestSettle(match: PublicKey, cranker: PublicKey): Promise<void> {
+    await this.l1Program.methods.requestSettle().accounts({ cranker, matchAccount: match }).rpc();
+  }
+
+  async settleMatch(match: PublicKey, cranker: PublicKey, creator: PublicKey, joiner: PublicKey): Promise<void> {
+    await this.l1Program.methods
+      .settleMatch()
+      .accounts({
+        cranker,
+        matchAccount: match,
+        vault: vaultPda(match),
+        priceFeed: feedPda(match),
+        positionA: positionPda(match, creator),
+        positionB: positionPda(match, joiner),
+        creator,
+        joiner,
+        treasury: treasuryPda(),
+        tape: tapePda(match),
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+  }
+
+  async pushPrice(match: PublicKey, authority: PublicKey, price: number, onEr = false): Promise<void> {
+    const program = onEr ? this.erProgram : this.l1Program;
+    await program.methods
+      .pushPrice(new BN(Math.round(price * PRICE_SCALE)))
+      .accounts({ authority, priceFeed: feedPda(match) })
+      .rpc();
+  }
+
+  /* -------------------------------- reads -------------------------------- */
+
+  async fetchMatch(match: PublicKey): Promise<MatchState | null> {
+    const raw = await this.l1Program.account.match.fetchNullable(match);
+    if (!raw) return null;
+    return {
+      address: match,
+      creator: raw.creator,
+      joiner: raw.joiner ?? null,
+      matchId: raw.matchId.toNumber(),
+      startTs: raw.startTs.toNumber(),
+      duration: raw.duration.toNumber(),
+      entry: raw.entry.toNumber(),
+      status: decodeStatus(raw.status),
+      pot: raw.pot.toNumber(),
+      winner: raw.winner ?? null,
+      pnlABps: raw.pnlABps.toNumber(),
+      pnlBBps: raw.pnlBBps.toNumber(),
+    };
+  }
+
+  /** Every match that is still open to join. */
+  async fetchOpenMatches(): Promise<MatchState[]> {
+    const all = await this.l1Program.account.match.all();
+    return all
+      .map((m: { publicKey: PublicKey; account: Record<string, any> }) => ({
+        address: m.publicKey,
+        creator: m.account.creator,
+        joiner: m.account.joiner ?? null,
+        matchId: m.account.matchId.toNumber(),
+        startTs: m.account.startTs.toNumber(),
+        duration: m.account.duration.toNumber(),
+        entry: m.account.entry.toNumber(),
+        status: decodeStatus(m.account.status),
+        pot: m.account.pot.toNumber(),
+        winner: m.account.winner ?? null,
+        pnlABps: m.account.pnlABps.toNumber(),
+        pnlBBps: m.account.pnlBBps.toNumber(),
+      }))
+      .filter((m: MatchState) => m.status === 'open');
+  }
+
+  /**
+   * Read a position. During a live round the account lives on the ER, so read
+   * it there; afterwards it has been committed back and L1 is authoritative.
+   */
+  async fetchPosition(match: PublicKey, owner: PublicKey, fromEr: boolean): Promise<PositionState | null> {
+    const program = fromEr ? this.erProgram : this.l1Program;
+    const raw = await program.account.position.fetchNullable(positionPda(match, owner));
+    if (!raw) return null;
+    return {
+      owner: raw.owner,
+      quoteBalance: raw.quoteBalance.toNumber(),
+      baseQty: raw.baseQty.toNumber(),
+      avgPx: raw.avgPx.toNumber(),
+      realized: raw.realized.toNumber(),
+      lastPx: raw.lastPx.toNumber(),
+      fillCount: raw.fillCount,
+      fills: (raw.fills ?? []).map((f: Record<string, any>) => ({
+        side: Object.keys(f.side)[0].toUpperCase(),
+        qty: f.qty.toNumber(),
+        px: f.px.toNumber(),
+        ts: f.ts.toNumber(),
+      })),
+    };
+  }
+
+  async fetchPrice(match: PublicKey, fromEr: boolean): Promise<number> {
+    const program = fromEr ? this.erProgram : this.l1Program;
+    const raw = await program.account.priceFeed.fetchNullable(feedPda(match));
+    return raw ? raw.px.toNumber() / PRICE_SCALE : 0;
+  }
+
+  async fetchTape(match: PublicKey) {
+    return this.l1Program.account.tape.fetchNullable(tapePda(match));
+  }
+
+  /** All settled tapes, newest first — the feed. */
+  async fetchAllTapes() {
+    const all = await this.l1Program.account.tape.all();
+    return all
+      .map((t: { publicKey: PublicKey; account: Record<string, any> }) => t.account)
+      .sort((a: Record<string, any>, b: Record<string, any>) => b.settledTs.toNumber() - a.settledTs.toNumber());
+  }
+
+  async balance(owner: PublicKey): Promise<number> {
+    return this.l1.getBalance(owner);
+  }
+}
+
+/** PnL in basis points against the starting quote balance. */
+export const pnlBps = (position: PositionState, markPrice: number, entry: number): number => {
+  if (entry === 0) return 0;
+  const equity = position.quoteBalance + (position.baseQty * markPrice * PRICE_SCALE) / BASE_SCALE / PRICE_SCALE;
+  return Math.trunc(((equity - entry) * BPS) / entry);
+};

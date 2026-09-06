@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit",
     "check:tokens": "node --no-warnings=MODULE_TYPELESS_PACKAGE_JSON scripts/check-tokens.mjs",
     "check:series": "node --no-warnings=MODULE_TYPELESS_PACKAGE_JSON scripts/check-series.mjs",
-    "check": "npm run typecheck && npm run check:tokens && npm run check:series"
+    "check": "npm run typecheck && npm run check:tokens && npm run check:series",
+    "sync:idl": "node -e \"const fs=require('fs');const i=JSON.parse(fs.readFileSync('chain/target/idl/fogduel.json','utf8'));fs.writeFileSync('src/chain/idl.ts','export const FOGDUEL_IDL = '+JSON.stringify(i,null,2)+';\\n\\nexport default FOGDUEL_IDL;\\n');console.log('idl synced')\"",
+    "verify:client": "tsx scripts/verify-client.mts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",
@@ -40,6 +42,7 @@
   },
   "devDependencies": {
     "@types/react": "~18.3.12",
+    "tsx": "^4.23.13",
     "typescript": "^5.3.3"
   }
 }
