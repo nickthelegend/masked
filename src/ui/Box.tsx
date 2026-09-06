@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { forwardRef } from 'react';
 import { View, type DimensionValue, type FlexAlignType, type ViewProps, type ViewStyle } from 'react-native';
 import { bevelBox, border as borderToken, color } from './theme';
 
@@ -41,7 +41,7 @@ export interface BoxProps extends ViewProps {
  * a background, an ink outline, and — when it needs to sit above the ground —
  * a bevel. There is no shadow or elevation anywhere in this library.
  */
-export default function Box({
+const Box = forwardRef<View, BoxProps>(function Box({
   direction,
   gap,
   wrap,
@@ -65,7 +65,7 @@ export default function Box({
   style,
   children,
   ...rest
-}: BoxProps) {
+}, ref) {
   const layout: ViewStyle = {
     flexDirection: direction,
     gap,
@@ -92,8 +92,10 @@ export default function Box({
         : { backgroundColor: bg };
 
   return (
-    <View style={[surface, layout, style]} {...rest}>
+    <View ref={ref} style={[surface, layout, style]} {...rest}>
       {children}
     </View>
   );
-}
+});
+
+export default Box;

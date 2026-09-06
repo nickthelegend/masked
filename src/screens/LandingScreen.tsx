@@ -6,7 +6,7 @@
  * product instead of illustrating it. Every CTA funnels to /play.
  */
 import { useRef, useState } from 'react';
-import { ScrollView, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native';
+import { ScrollView, useWindowDimensions, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
   Badge,
@@ -57,12 +57,28 @@ export default function LandingScreen() {
 
   // "HOW IT WORKS" scrolls to the explainer rather than dumping you into a
   // duel — the label has to mean what it says.
+  //
+  // The offset is measured when the button is pressed, not cached from
+  // onLayout: onLayout fires before the hero's device and backdrop have
+  // settled, so the cached value was stale (and often 0, which scrolled
+  // nowhere at all).
   const scrollRef = useRef<ScrollView>(null);
-  const [howY, setHowY] = useState(0);
-  const onHowLayout = (e: LayoutChangeEvent) => setHowY(e.nativeEvent.layout.y);
+  const howRef = useRef<View>(null);
+  const scrollY = useRef(0);
+  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    scrollY.current = e.nativeEvent.contentOffset.y;
+  };
 
   const goPlay = () => router.push('/play');
-  const goHow = () => scrollRef.current?.scrollTo({ y: howY, animated: true });
+  const goHow = () => {
+    const scroll = scrollRef.current;
+    const node = howRef.current;
+    if (!scroll || !node) return;
+    // measureInWindow is viewport-relative, so add where we already are.
+    node.measureInWindow((_x, y) => {
+      scroll.scrollTo({ y: Math.max(0, scrollY.current + y - 12), animated: true });
+    });
+  };
 
   const heroCopy = (
     // The sunset is a ground for the device, not for type — `text` on the
@@ -123,7 +139,13 @@ export default function LandingScreen() {
   );
 
   return (
-    <ScrollView ref={scrollRef} style={{ flex: 1, backgroundColor: color.bg }} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      ref={scrollRef}
+      onScroll={onScroll}
+      scrollEventThrottle={16}
+      style={{ flex: 1, backgroundColor: color.bg }}
+      showsVerticalScrollIndicator={false}
+    >
       {/* ---- hero, on the beach ---- */}
       <View>
         <BeachBackdrop />
@@ -155,7 +177,7 @@ export default function LandingScreen() {
 
       {/* ---- how it works ---- */}
       <Stack
-        onLayout={onHowLayout}
+        ref={howRef}
         pad={space.xl}
         gap={space.lg}
         style={{ width: '100%', maxWidth: MAX_CONTENT, alignSelf: 'center' }}
