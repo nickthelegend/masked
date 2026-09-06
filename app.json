@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "MASKED",
+    "slug": "masked",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#111a44",
+    "assetBundlePatterns": ["**/*"],
+    "web": { "bundler": "metro" },
+    "ios": { "supportsTablet": true },
+    "android": {}
+  }
+}
