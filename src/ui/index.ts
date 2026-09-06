@@ -10,3 +10,7 @@ export { default as Stack, type StackProps } from './Stack';
 export { default as PixelText, type PixelTextProps, MIN_FONT_SIZE } from './PixelText';
 export { default as PixelPanel, type PixelPanelProps } from './PixelPanel';
 export { default as PixelButton, type PixelButtonProps, type ButtonTone } from './PixelButton';
+export { default as IconPlate, type IconPlateProps, type GlyphName, GLYPH } from './IconPlate';
+export { default as Badge, type BadgeProps, type BadgeTone } from './Badge';
+export { default as ProgressBar, type ProgressBarProps } from './ProgressBar';
+export { default as Divider, type DividerProps } from './Divider';
