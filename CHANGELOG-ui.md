@@ -201,3 +201,73 @@ the sources, which list `⚔` among the sanctioned glyphs, so I left it. `≡` i
 the header has the same issue. If either fallback is unacceptable on device,
 swap them for covered glyphs from `GLYPH` (`◆`, `▦`) — one-line changes in
 `TabBar.tsx` and `AppHeader.tsx`.
+
+---
+
+# Round 2 — landing page and routing
+
+## 11. `Landing.dc.html` was never in the archive
+
+`ui/README.md` lists "Web reference implementations: `Masked.dc.html` (app) and
+`Landing.dc.html` (marketing)". Neither file is in `ui.zip`. The landing page is
+therefore built from the supplied screenshot plus the house language rather
+than ported from that file — if it turns up, the page is a starting point to
+reconcile against, not a replacement for it.
+
+Read from the screenshot: a nav with the MASKED lockup top-left, the pocket
+shell as the hero subject, and the beach as a full-bleed ground. The
+chromatic-split treatment on the wordmark is from the same shot.
+
+## 12. Routing
+
+Moved to **expo-router** so `/` and `/play` are real, linkable URLs with working
+browser history — the brief described them as pages, not as app states. The
+gallery gained `/gallery`, which replaces the old `?gallery` query param and the
+in-app dev toggle. Route files in `app/` are thin; every screen still lives in
+`src/screens/`.
+
+## 13. Hero copy needs a panel, not the sunset
+
+First render put the hero headline and body straight onto the sunset bands.
+`color.text` on `#f0803c` is roughly 2:1 — far under the 4.5:1 the platform
+notes require, and the notes list text pairings only for `panel` / `screen`
+grounds. The copy now sits on a `PixelPanel`. This is the general rule the
+sources imply: **the sunset is a ground for the device, not for type.**
+
+## 14. Landing headline size
+
+The largest display role is `statBig` at 20px. The hero uses `statBig` at 20 on
+narrow screens and **26 on wide ones**. That is above anything in the type
+table; `PixelText` supports the override and derives an even `lineHeight`, and
+a hero line at 20px on a 1100px column reads as body copy rather than a
+headline. Flagged because it is the one place a size outside the table ships.
+
+## 15. Landing stats are demo figures
+
+`LANDING_STATS` (38 live fogs, $12.4K paid out, 1204 duels) are invented, in
+the same spirit as the existing fake feed, board and handles. They read as
+platform metrics, so they must be replaced with real numbers before this page
+goes in front of anyone.
+
+## 16. `BeachBackdrop` was only correct at one height — fixed
+
+The original pinned every band to a fixed pixel offset (sky at 0/50/110/190…,
+horizon 452, sea 498, sand 642) drawn against a 700px screen. At any other
+height the horizon stranded mid-page — visible as soon as the app was opened in
+a desktop window, and worse behind a full-bleed hero. Offsets are now design
+units scaled to the measured height, so the composition holds at any size. This
+also changes the running app on tall screens, for the better: the sea and sand
+now meet the bottom of the viewport instead of floating.
+
+## 17. New component: `Wordmark`
+
+`platform-notes.md` lists the `wordmark` role as used in "MASKED lockup,
+top-left of shell and **landing nav**", but no component existed for it. Added
+one: masked plate plus wordmark, with an optional magenta/cyan chromatic split.
+It is the only place the two brightest accents are used as an effect rather
+than as meaning, which is why it is opt-out via `glitch={false}`.
+
+## 18. "HOW IT WORKS" scrolls
+
+The secondary hero CTA scrolls to the explainer section rather than routing to
+`/play`, so the label means what it says.

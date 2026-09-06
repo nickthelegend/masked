@@ -267,11 +267,27 @@ seam and no blank stretch.
 
 The screen is 440 × 700 and clips its content; the tab bar pins to the bottom.
 
+### Wordmark
+
+The MASKED lockup — masked plate plus wordmark, with an optional chromatic
+split (magenta/cyan copies behind the white word) that reads as CRT
+misconvergence. Used in the landing nav and footer.
+
+```tsx
+<Wordmark />                                  {/* plate + glitch, 18px */}
+<Wordmark size={16} />
+<Wordmark plate={false} glitch={false} color={color.yellow} />
+```
+
 ### BeachBackdrop
+
+Bands are drawn in 700px design units and scaled to the real height, so the
+horizon lands correctly on a phone screen and on a full-bleed desktop hero.
 
 ```tsx
 <View style={{ flex: 1 }}>
-  <BeachBackdrop />
+  <BeachBackdrop />               {/* measures itself */}
+  <BeachBackdrop height={640} />  {/* or scale to a known height */}
   <SafeAreaView style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
     <PocketShell>{…}</PocketShell>
   </SafeAreaView>
@@ -403,13 +419,17 @@ mmss(300);        // '5:00'
 signColor(-1.8);  // color.red
 ```
 
-## Gallery
+## Routes
 
-`src/screens/UIGallery.tsx` renders every component in every state. On web,
-`http://localhost:8097/?gallery` opens it directly; on device, the dev switch
-in the bottom-right corner toggles it.
+The app uses expo-router, so every surface has a real URL:
+
+| Route | Screen |
+|---|---|
+| `/` | `src/screens/LandingScreen.tsx` — the marketing page |
+| `/play` | `src/screens/MaskedApp.tsx` — the duel |
+| `/gallery` | `src/screens/UIGallery.tsx` — every component in every state |
 
 ```bash
-npm run web      # then open /?gallery
+npm run web      # / , /play , /gallery
 npm run check    # typecheck + token drift + series guarantees
 ```
