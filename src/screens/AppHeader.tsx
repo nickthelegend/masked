@@ -1,5 +1,5 @@
 import { Pressable } from 'react-native';
-import { Box, IconPlate, PixelText, Row, color, space } from '../ui';
+import { Box, IconPlate, MenuIcon, PixelText, ResetIcon, Row, color, space } from '../ui';
 
 export interface AppHeaderProps {
   balance: number;
@@ -23,9 +23,7 @@ export default function AppHeader({ balance, onHome, onMenu }: AppHeaderProps) {
           align="center"
           justify="center"
         >
-          <PixelText variant="numeric" color={color.white}>
-            ↺
-          </PixelText>
+          <ResetIcon size={18} color={color.white} />
         </Box>
       </Pressable>
 
@@ -49,9 +47,7 @@ export default function AppHeader({ balance, onHome, onMenu }: AppHeaderProps) {
           align="center"
           justify="center"
         >
-          <PixelText variant="numeric" size={10} color={color.white}>
-            ≡
-          </PixelText>
+          <MenuIcon size={18} color={color.white} />
         </Box>
       </Pressable>
     </Row>

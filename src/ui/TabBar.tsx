@@ -1,15 +1,16 @@
 import { Pressable, View } from 'react-native';
-import IconPlate, { GLYPH } from './IconPlate';
+import IconPlate from './IconPlate';
+import { DuelIcon, FeedIcon, ModesIcon, QuestIcon, RankIcon, type PixelIconProps } from './icons';
 import PixelText from './PixelText';
 import { TAB_BAR_MIN_HEIGHT, bevel, border, color, onInk, radius, shade } from './theme';
 
 export interface TabSpec {
   key: string;
   label: string;
-  /** Geometric unicode glyph for the icon plate. */
-  glyph: string;
+  /** Drawn pixel icon for the plate. */
+  icon: (props: PixelIconProps) => React.ReactElement;
   /** Plate color. */
-  icon: string;
+  plate: string;
   /** Glyph color printed on the plate. */
   ink: string;
   /** The centre action tab: wider, taller, gold when active. */
@@ -17,11 +18,11 @@ export interface TabSpec {
 }
 
 export const TABS: TabSpec[] = [
-  { key: 'feed', label: 'FEED', glyph: GLYPH.feed, icon: color.cyan, ink: onInk.cyan },
-  { key: 'board', label: 'RANK', glyph: GLYPH.rank, icon: color.orange, ink: onInk.orange },
-  { key: 'duel', label: 'DUEL', glyph: GLYPH.duel, icon: color.red, ink: color.white, big: true },
-  { key: 'modes', label: 'MODES', glyph: GLYPH.modes, icon: color.purple, ink: onInk.purple },
-  { key: 'quests', label: 'QUEST', glyph: GLYPH.quest, icon: color.green, ink: onInk.green },
+  { key: 'feed', label: 'FEED', icon: FeedIcon, plate: color.cyan, ink: onInk.cyan },
+  { key: 'board', label: 'RANK', icon: RankIcon, plate: color.orange, ink: onInk.orange },
+  { key: 'duel', label: 'DUEL', icon: DuelIcon, plate: color.red, ink: color.white, big: true },
+  { key: 'modes', label: 'MODES', icon: ModesIcon, plate: color.purple, ink: onInk.purple },
+  { key: 'quests', label: 'QUEST', icon: QuestIcon, plate: color.green, ink: onInk.green },
 ];
 
 export interface TabBarProps {
@@ -74,7 +75,7 @@ export default function TabBar({ active, onChange, tabs = TABS }: TabBarProps) {
               borderRadius: radius.card,
             }}
           >
-            <IconPlate glyph={t.glyph} bg={t.icon} ink={t.ink} size={t.big ? 34 : 26} glyphSize={t.big ? 15 : 12} />
+            <IconPlate icon={t.icon} bg={t.plate} ink={t.ink} size={t.big ? 34 : 26} />
             <PixelText variant="tabLabel" color={t.big && on ? onInk.yellow : color.white}>
               {t.label}
             </PixelText>

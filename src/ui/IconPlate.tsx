@@ -2,6 +2,7 @@ import type { ViewStyle } from 'react-native';
 import Box from './Box';
 import PixelText from './PixelText';
 import { border, color, onInk, radius } from './theme';
+import type { PixelIconProps } from './icons';
 
 /**
  * The glyph set. Geometric unicode only — no emoji, no icon font, because a
@@ -23,8 +24,14 @@ export const GLYPH = {
 export type GlyphName = keyof typeof GLYPH;
 
 export interface IconPlateProps {
+  /**
+   * A drawn pixel icon. Preferred over `glyph`: the geometric unicode set has
+   * no coverage in either pixel font, so glyphs fall back to a system face and
+   * render differently per platform.
+   */
+  icon?: (props: PixelIconProps) => React.ReactElement;
   /** A glyph name from `GLYPH`, or any geometric unicode character. */
-  glyph: GlyphName | string;
+  glyph?: GlyphName | string;
   /** Plate background. Pair with `ink` from the `onInk` map. */
   bg?: string;
   /** Glyph color printed on the plate. */
@@ -43,6 +50,7 @@ export interface IconPlateProps {
  * Always a square: the plate is the pixel, the glyph is what is drawn on it.
  */
 export default function IconPlate({
+  icon: Icon,
   glyph,
   bg = color.blue,
   ink = color.white,
@@ -52,7 +60,8 @@ export default function IconPlate({
   edge,
   style,
 }: IconPlateProps) {
-  const char = (GLYPH as Record<string, string>)[glyph] ?? glyph;
+  const char = glyph ? ((GLYPH as Record<string, string>)[glyph] ?? glyph) : '';
+  const drawnSize = glyphSize ?? Math.round(size * 0.62);
   return (
     <Box
       bg={bg}
@@ -65,9 +74,13 @@ export default function IconPlate({
       justify="center"
       style={style}
     >
-      <PixelText variant="numeric" size={glyphSize ?? Math.round(size * 0.46)} color={ink}>
-        {char}
-      </PixelText>
+      {Icon ? (
+        <Icon size={drawnSize} color={ink} />
+      ) : (
+        <PixelText variant="numeric" size={glyphSize ?? Math.round(size * 0.46)} color={ink}>
+          {char}
+        </PixelText>
+      )}
     </Box>
   );
 }

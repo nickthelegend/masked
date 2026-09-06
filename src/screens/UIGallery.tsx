@@ -12,6 +12,7 @@ import {
   FillTape,
   FogOverlay,
   GLYPH,
+  ICONS,
   IconPlate,
   LeaderRow,
   MaskAvatar,
@@ -130,8 +131,16 @@ export default function UIGallery() {
         </Stack>
       </Section>
 
-      <Section title="ICONPLATE / BADGE" note="geometric glyphs only">
+      <Section title="ICONPLATE / BADGE" note="drawn SVG icons + glyphs">
         <Stack gap={space.md}>
+          <Row gap={space.sm} wrap>
+            {Object.entries(ICONS).map(([name, Icon]) => (
+              <IconPlate key={name} icon={Icon} bg={color.panelLight} ink={color.white} size={34} />
+            ))}
+          </Row>
+          <PixelText variant="bodySmall">
+            Drawn on a 12x12 lattice, so they render identically on web, iOS and Android.
+          </PixelText>
           <Row gap={space.sm} wrap>
             {Object.entries(GLYPH).map(([name, glyph]) => (
               <IconPlate key={name} glyph={glyph} bg={color.panelLight} ink={color.white} />
