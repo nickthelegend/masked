@@ -11,15 +11,18 @@
     "typecheck": "tsc --noEmit",
     "check:tokens": "node --no-warnings=MODULE_TYPELESS_PACKAGE_JSON scripts/check-tokens.mjs",
     "check:series": "node --no-warnings=MODULE_TYPELESS_PACKAGE_JSON scripts/check-series.mjs",
-    "check": "npm run typecheck && npm run check:tokens && npm run check:series",
+    "check": "npm run typecheck && npm run check:tokens && npm run check:series && npm run check:fog",
     "sync:idl": "node -e \"const fs=require('fs');const i=JSON.parse(fs.readFileSync('chain/target/idl/fogduel.json','utf8'));fs.writeFileSync('src/chain/idl.ts','export const FOGDUEL_IDL = '+JSON.stringify(i,null,2)+';\\n\\nexport default FOGDUEL_IDL;\\n');console.log('idl synced')\"",
-    "verify:client": "tsx scripts/verify-client.mts"
+    "verify:client": "tsx scripts/verify-client.mts",
+    "prove:privacy": "tsx scripts/prove-privacy.mts",
+    "check:fog": "tsx scripts/check-fog.mts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",
     "@expo-google-fonts/press-start-2p": "^0.2.3",
     "@expo-google-fonts/silkscreen": "^0.2.3",
     "@expo/metro-runtime": "~4.0.1",
+    "@magicblock-labs/ephemeral-rollups-sdk": "^0.17.0",
     "@solana/wallet-adapter-base": "^0.9.27",
     "@solana/wallet-adapter-react": "^0.15.39",
     "@solana/wallet-adapter-solflare": "^0.6.33",

@@ -9,6 +9,13 @@
  */
 import { AnchorProvider, BN, Program, type Idl, type Wallet } from '@coral-xyz/anchor';
 import { Connection, PublicKey, SystemProgram, type Commitment } from '@solana/web3.js';
+import {
+  PERMISSION_PROGRAM_ID,
+  permissionPdaFromAccount,
+  delegationRecordPdaFromDelegatedAccount,
+  delegationMetadataPdaFromDelegatedAccount,
+  delegateBufferPdaFromDelegatedAccountAndOwnerProgram,
+} from '@magicblock-labs/ephemeral-rollups-sdk';
 import { FOGDUEL_IDL as idl } from './idl';
 import { ACTIVE_CLUSTER, type ClusterConfig } from './config';
 import { feedPda, matchPda, positionPda, tapePda, treasuryPda, vaultPda } from './pdas';
@@ -154,6 +161,57 @@ export class FogduelClient {
       .delegatePositionToEr(owner, this.cluster.validator, 1_000)
       .accounts({ payer, matchAccount: match })
       .rpc();
+  }
+
+  /**
+   * Create the on-chain access-control list for a position: one member, the
+   * owner. Runs on L1, so it needs no delegated fee payer.
+   */
+  async createPositionPermission(match: PublicKey, owner: PublicKey, payer: PublicKey): Promise<void> {
+    await this.l1Program.methods
+      .createPositionPermission(owner)
+      .accounts({
+        payer,
+        matchAccount: match,
+        position: positionPda(match, owner),
+        permission: permissionPdaFromAccount(positionPda(match, owner)),
+        permissionProgram: PERMISSION_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+  }
+
+  /** Delegate a position's ACL to the same validator as the position. */
+  async delegatePositionPermission(
+    match: PublicKey,
+    owner: PublicKey,
+    payer: PublicKey,
+    position?: PublicKey
+  ): Promise<void> {
+    const pos = position ?? positionPda(match, owner);
+    const permission = permissionPdaFromAccount(pos);
+    await this.l1Program.methods
+      .delegatePositionPermission(owner)
+      .accounts({
+        payer,
+        matchAccount: match,
+        position: pos,
+        permission,
+        delegationBuffer: delegateBufferPdaFromDelegatedAccountAndOwnerProgram(permission, PERMISSION_PROGRAM_ID),
+        delegationRecord: delegationRecordPdaFromDelegatedAccount(permission),
+        delegationMetadata: delegationMetadataPdaFromDelegatedAccount(permission),
+        validator: this.cluster.validator,
+        permissionProgram: PERMISSION_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+  }
+
+  /** Raw on-chain owner of an account — used by the delegation inspector. */
+  async accountOwner(address: PublicKey, fromEr = false): Promise<PublicKey | null> {
+    const conn = fromEr ? this.er : this.l1;
+    const info = await conn.getAccountInfo(address);
+    return info?.owner ?? null;
   }
 
   /** Fills run on the ER, against delegated (and on a TEE, private) state. */
