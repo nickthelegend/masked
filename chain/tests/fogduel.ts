@@ -21,13 +21,17 @@ describe("fogduel", () => {
 
   // Match ids are seeded from the clock so the suite can be re-run against a
   // long-lived validator without colliding with PDAs from an earlier run.
-  const RUN = Math.floor(Date.now() / 1000);
+  // Suite-unique id space, plus randomness so re-runs never reuse a PDA.
+  const RUN = Math.floor(Date.now() / 1000) * 1000 + 100 + Math.floor(Math.random() * 90);
 
   const ENTRY = 0.1 * LAMPORTS_PER_SOL;
   const DURATION = 10; // seconds — short so tests do not crawl
   const START_PX = 100 * PRICE_SCALE;
 
   let treasuryPda: PublicKey;
+
+  const statsPda = (owner: PublicKey) =>
+    PublicKey.findProgramAddressSync([Buffer.from("stats"), owner.toBuffer()], program.programId)[0];
 
   const pdas = (matchId: number) => {
     const idBuf = new BN(matchId).toArrayLike(Buffer, "le", 8);
@@ -233,7 +237,9 @@ describe("fogduel", () => {
       .accounts({
         cranker: creator.publicKey, matchAccount: p.matchPda, vault: p.vault, priceFeed: p.feed,
         positionA: p.posA, positionB: p.posB, creator: creator.publicKey, joiner: joiner.publicKey,
-        treasury: treasuryPda, tape: p.tape, systemProgram: SystemProgram.programId,
+        treasury: treasuryPda, tape: p.tape,
+        statsCreator: statsPda(creator.publicKey), statsJoiner: statsPda(joiner.publicKey),
+        systemProgram: SystemProgram.programId,
       }).rpc();
 
     m = await program.account.match.fetch(p.matchPda);
@@ -251,6 +257,16 @@ describe("fogduel", () => {
 
     const winnerAfter = await provider.connection.getBalance(creator.publicKey);
     assert.isAbove(winnerAfter, winnerBefore, "winner was paid");
+
+    // On-chain lifetime record, not a client-side tally.
+    const winnerStats = await program.account.playerStats.fetch(statsPda(creator.publicKey));
+    const loserStats = await program.account.playerStats.fetch(statsPda(joiner.publicKey));
+    assert.isAtLeast(winnerStats.wins, 1, "winner's on-chain win count incremented");
+    assert.isAtLeast(winnerStats.streak, 1, "streak advanced");
+    assert.isAtLeast(winnerStats.bestStreak, winnerStats.streak, "best streak tracks the streak");
+    assert.isAtLeast(winnerStats.taken.toNumber(), payout, "lamports taken recorded");
+    assert.isAtLeast(loserStats.losses, 1, "loser's loss recorded");
+    assert.equal(loserStats.streak, 0, "a loss resets the streak");
 
     const tape = await program.account.tape.fetch(p.tape);
     assert.equal(tape.winner.toBase58(), creator.publicKey.toBase58());
@@ -289,7 +305,9 @@ describe("fogduel", () => {
       .accounts({
         cranker: creator.publicKey, matchAccount: p.matchPda, vault: p.vault, priceFeed: p.feed,
         positionA: p.posA, positionB: p.posB, creator: creator.publicKey, joiner: joiner.publicKey,
-        treasury: treasuryPda, tape: p.tape, systemProgram: SystemProgram.programId,
+        treasury: treasuryPda, tape: p.tape,
+        statsCreator: statsPda(creator.publicKey), statsJoiner: statsPda(joiner.publicKey),
+        systemProgram: SystemProgram.programId,
       }).rpc();
 
     const b = await program.account.position.fetch(p.posB);

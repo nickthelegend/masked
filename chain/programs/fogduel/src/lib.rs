@@ -375,6 +375,24 @@ pub mod fogduel {
         tape.fills_b = ctx.accounts.position_b.fills.clone();
         tape.bump = ctx.bumps.tape;
 
+        // Lifetime records, so the leaderboard has an on-chain source of
+        // truth rather than a client-side scan of every tape ever written.
+        let entry = ctx.accounts.match_account.entry;
+        let stats_a = &mut ctx.accounts.stats_creator;
+        stats_a.owner = creator;
+        stats_a.bump = ctx.bumps.stats_creator;
+        let stats_b = &mut ctx.accounts.stats_joiner;
+        stats_b.owner = joiner;
+        stats_b.bump = ctx.bumps.stats_joiner;
+
+        if winner == creator {
+            stats_a.record_win(payout, entry, now);
+            stats_b.record_loss(entry, now);
+        } else {
+            stats_b.record_win(payout, entry, now);
+            stats_a.record_loss(entry, now);
+        }
+
         let m = &mut ctx.accounts.match_account;
         m.status = MatchStatus::Settled;
         m.winner = Some(winner);
@@ -686,19 +704,19 @@ pub struct SettleMatch<'info> {
     pub cranker: Signer<'info>,
 
     #[account(mut, seeds = [b"match", match_account.creator.as_ref(), &match_account.match_id.to_le_bytes()], bump = match_account.bump)]
-    pub match_account: Account<'info, Match>,
+    pub match_account: Box<Account<'info, Match>>,
 
     #[account(mut, seeds = [b"vault", match_account.key().as_ref()], bump = vault.bump)]
-    pub vault: Account<'info, Vault>,
+    pub vault: Box<Account<'info, Vault>>,
 
     #[account(seeds = [b"feed", match_account.key().as_ref()], bump = price_feed.bump)]
-    pub price_feed: Account<'info, PriceFeed>,
+    pub price_feed: Box<Account<'info, PriceFeed>>,
 
     #[account(mut, seeds = [b"position", match_account.key().as_ref(), match_account.creator.as_ref()], bump = position_a.bump)]
-    pub position_a: Account<'info, Position>,
+    pub position_a: Box<Account<'info, Position>>,
 
     #[account(mut, seeds = [b"position", match_account.key().as_ref(), position_b.owner.as_ref()], bump = position_b.bump)]
-    pub position_b: Account<'info, Position>,
+    pub position_b: Box<Account<'info, Position>>,
 
     /// CHECK: verified against `match_account.creator`; receives the payout on a creator win.
     #[account(mut, address = match_account.creator)]
@@ -709,7 +727,7 @@ pub struct SettleMatch<'info> {
     pub joiner: UncheckedAccount<'info>,
 
     #[account(mut, seeds = [b"treasury"], bump = treasury.bump)]
-    pub treasury: Account<'info, Treasury>,
+    pub treasury: Box<Account<'info, Treasury>>,
 
     #[account(
         init,
@@ -718,7 +736,27 @@ pub struct SettleMatch<'info> {
         seeds = [b"tape", match_account.key().as_ref()],
         bump
     )]
-    pub tape: Account<'info, Tape>,
+    pub tape: Box<Account<'info, Tape>>,
+
+    /// `init_if_needed` because a player's first settlement creates their
+    /// record and every later one updates it.
+    #[account(
+        init_if_needed,
+        payer = cranker,
+        space = 8 + PlayerStats::INIT_SPACE,
+        seeds = [b"stats", match_account.creator.as_ref()],
+        bump
+    )]
+    pub stats_creator: Box<Account<'info, PlayerStats>>,
+
+    #[account(
+        init_if_needed,
+        payer = cranker,
+        space = 8 + PlayerStats::INIT_SPACE,
+        seeds = [b"stats", position_b.owner.as_ref()],
+        bump
+    )]
+    pub stats_joiner: Box<Account<'info, PlayerStats>>,
 
     pub system_program: Program<'info, System>,
 }

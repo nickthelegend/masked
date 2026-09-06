@@ -41,13 +41,17 @@ describe("fogduel · ephemeral rollup + privacy", () => {
   const erProvider = new anchor.AnchorProvider(erConnection, creator, { commitment: "confirmed" });
   const erProgram = new Program<Fogduel>(program.idl as Fogduel, erProvider);
 
-  const RUN = Math.floor(Date.now() / 1000);
+  // Suite-unique id space, plus randomness so re-runs never reuse a PDA.
+  const RUN = Math.floor(Date.now() / 1000) * 1000 + 200 + Math.floor(Math.random() * 90);
   const ENTRY = 0.1 * LAMPORTS_PER_SOL;
   const DURATION = 12;
   const START_PX = 100 * PRICE_SCALE;
 
   let treasuryPda: PublicKey;
   let p: ReturnType<typeof pdas>;
+
+  const statsPda = (owner: PublicKey) =>
+    PublicKey.findProgramAddressSync([Buffer.from("stats"), owner.toBuffer()], program.programId)[0];
 
   function pdas(matchId: number) {
     const idBuf = new BN(matchId).toArrayLike(Buffer, "le", 8);
@@ -199,7 +203,9 @@ describe("fogduel · ephemeral rollup + privacy", () => {
       .accounts({
         cranker: creator.publicKey, matchAccount: p.matchPda, vault: p.vault, priceFeed: p.feed,
         positionA: p.posA, positionB: p.posB, creator: creator.publicKey, joiner: joiner.publicKey,
-        treasury: treasuryPda, tape: p.tape, systemProgram: SystemProgram.programId,
+        treasury: treasuryPda, tape: p.tape,
+        statsCreator: statsPda(creator.publicKey), statsJoiner: statsPda(joiner.publicKey),
+        systemProgram: SystemProgram.programId,
       }).rpc();
 
     const tape = await program.account.tape.fetch(p.tape);

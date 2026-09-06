@@ -34,7 +34,8 @@ describe("fogduel · permission ACL", () => {
   const erProvider = new anchor.AnchorProvider(erConnection, creator, { commitment: "confirmed" });
   const erProgram = new Program<Fogduel>(program.idl as Fogduel, erProvider);
 
-  const RUN = Math.floor(Date.now() / 1000);
+  // Suite-unique id space, plus randomness so re-runs never reuse a PDA.
+  const RUN = Math.floor(Date.now() / 1000) * 1000 + 300 + Math.floor(Math.random() * 90);
   const ENTRY = 0.1 * LAMPORTS_PER_SOL;
 
   let matchPda: PublicKey, posA: PublicKey, posB: PublicKey, feed: PublicKey, vault: PublicKey;

@@ -1565,6 +1565,56 @@ export const FOGDUEL_IDL = {
           }
         },
         {
+          "name": "stats_creator",
+          "docs": [
+            "`init_if_needed` because a player's first settlement creates their",
+            "record and every later one updates it."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  116,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "match_account.creator",
+                "account": "Match"
+              }
+            ]
+          }
+        },
+        {
+          "name": "stats_joiner",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  116,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "position_b.owner",
+                "account": "Position"
+              }
+            ]
+          }
+        },
+        {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
         }
@@ -1584,6 +1634,19 @@ export const FOGDUEL_IDL = {
         56,
         196,
         162
+      ]
+    },
+    {
+      "name": "PlayerStats",
+      "discriminator": [
+        169,
+        146,
+        242,
+        176,
+        102,
+        118,
+        231,
+        172
       ]
     },
     {
@@ -1861,6 +1924,69 @@ export const FOGDUEL_IDL = {
           },
           {
             "name": "Cancelled"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PlayerStats",
+      "docs": [
+        "Lifetime record for one wallet, updated at settlement.",
+        "",
+        "The leaderboard was being aggregated client-side by scanning every tape,",
+        "which is O(all matches) per render and cannot be trusted by anything other",
+        "than the client doing the scanning. This is the on-chain source of truth."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "wins",
+            "type": "u32"
+          },
+          {
+            "name": "losses",
+            "type": "u32"
+          },
+          {
+            "name": "taken",
+            "docs": [
+              "Lamports won, net of rake."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "staked",
+            "docs": [
+              "Lamports staked across all matches."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "streak",
+            "docs": [
+              "Current consecutive wins."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "best_streak",
+            "docs": [
+              "Best streak ever reached."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "last_played_ts",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
           }
         ]
       }

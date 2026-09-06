@@ -27,3 +27,6 @@ export const tapePda = (match: PublicKey) =>
 
 export const treasuryPda = () =>
   PublicKey.findProgramAddressSync([enc('treasury')], FOGDUEL_PROGRAM_ID)[0];
+
+export const statsPda = (owner: PublicKey) =>
+  PublicKey.findProgramAddressSync([enc('stats'), owner.toBuffer()], FOGDUEL_PROGRAM_ID)[0];

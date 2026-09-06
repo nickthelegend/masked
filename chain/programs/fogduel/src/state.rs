@@ -159,3 +159,47 @@ impl Position {
         self.fill_count = self.fill_count.saturating_add(1);
     }
 }
+
+/// Lifetime record for one wallet, updated at settlement.
+///
+/// The leaderboard was being aggregated client-side by scanning every tape,
+/// which is O(all matches) per render and cannot be trusted by anything other
+/// than the client doing the scanning. This is the on-chain source of truth.
+#[account]
+#[derive(InitSpace)]
+pub struct PlayerStats {
+    pub owner: Pubkey,
+    pub wins: u32,
+    pub losses: u32,
+    /// Lamports won, net of rake.
+    pub taken: u64,
+    /// Lamports staked across all matches.
+    pub staked: u64,
+    /// Current consecutive wins.
+    pub streak: u32,
+    /// Best streak ever reached.
+    pub best_streak: u32,
+    pub last_played_ts: i64,
+    pub bump: u8,
+}
+
+impl PlayerStats {
+    pub fn record_win(&mut self, payout: u64, stake: u64, ts: i64) {
+        self.wins = self.wins.saturating_add(1);
+        self.taken = self.taken.saturating_add(payout);
+        self.staked = self.staked.saturating_add(stake);
+        self.streak = self.streak.saturating_add(1);
+        if self.streak > self.best_streak {
+            self.best_streak = self.streak;
+        }
+        self.last_played_ts = ts;
+    }
+
+    pub fn record_loss(&mut self, stake: u64, ts: i64) {
+        self.losses = self.losses.saturating_add(1);
+        self.staked = self.staked.saturating_add(stake);
+        // A loss ends the streak but never touches best_streak.
+        self.streak = 0;
+        self.last_played_ts = ts;
+    }
+}

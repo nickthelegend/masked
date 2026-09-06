@@ -18,7 +18,7 @@ import {
 } from '@magicblock-labs/ephemeral-rollups-sdk';
 import { FOGDUEL_IDL as idl } from './idl';
 import { ACTIVE_CLUSTER, type ClusterConfig } from './config';
-import { feedPda, matchPda, positionPda, tapePda, treasuryPda, vaultPda } from './pdas';
+import { feedPda, matchPda, positionPda, statsPda, tapePda, treasuryPda, vaultPda } from './pdas';
 
 const COMMITMENT: Commitment = 'confirmed';
 
@@ -49,6 +49,17 @@ export interface MatchState {
   winner: PublicKey | null;
   pnlABps: number;
   pnlBBps: number;
+}
+
+export interface PlayerRecord {
+  owner: PublicKey;
+  wins: number;
+  losses: number;
+  taken: number;
+  staked: number;
+  streak: number;
+  bestStreak: number;
+  lastPlayedTs: number;
 }
 
 export interface PositionState {
@@ -258,9 +269,44 @@ export class FogduelClient {
         joiner,
         treasury: treasuryPda(),
         tape: tapePda(match),
+        statsCreator: statsPda(creator),
+        statsJoiner: statsPda(joiner),
         systemProgram: SystemProgram.programId,
       })
       .rpc();
+  }
+
+  /** One wallet's lifetime record, straight from chain. */
+  async fetchStats(owner: PublicKey): Promise<PlayerRecord | null> {
+    const raw = await this.l1Program.account.playerStats.fetchNullable(statsPda(owner));
+    if (!raw) return null;
+    return {
+      owner: raw.owner,
+      wins: raw.wins,
+      losses: raw.losses,
+      taken: raw.taken.toNumber(),
+      staked: raw.staked.toNumber(),
+      streak: raw.streak,
+      bestStreak: raw.bestStreak,
+      lastPlayedTs: raw.lastPlayedTs.toNumber(),
+    };
+  }
+
+  /** Every player record on chain — the leaderboard, no client-side tally. */
+  async fetchAllStats(): Promise<PlayerRecord[]> {
+    const all = await this.l1Program.account.playerStats.all();
+    return all
+      .map((r: { account: Record<string, any> }) => ({
+        owner: r.account.owner,
+        wins: r.account.wins,
+        losses: r.account.losses,
+        taken: r.account.taken.toNumber(),
+        staked: r.account.staked.toNumber(),
+        streak: r.account.streak,
+        bestStreak: r.account.bestStreak,
+        lastPlayedTs: r.account.lastPlayedTs.toNumber(),
+      }))
+      .sort((a: PlayerRecord, b: PlayerRecord) => b.taken - a.taken);
   }
 
   async pushPrice(match: PublicKey, authority: PublicKey, price: number, onEr = false): Promise<void> {
