@@ -5,6 +5,7 @@ import {
   PixelButton,
   PixelPanel,
   PixelText,
+  PnLOdometer,
   PnLReadout,
   PotPill,
   Row,
@@ -12,7 +13,6 @@ import {
   Stack,
   TapeChart,
   color,
-  pct,
   space,
 } from '../ui';
 import type { Fill } from '../ui';
@@ -70,9 +70,12 @@ export default function LiveRoundScreen({
           <TapeChart mine={series} height={200} baseline />
           <Row justify="space-between">
             <PixelText variant="bodySmall">PRICE {price.toFixed(4)}</PixelText>
-            <PixelText variant="bodySmall" color={color.yellow}>
-              YOUR PNL {pct(myPnl)}
-            </PixelText>
+            <Row gap={space.xs}>
+              <PixelText variant="bodySmall" color={color.textDim}>
+                YOUR PNL
+              </PixelText>
+              <PnLOdometer value={myPnl} size={11} signed />
+            </Row>
           </Row>
         </Stack>
       </PixelPanel>

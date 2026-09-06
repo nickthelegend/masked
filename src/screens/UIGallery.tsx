@@ -6,6 +6,7 @@
 import { useState, type ReactNode } from 'react';
 import { ScrollView, View } from 'react-native';
 import {
+  useToast,
   Badge,
   Box,
   Divider,
@@ -22,7 +23,10 @@ import {
   PixelButton,
   PixelPanel,
   PixelText,
+  PnLOdometer,
   PnLReadout,
+  ProofPanel,
+  RevealCurtain,
   PocketShell,
   Podium,
   PotPill,
@@ -73,6 +77,9 @@ export default function UIGallery() {
   const [tab, setTab] = useState('feed');
   const [stake, setStake] = useState(5);
   const [claimed, setClaimed] = useState(false);
+  const [curtain, setCurtain] = useState(false);
+  const [odo, setOdo] = useState(4.12);
+  const toast = useToast();
 
   return (
     <ScrollView
@@ -302,6 +309,45 @@ export default function UIGallery() {
             <TabBar active={tab} onChange={setTab} />
           </Box>
         </Stack>
+      </Section>
+
+      <Section title="MOTION" note="buzzer · odometer · toasts">
+        <Stack gap={space.md}>
+          <Row gap={space.sm} wrap>
+            <PixelButton
+              tone="gold"
+              label="FIRE BUZZER"
+              size={9}
+              onPress={() => {
+                setCurtain(false);
+                setTimeout(() => setCurtain(true), 40);
+              }}
+            />
+            <PixelButton tone="primary" label="ROLL PNL" size={9} onPress={() => setOdo(Math.round((Math.random() * 24 - 12) * 100) / 100)} />
+            <PixelButton tone="info" label="TOAST OK" size={9} onPress={() => toast.ok('LONG FILLED', '0.40 @ 100.0000')} />
+            <PixelButton tone="danger" label="TOAST ERR" size={9} onPress={() => toast.error('NOT ENOUGH QUOTE', 'Reduce the size.')} />
+          </Row>
+          <Row gap={space.md} align="center">
+            <PixelText variant="bodySmall">odometer:</PixelText>
+            <PnLOdometer value={odo} size={20} signed />
+          </Row>
+          <Box height={140} bg={color.chartBg} outline={color.ink} align="center" justify="center">
+            <PixelText variant="statBig">HIDDEN</PixelText>
+            <RevealCurtain active={curtain} label="TAPE UNSEALED" sublabel="+$9.80" onDone={() => setCurtain(false)} />
+          </Box>
+        </Stack>
+      </Section>
+
+      <Section title="PROOFPANEL" note="live evidence readout">
+        <ProofPanel
+          title="CLUSTER"
+          status={{ label: 'NO TEE', tone: 'soon' }}
+          rows={[
+            { label: 'name', value: 'LOCAL' },
+            { label: 'privacy enforced', value: 'NO — needs a TEE', tone: 'bad' },
+            { label: 'rollup latency', value: '1.6ms', tone: 'good' },
+          ]}
+        />
       </Section>
 
       <Section title="POCKETSHELL" note="screen clipped to 180px here">

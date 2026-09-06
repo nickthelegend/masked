@@ -20,6 +20,12 @@ export interface FogOverlayProps {
   duration?: number;
   /** Set false to hold the curtain still (screenshots, reduced motion). */
   animate?: boolean;
+  /**
+   * Retract the curtain instead of hiding it outright. The bands slide apart
+   * and the wash lifts, so the moment concealed state becomes public is
+   * visible rather than instant.
+   */
+  dissolving?: boolean;
   style?: ViewStyle | ViewStyle[];
 }
 
@@ -41,9 +47,26 @@ export default function FogOverlay({
   band = 3,
   duration = 2600,
   animate = true,
+  dissolving = false,
   style,
 }: FogOverlayProps) {
   const drift = useRef(new Animated.Value(0)).current;
+  const lift = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!dissolving) {
+      lift.setValue(0);
+      return undefined;
+    }
+    const anim = Animated.timing(lift, {
+      toValue: 1,
+      duration: 420,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    });
+    anim.start();
+    return () => anim.stop();
+  }, [dissolving, lift]);
 
   useEffect(() => {
     if (!animate || !active) return undefined;
@@ -59,7 +82,14 @@ export default function FogOverlay({
   const step = band * 2;
 
   return (
-    <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }, style]} pointerEvents="none">
+    <Animated.View
+      style={[
+        StyleSheet.absoluteFill,
+        { overflow: 'hidden', opacity: lift.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }) },
+        style,
+      ]}
+      pointerEvents="none"
+    >
       <View style={[StyleSheet.absoluteFill, { backgroundColor: color.ink, opacity: cover }]} />
       <Animated.View
         style={{
@@ -84,6 +114,6 @@ export default function FogOverlay({
           </PixelText>
         </View>
       ) : null}
-    </View>
+    </Animated.View>
   );
 }

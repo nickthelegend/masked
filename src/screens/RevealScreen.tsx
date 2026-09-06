@@ -1,10 +1,12 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { View } from 'react-native';
 import {
   Badge,
   PixelButton,
   PixelPanel,
   PixelText,
-  PnLReadout,
+  PnLOdometer,
+  RevealCurtain,
   Row,
   Stack,
   TapeChart,
@@ -54,6 +56,14 @@ export default function RevealScreen({
   onFade,
   onPost,
 }: RevealScreenProps) {
+  // Hold the tape back until the curtain has torn, so the numbers land at the
+  // moment the fog lifts rather than before it.
+  const [unsealed, setUnsealed] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => setUnsealed(true), 1400);
+    return () => clearTimeout(id);
+  }, []);
+
   const mine = equity.length > 2 ? equity : [...FALLBACK, myPnl];
   const theirs = useMemo(
     () => toEnd(mine.length, opponentPnl, mulberry32(Math.round(opponentPnl * 1000) + mine.length)),
@@ -61,6 +71,13 @@ export default function RevealScreen({
   );
 
   return (
+    <View>
+    <RevealCurtain
+      active
+      label={won ? 'YOU TAKE THE POT' : 'POT LOST'}
+      sublabel={won ? `+${money(pot)}` : `-${money(stake)}`}
+      onDone={() => setUnsealed(true)}
+    />
     <Stack pad={space.lg} gap={space.md}>
       <PixelText variant="h1" align="center" color={color.yellow}>
         {won ? 'YOU TAKE THE POT' : 'POT LOST'}
@@ -78,22 +95,27 @@ export default function RevealScreen({
           <PixelText variant="label" size={8} color={color.textDim}>
             TAPE REVEAL
           </PixelText>
-          <TapeChart mine={mine} opponent={theirs} height={170} />
+          {/* The tape only draws once the curtain is off. */}
+          {unsealed ? <TapeChart mine={mine} opponent={theirs} height={170} /> : <View style={{ height: 170 }} />}
         </Stack>
       </PixelPanel>
 
+      {/* Both figures roll up to their settled values as the tape unseals. */}
       <Row gap={space.sm} align="stretch">
-        <PnLReadout panel flex={1} label="YOU" value={myPnl} signed note={`${myFills} FILLS`} labelVariant="bodySmall" />
-        <PnLReadout
-          panel
-          flex={1}
-          label={opponentName.toUpperCase()}
-          value={opponentPnl}
-          signed
-          accent={color.magenta}
-          note={`${opponentFills} FILLS`}
-          labelVariant="bodySmall"
-        />
+        <PixelPanel flat accent={color.cyan} flex={1}>
+          <Stack gap={space.xs}>
+            <PixelText variant="bodySmall" color={color.cyan}>YOU</PixelText>
+            <PnLOdometer value={unsealed ? myPnl : 0} size={13} signed />
+            <PixelText variant="bodySmall" color={color.textDim}>{myFills} FILLS</PixelText>
+          </Stack>
+        </PixelPanel>
+        <PixelPanel flat accent={color.magenta} flex={1}>
+          <Stack gap={space.xs}>
+            <PixelText variant="bodySmall" color={color.magenta}>{opponentName.toUpperCase()}</PixelText>
+            <PnLOdometer value={unsealed ? opponentPnl : 0} size={13} signed />
+            <PixelText variant="bodySmall" color={color.textDim}>{opponentFills} FILLS</PixelText>
+          </Stack>
+        </PixelPanel>
       </Row>
 
       <Row gap={space.sm}>
@@ -103,5 +125,6 @@ export default function RevealScreen({
 
       <PixelButton tone="info" label="POST REVEAL TO FEED" size={9} onPress={onPost} />
     </Stack>
+    </View>
   );
 }

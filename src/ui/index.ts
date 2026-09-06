@@ -46,3 +46,6 @@ export { default as ConnectWalletButton, type ConnectWalletButtonProps } from '.
 export { default as ProofPanel, type ProofPanelProps, type ProofRow } from './ProofPanel';
 export { ToastProvider, useToast, type Toast, type ToastTone } from './Toast';
 export { default as ErrorBoundary } from './ErrorBoundary';
+export { default as RevealCurtain, type RevealCurtainProps } from './RevealCurtain';
+export { default as PnLOdometer, type PnLOdometerProps } from './PnLOdometer';
+export { useReducedMotion, DURATION, FRAME_MS } from './motion';
