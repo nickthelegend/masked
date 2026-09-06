@@ -234,13 +234,47 @@ pub mod fogduel {
         Ok(())
     }
 
-    /// Push a new mark price. One feed per match, so both players are always
-    /// quoted the same price — an asymmetric feed would be an exploit.
+    /// Post a new mark.
+    ///
+    /// One feed per match, so both players are always quoted the same price —
+    /// an asymmetric feed would be an exploit on its own.
+    ///
+    /// Permissionless. The obvious alternative, letting only the creator post,
+    /// is worse: it hands one player the power to time the mark against the
+    /// other. With anyone able to post, the defence is the rate limit rather
+    /// than the identity — at most MAX_PUSH_BPS per MIN_PUSH_INTERVAL, so a
+    /// player who wants the mark somewhere else has to walk it there in
+    /// public, a step at a time, while their opponent watches and trades.
+    ///
+    /// This is a stand-in for an oracle, and it is the one place where the
+    /// round trusts something off-chain. For a major, the replacement is a
+    /// Pyth price update, which is signed and needs no rate limit.
     pub fn push_price(ctx: Context<PushPrice>, px: u64) -> Result<()> {
         require!(px > 0, FogError::InvalidPrice);
+
+        let m = &ctx.accounts.match_account;
+        require!(m.status == MatchStatus::Live, FogError::MatchNotLive);
+        let now = Clock::get()?.unix_timestamp;
+        // No posting after the buzzer: the mark that settles the round is the
+        // one the round finished on.
+        require!(now < m.start_ts + m.duration, FogError::MatchExpired);
+
         let feed = &mut ctx.accounts.price_feed;
+        require!(
+            now - feed.updated_ts >= MIN_PUSH_INTERVAL,
+            FogError::PriceTooSoon
+        );
+
+        let last = feed.px as u128;
+        let next = px as u128;
+        let delta = if next > last { next - last } else { last - next };
+        require!(
+            delta * (BPS_DENOM as u128) <= last * (MAX_PUSH_BPS as u128),
+            FogError::PriceJump
+        );
+
         feed.px = px;
-        feed.updated_ts = Clock::get()?.unix_timestamp;
+        feed.updated_ts = now;
         Ok(())
     }
 
@@ -607,17 +641,20 @@ pub mod fogduel {
         Ok(())
     }
 
-    /// Commit both positions back to L1 and release the delegation.
+    /// Commit one position back to L1 and release its delegation.
     ///
-    /// Called on the ER once the clock expires. After this lands the positions
-    /// are readable on L1 again and `settle_match` can run.
-    pub fn commit_and_undelegate_positions(ctx: Context<CommitAndUndelegatePositions>) -> Result<()> {
+    /// Called on the ER once the clock expires, once per side. After both have
+    /// landed the positions are readable on L1 again and `settle_match` can run.
+    ///
+    /// One at a time, deliberately. A Position is 543 bytes, so two of them do
+    /// not fit in a single 1232-byte transaction, and asking the rollup to
+    /// commit both at once pushes its committor onto a chunked buffer path.
+    /// Committing them separately keeps every commit inline, and a failure on
+    /// one side no longer strands the other.
+    pub fn commit_and_undelegate_position(ctx: Context<CommitAndUndelegatePosition>) -> Result<()> {
         commit_and_undelegate_accounts(
             &ctx.accounts.payer.to_account_info(),
-            vec![
-                &ctx.accounts.position_a.to_account_info(),
-                &ctx.accounts.position_b.to_account_info(),
-            ],
+            vec![&ctx.accounts.position.to_account_info()],
             &ctx.accounts.magic_context,
             &ctx.accounts.magic_program,
             None,
@@ -715,10 +752,14 @@ pub struct CancelMatch<'info> {
 
 #[derive(Accounts)]
 pub struct PushPrice<'info> {
-    #[account(address = price_feed.authority)]
+    /// Anyone. Deliberately not checked against `price_feed.authority`: see
+    /// `push_price`. Signing is only so somebody pays the fee.
     pub authority: Signer<'info>,
 
-    #[account(mut, seeds = [b"feed", price_feed.match_key.as_ref()], bump = price_feed.bump)]
+    #[account(seeds = [b"match", match_account.creator.as_ref(), &match_account.match_id.to_le_bytes()], bump = match_account.bump)]
+    pub match_account: Account<'info, Match>,
+
+    #[account(mut, seeds = [b"feed", match_account.key().as_ref()], bump = price_feed.bump)]
     pub price_feed: Account<'info, PriceFeed>,
 }
 
@@ -888,15 +929,12 @@ pub struct InitPositionPrivacy<'info> {
 /// `#[commit]` injects `magic_context` and `magic_program`.
 #[commit]
 #[derive(Accounts)]
-pub struct CommitAndUndelegatePositions<'info> {
+pub struct CommitAndUndelegatePosition<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
 
     #[account(mut)]
-    pub position_a: Account<'info, Position>,
-
-    #[account(mut)]
-    pub position_b: Account<'info, Position>,
+    pub position: Account<'info, Position>,
 }
 
 #[delegate]

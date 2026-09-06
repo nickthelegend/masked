@@ -22,6 +22,22 @@ pub const BPS_DENOM: u64 = 10_000;
 /// without limit; the UI only ever renders the most recent handful.
 pub const MAX_FILLS: usize = 16;
 
+/// The most a single price push may move the mark, in basis points.
+///
+/// The mark is posted by a client reading a public API, which is a trust
+/// assumption we would rather not have: whoever posts last before the buzzer
+/// would otherwise decide the round. Anyone may post — the round's own
+/// participants included — so the defence cannot be about who, only about how
+/// much and how fast.
+///
+/// 5% a second is loose enough for a meme coin having a bad minute (a 60s
+/// round can still travel roughly 19x) and tight enough that a last-instant
+/// grab moves the settlement mark by at most 5%, in public, with the other
+/// side able to trade against it.
+pub const MAX_PUSH_BPS: u64 = 500;
+/// Minimum seconds between two pushes, which is what gives the cap its teeth.
+pub const MIN_PUSH_INTERVAL: i64 = 1;
+
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug, InitSpace)]
 pub enum MatchStatus {
     Open,

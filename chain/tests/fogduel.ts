@@ -58,6 +58,26 @@ describe("fogduel", () => {
   // assertion below is about lamports and PnL, and a Major's mark is the price
   // this test pushes rather than wherever the private book happens to sit.
   // The meme path — where the book is both venue and mark — has its own suite.
+  /**
+   * Walk the mark to a target, one allowed step at a time.
+   *
+   * `push_price` caps a single post at 5% and one per second, so a test that
+   * jumps the price 10% is rejected — which is the point of the cap.
+   */
+  const walkPriceTo = async (p: ReturnType<typeof pdas>, targetPx: number) => {
+    for (let i = 0; i < 12; i += 1) {
+      const feed = await program.account.priceFeed.fetch(p.feed);
+      const current = feed.px.toNumber();
+      if (Math.abs(current - targetPx) <= Math.max(1, targetPx / 10_000)) return;
+      const step = (current * 500) / 10_000;
+      const next = Math.round(Math.max(current - step, Math.min(current + step, targetPx)));
+      if (i > 0) await new Promise((r) => setTimeout(r, 1100));
+      await program.methods.pushPrice(new BN(next))
+        .accounts({ authority: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed })
+        .rpc();
+    }
+  };
+
   const createMatch = async (matchId: number, duration = DURATION, market: any = { major: {} }) => {
     const p = pdas(matchId);
     await program.methods
@@ -240,8 +260,7 @@ describe("fogduel", () => {
   // oracle for free.
   it("realizes PnL on a sell after the oracle moves up", async () => {
     const p = pdas(RUN + 1);
-    await program.methods.pushPrice(new BN(px(0.11)))
-      .accounts({ authority: creator.publicKey, priceFeed: p.feed }).rpc();
+    await walkPriceTo(p, px(0.11));
 
     const before = await program.account.position.fetch(p.posA);
     const qty = before.baseQty.toNumber();
@@ -263,6 +282,36 @@ describe("fogduel", () => {
     const exitPx = after.fills[after.fills.length - 1].px.toNumber();
     assert.isAbove(exitPx, avgPx, "sold above the average entry");
     assert.isBelow(exitPx, px(0.11), "the sell paid its own impact");
+  });
+
+  it("refuses a price push that jumps further than the rate limit", async () => {
+    const p = pdas(RUN + 1);
+    const feed = await program.account.priceFeed.fetch(p.feed);
+    try {
+      // +20% in one post. Anyone may post the mark, so the cap is the only
+      // thing stopping a player from walking it wherever suits them at the
+      // buzzer.
+      await program.methods.pushPrice(new BN(Math.round(feed.px.toNumber() * 1.2)))
+        .accounts({ authority: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed })
+        .rpc();
+      assert.fail("a 20% jump should have been rejected");
+    } catch (e: any) {
+      assert.include(e.toString().toLowerCase(), "pricejump");
+    }
+  });
+
+  it("lets anyone post the mark, not just the creator", async () => {
+    const p = pdas(RUN + 1);
+    const feed = await program.account.priceFeed.fetch(p.feed);
+    await new Promise((r) => setTimeout(r, 1100));
+    // The joiner is not the feed authority. If only the creator could post,
+    // one player would get to time the mark against the other.
+    await program.methods.pushPrice(new BN(feed.px.toNumber() + 1))
+      .accounts({ authority: joiner.publicKey, matchAccount: p.matchPda, priceFeed: p.feed })
+      .signers([joiner])
+      .rpc();
+    const after = await program.account.priceFeed.fetch(p.feed);
+    assert.equal(after.px.toNumber(), feed.px.toNumber() + 1);
   });
 
   it("refuses to settle before the clock expires", async () => {
@@ -353,8 +402,7 @@ describe("fogduel", () => {
       })
       .signers([joiner]).rpc();
 
-    await program.methods.pushPrice(new BN(px(0.12)))
-      .accounts({ authority: creator.publicKey, priceFeed: p.feed }).rpc();
+    await walkPriceTo(p, px(0.12));
 
     await new Promise((r) => setTimeout(r, (DURATION + 2) * 1000));
     await program.methods.requestSettle()

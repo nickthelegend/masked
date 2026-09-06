@@ -17,8 +17,15 @@ import { DEMO_MINT } from '../src/chain/market';
 import { CLUSTERS, DELEGATION_PROGRAM_ID } from '../src/chain/config';
 import { positionPda } from '../src/chain/pdas';
 import { pxFromSolPerToken } from '../src/chain/units';
+import nacl from 'tweetnacl';
 
 const cluster = process.env.EXPO_PUBLIC_CLUSTER === 'devnet' ? CLUSTERS.devnet : CLUSTERS.local;
+
+/** A keypair, presented as something that can sign a login challenge. */
+const asSigner = (kp: Keypair) => ({
+  publicKey: kp.publicKey,
+  signMessage: async (m: Uint8Array) => nacl.sign.detached(m, kp.secretKey),
+});
 
 const wrap = (kp: Keypair) => ({
   publicKey: kp.publicKey, payer: kp,
@@ -34,8 +41,8 @@ async function main() {
     new Uint8Array(JSON.parse(readFileSync('.keys/player-b.json', 'utf8')))
   );
 
-  const me = new FogduelClient(wrap(creator) as never, cluster);
-  const them = new FogduelClient(wrap(joiner) as never, cluster);
+  const me = new FogduelClient(wrap(creator) as never, cluster, asSigner(creator));
+  const them = new FogduelClient(wrap(joiner) as never, cluster, asSigner(joiner));
   const l1 = new Connection(cluster.l1, 'confirmed');
 
   console.log(`cluster: ${cluster.name} (TEE: ${cluster.tee})`);

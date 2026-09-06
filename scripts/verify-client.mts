@@ -13,12 +13,19 @@ import { FogduelClient } from '../src/chain/client';
 import { DEMO_MINT } from '../src/chain/market';
 import { CLUSTERS } from '../src/chain/config';
 import { pxFromSolPerToken } from '../src/chain/units';
+import nacl from 'tweetnacl';
 
 async function main() {
 
 
   const load = (p: string) => Keypair.fromSecretKey(new Uint8Array(JSON.parse(readFileSync(p, 'utf8'))));
-  const wrap = (kp: Keypair) => ({
+  /** A keypair, presented as something that can sign a login challenge. */
+const asSigner = (kp: Keypair) => ({
+  publicKey: kp.publicKey,
+  signMessage: async (m: Uint8Array) => nacl.sign.detached(m, kp.secretKey),
+});
+
+const wrap = (kp: Keypair) => ({
     publicKey: kp.publicKey,
     payer: kp,
     signTransaction: async (tx: Transaction) => { tx.partialSign(kp); return tx; },
@@ -28,8 +35,8 @@ async function main() {
   const creator = load(`${process.env.HOME}/.config/solana/id.json`);
   const joiner = load('.keys/player-b.json');
 
-  const client = new FogduelClient(wrap(creator) as never, CLUSTERS.local);
-  const joinerClient = new FogduelClient(wrap(joiner) as never, CLUSTERS.local);
+  const client = new FogduelClient(wrap(creator) as never, CLUSTERS.local, asSigner(creator));
+  const joinerClient = new FogduelClient(wrap(joiner) as never, CLUSTERS.local, asSigner(joiner));
 
   // Fund the joiner from the faucet.
   const sig = await client.l1.requestAirdrop(joiner.publicKey, 3 * LAMPORTS_PER_SOL);
@@ -70,16 +77,34 @@ async function main() {
   assert.ok(sealedA && sealedB, 'both positions must carry an on-chain ACL');
   console.log('   sealed (2/2 ACLs on chain) and delegated');
 
-  console.log('5. apply_fill on the ER');
-  await client.applyFill(match, creator.publicKey, 'buy', Math.floor(ENTRY * 0.4));
+  console.log('5. apply_fill on the ER — through this player\'s own private book');
+  const spend = Math.floor(ENTRY * 0.4);
+  const bookBefore = (await client.fetchPosition(match, creator.publicKey, true))!.book;
+  await client.applyFill(match, creator.publicKey, 'buy', spend);
   const pos = (await client.fetchPosition(match, creator.publicKey, true))!;
-  assert.equal(pos.baseQty, 0.4 * 1_000_000);
+
   assert.equal(pos.fillCount, 1);
   assert.equal(pos.fills[0].side, 'BUY');
-  console.log('   filled on ER — baseQty:', pos.baseQty, 'fills:', pos.fillCount);
+  assert.equal(pos.quoteBalance, ENTRY - spend, 'quote spent is exactly what was asked');
+  assert.ok(pos.baseQty > 0, 'base received');
+  // A buy on x*y=k fills above the mid it started from, and the book it moved
+  // is this player's own — the opponent's is untouched.
+  assert.ok(pos.avgPx > bookBefore.seedPx, 'the buy paid impact');
+  assert.ok(pos.book.virtualQuote > bookBefore.virtualQuote, 'their own curve moved');
+  console.log(
+    '   filled on ER — spent', spend, 'lamports, got baseQty', pos.baseQty,
+    'at', ((pos.avgPx / bookBefore.seedPx - 1) * 100).toFixed(3) + '% impact'
+  );
+
+  // Both sides trade, which is the case that matters: two modified positions
+  // is what forces the rollup to commit them one at a time. With both in a
+  // single commit the transaction exceeds 1232 bytes and the committor takes a
+  // chunked buffer path that fails on this stack.
+  await joinerClient.applyFill(match, joiner.publicKey, 'buy', Math.floor(ENTRY * 0.2));
+  console.log('   opponent also filled — two positions now need committing');
 
   console.log('6. price moves, commit + undelegate');
-  await client.pushPrice(match, creator.publicKey, pxFromSolPerToken(0.118));
+  await client.walkPriceTo(match, creator.publicKey, pxFromSolPerToken(0.118));
   await new Promise((r) => setTimeout(r, 13_000));
   await client.commitAndUndelegate(match, creator.publicKey, creator.publicKey, joiner.publicKey);
 
@@ -92,8 +117,10 @@ async function main() {
   }
   assert.equal(owner, client.programId.toBase58(), 'undelegated back to the program');
   const committed = (await client.fetchPosition(match, creator.publicKey, false))!;
+  const committedOpp = (await client.fetchPosition(match, joiner.publicKey, false))!;
   assert.equal(committed.fillCount, 1, 'the ER fill survived the commit to L1');
-  console.log('   committed back — fill count on L1:', committed.fillCount);
+  assert.equal(committedOpp.fillCount, 1, 'and so did the opponent\'s');
+  console.log('   both committed back — fills on L1:', committed.fillCount, 'and', committedOpp.fillCount);
 
   console.log('7. settle');
   const before = await client.balance(creator.publicKey);

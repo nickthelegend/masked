@@ -23,7 +23,11 @@ import { checkBalance, checkCluster, checkProgram, checkWallet, firstFailure } f
 import { FOGDUEL_PROGRAM_ID } from '../chain/config';
 import { assertFogIntact } from '../chain/fog';
 import { FogduelClient, pnlBps, type MatchState, type PositionState } from '../chain/client';
-import { formatUnitPrice, pxFromSolPerToken } from '../chain/units';
+import { formatSolPrice } from '../chain/units';
+import { fetchMarket } from '../chain/pumpfun';
+import { fetchUsdPrices, WSOL_MINT } from '../chain/jupiter';
+import { pxFromSolPerToken } from '../chain/units';
+import type { TradableMarket } from '../chain/markets';
 import { ACTIVE_CLUSTER } from '../chain/config';
 import { DEMO_MINT, marketLabel } from '../chain/market';
 import { OPPONENT_PENDING, RAKE, ROUND_SECONDS } from './data';
@@ -39,6 +43,13 @@ export type DuelPhase = 'lobby' | 'searching' | 'live' | 'reveal';
 const DEFAULT_FILL_FRACTION = 0.4;
 /** Poll cadence for on-chain state during a live round. */
 const POLL_MS = 1000;
+/**
+ * How often the live market price is posted on chain.
+ *
+ * Faster than the 5%/second cap would just be rejected, and pump.fun does not
+ * thank anyone for a request a second either.
+ */
+const MARK_CRANK_MS = 2000;
 
 export interface Duel {
   phase: DuelPhase;
@@ -62,8 +73,11 @@ export interface Duel {
   busy: boolean;
   /** True once both positions carry an on-chain access-control list. */
   sealed: boolean;
-  /** Market label, resolved from the match's real mint. */
+  /** Ticker of the market being fought over, as written on chain. */
   market: string;
+  /** The market the next duel will be opened on, chosen in the lobby. */
+  selectedMarket: TradableMarket | null;
+  selectMarket: (m: TradableMarket) => void;
   /** Whether this cluster actually enforces the ACL at read time. */
   teeEnforced: boolean;
   error: string | null;
@@ -99,9 +113,18 @@ export function useDuel(): Duel {
       signTransaction: wallet.signTransaction,
       signAllTransactions: wallet.signAllTransactions,
     };
-    return new FogduelClient(anchorWallet as never, ACTIVE_CLUSTER);
-  }, [wallet.publicKey, wallet.signTransaction, wallet.signAllTransactions]);
+    // signMessage unlocks reads of your own sealed position on the rollup: the
+    // front door refuses everybody without a token, owner included. A wallet
+    // that cannot sign a message can still trade, it just cannot read back
+    // what it did until the round is committed to L1.
+    const signer =
+      wallet.signMessage && wallet.publicKey
+        ? { publicKey: wallet.publicKey, signMessage: wallet.signMessage }
+        : undefined;
+    return new FogduelClient(anchorWallet as never, ACTIVE_CLUSTER, signer);
+  }, [wallet.publicKey, wallet.signTransaction, wallet.signAllTransactions, wallet.signMessage]);
 
+  const [selectedMarket, setSelectedMarket] = useState<TradableMarket | null>(null);
   const [phase, setPhase] = useState<DuelPhase>('lobby');
   const [stake, setStake] = useState(0.1); // SOL
   const [fillSize, setFillSize] = useState(DEFAULT_FILL_FRACTION);
@@ -185,6 +208,56 @@ export function useDuel(): Duel {
 
     return () => {
       alive = false;
+      clearInterval(id);
+    };
+  }, [client, match, phase, wallet.publicKey]);
+
+  /* ---------------------- live round: crank the mark --------------------- */
+  //
+  // Nothing else moves the price. Without this the mark sits where the match
+  // opened and a round is decided entirely by execution cost, which is not a
+  // trading game.
+  //
+  // The source is the same public API the market list came from, and the post
+  // is permissionless, so both players can run this and neither has to trust
+  // the other to. On-chain it is capped at 5% per second, and `crankPrice`
+  // clamps to that rather than being rejected.
+  useEffect(() => {
+    if (!client || !match || phase !== 'live' || !wallet.publicKey) return undefined;
+    const mint = match.mint.toBase58();
+    const kind = match.marketType;
+
+    let alive = true;
+    const ac = new AbortController();
+
+    const tick = async () => {
+      try {
+        let priceSol: number | null = null;
+        if (kind === 'meme') {
+          const live = await fetchMarket(mint, ac.signal);
+          priceSol = live?.priceSol ?? null;
+        } else {
+          const [prices, sol] = await Promise.all([
+            fetchUsdPrices([mint], ac.signal),
+            fetchUsdPrices([WSOL_MINT], ac.signal),
+          ]);
+          const usd = prices.get(mint)?.usdPrice;
+          const solUsd = sol.get(WSOL_MINT)?.usdPrice;
+          priceSol = usd && solUsd ? usd / solUsd : null;
+        }
+        if (!alive || priceSol === null || priceSol <= 0) return;
+        await client.crankPrice(match.address, wallet.publicKey!, pxFromSolPerToken(priceSol), true);
+      } catch {
+        // The market API or the rate limit said no. The next tick tries again;
+        // a failed crank must never interrupt a round in progress.
+      }
+    };
+
+    void tick();
+    const id = setInterval(tick, MARK_CRANK_MS);
+    return () => {
+      alive = false;
+      ac.abort();
       clearInterval(id);
     };
   }, [client, match, phase, wallet.publicKey]);
@@ -280,7 +353,14 @@ export function useDuel(): Duel {
       await client!.ensureTreasury(me);
 
       const open = await client!.fetchOpenMatches();
-      const joinable = open.find((m) => !m.creator.equals(me) && m.entry === entryLamports);
+      // Only join a match on the market you picked — otherwise "FIND MATCH"
+      // silently drops you into somebody else's coin.
+      const joinable = open.find(
+        (m) =>
+          !m.creator.equals(me) &&
+          m.entry === entryLamports &&
+          (!selectedMarket || m.mint.toBase58() === selectedMarket.mint)
+      );
 
       let target: PublicKey;
       let creator: PublicKey;
@@ -290,14 +370,23 @@ export function useDuel(): Duel {
         target = joinable.address;
         creator = joinable.creator;
       } else {
+        if (!selectedMarket) {
+          setError('Pick a market first.');
+          return;
+        }
         const matchId = Math.floor(Date.now() / 1000);
+        // The opening mark is the market's live price, read seconds ago from
+        // pump.fun or Jupiter — not a placeholder.
         target = await client!.createMatch({
           creator: me,
           matchId,
-          mint: DEMO_MINT,
+          mint: new PublicKey(selectedMarket.mint),
           durationSecs: ROUND_SECONDS,
           entryLamports,
-          startPrice: 100,
+          startPx: selectedMarket.startPx,
+          marketType: selectedMarket.kind,
+          symbol: selectedMarket.symbol,
+          name: selectedMarket.name,
         });
         creator = me;
         // An unjoined match cannot start. Stay in matchmaking until someone
@@ -422,7 +511,7 @@ export function useDuel(): Duel {
 
   const fills: Fill[] = (myPosition?.fills ?? []).map((f) => ({
     side: f.side === 'BUY' ? 'LONG' : f.side === 'SELL' ? 'CLOSE' : 'SETTLE',
-    px: formatUnitPrice(f.px),
+    px: formatSolPrice(f.px),
     t: mmss(Math.max(0, (match?.startTs ?? 0) + (match?.duration ?? 0) - f.ts)),
   })).reverse();
 
@@ -438,7 +527,7 @@ export function useDuel(): Duel {
     myPnl,
     positionLabel:
       myPosition && myPosition.baseQty > 0
-        ? `LONG FROM ${formatUnitPrice(myPosition.avgPx)}`
+        ? `LONG FROM ${formatSolPrice(myPosition.avgPx)}`
         : 'FLAT',
     fills,
     opponentName: match?.joiner && wallet.publicKey && !match.joiner.equals(wallet.publicKey)
@@ -453,7 +542,11 @@ export function useDuel(): Duel {
     connected,
     busy,
     sealed,
-    market: marketLabel(match?.mint ?? DEMO_MINT),
+    // Straight off the match account. The old lookup table could only name
+    // three mints and called everything else by its address.
+    market: match?.symbol || marketLabel(match?.mint ?? DEMO_MINT),
+    selectedMarket,
+    selectMarket: setSelectedMarket,
     teeEnforced: ACTIVE_CLUSTER.tee,
     error,
     matchAddress: match?.address.toBase58() ?? null,

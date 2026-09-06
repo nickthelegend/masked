@@ -204,22 +204,28 @@ export const FOGDUEL_IDL = {
       "args": []
     },
     {
-      "name": "commit_and_undelegate_positions",
+      "name": "commit_and_undelegate_position",
       "docs": [
-        "Commit both positions back to L1 and release the delegation.",
+        "Commit one position back to L1 and release its delegation.",
         "",
-        "Called on the ER once the clock expires. After this lands the positions",
-        "are readable on L1 again and `settle_match` can run."
+        "Called on the ER once the clock expires, once per side. After both have",
+        "landed the positions are readable on L1 again and `settle_match` can run.",
+        "",
+        "One at a time, deliberately. A Position is 543 bytes, so two of them do",
+        "not fit in a single 1232-byte transaction, and asking the rollup to",
+        "commit both at once pushes its committor onto a chunked buffer path.",
+        "Committing them separately keeps every commit inline, and a failure on",
+        "one side no longer strands the other."
       ],
       "discriminator": [
-        60,
-        74,
-        124,
-        47,
-        150,
-        143,
-        25,
-        25
+        58,
+        231,
+        195,
+        159,
+        242,
+        112,
+        255,
+        117
       ],
       "accounts": [
         {
@@ -228,11 +234,7 @@ export const FOGDUEL_IDL = {
           "signer": true
         },
         {
-          "name": "position_a",
-          "writable": true
-        },
-        {
-          "name": "position_b",
+          "name": "position",
           "writable": true
         },
         {
@@ -1288,8 +1290,21 @@ export const FOGDUEL_IDL = {
     {
       "name": "push_price",
       "docs": [
-        "Push a new mark price. One feed per match, so both players are always",
-        "quoted the same price — an asymmetric feed would be an exploit."
+        "Post a new mark.",
+        "",
+        "One feed per match, so both players are always quoted the same price —",
+        "an asymmetric feed would be an exploit on its own.",
+        "",
+        "Permissionless. The obvious alternative, letting only the creator post,",
+        "is worse: it hands one player the power to time the mark against the",
+        "other. With anyone able to post, the defence is the rate limit rather",
+        "than the identity — at most MAX_PUSH_BPS per MIN_PUSH_INTERVAL, so a",
+        "player who wants the mark somewhere else has to walk it there in",
+        "public, a step at a time, while their opponent watches and trades.",
+        "",
+        "This is a stand-in for an oracle, and it is the one place where the",
+        "round trusts something off-chain. For a major, the replacement is a",
+        "Pyth price update, which is signed and needs no rate limit."
       ],
       "discriminator": [
         113,
@@ -1304,7 +1319,38 @@ export const FOGDUEL_IDL = {
       "accounts": [
         {
           "name": "authority",
+          "docs": [
+            "Anyone. Deliberately not checked against `price_feed.authority`: see",
+            "`push_price`. Signing is only so somebody pays the fee."
+          ],
           "signer": true
+        },
+        {
+          "name": "match_account",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  116,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "match_account.creator",
+                "account": "Match"
+              },
+              {
+                "kind": "account",
+                "path": "match_account.match_id",
+                "account": "Match"
+              }
+            ]
+          }
         },
         {
           "name": "price_feed",
@@ -1322,8 +1368,7 @@ export const FOGDUEL_IDL = {
               },
               {
                 "kind": "account",
-                "path": "price_feed.match_key",
-                "account": "PriceFeed"
+                "path": "match_account"
               }
             ]
           }
@@ -1819,6 +1864,16 @@ export const FOGDUEL_IDL = {
       "code": 6014,
       "name": "VaultUnderfunded",
       "msg": "Vault has insufficient lamports"
+    },
+    {
+      "code": 6015,
+      "name": "PriceTooSoon",
+      "msg": "Price posted too soon after the last one"
+    },
+    {
+      "code": 6016,
+      "name": "PriceJump",
+      "msg": "Price moved further in one push than the rate limit allows"
     }
   ],
   "types": [

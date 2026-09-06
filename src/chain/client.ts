@@ -21,11 +21,14 @@ import {
 import { FOGDUEL_IDL as idl } from './idl';
 import { ACTIVE_CLUSTER, type ClusterConfig } from './config';
 import { feedPda, matchPda, positionPda, statsPda, tapePda, treasuryPda, vaultPda } from './pdas';
+import { authenticate, type MessageSigner } from './erAuth';
 
 const COMMITMENT: Commitment = 'confirmed';
 
 /** Prices and base quantities are integers scaled by 1e6 on-chain. */
 export const PRICE_SCALE = 1_000_000;
+/** Mirrors `MAX_PUSH_BPS` in state.rs: the per-push cap on the mark. */
+export const MAX_PUSH_BPS = 500;
 export const BASE_SCALE = 1_000_000;
 export const BPS = 10_000;
 
@@ -45,6 +48,12 @@ export interface MatchState {
   joiner: PublicKey | null;
   /** The market this duel is fought over. */
   mint: PublicKey;
+  /** Where the mark comes from: a pump.fun curve, or an aggregator. */
+  marketType: MarketKind;
+  /** Ticker, as written on chain at create time. */
+  symbol: string;
+  /** Full market name, as written on chain at create time. */
+  name: string;
   matchId: number;
   startTs: number;
   duration: number;
@@ -95,18 +104,60 @@ type AnyProgram = Program<Idl> & { account: Record<string, any>; methods: Record
 
 const sideArg = (side: Side) => (side === 'buy' ? { buy: {} } : { sell: {} });
 
+/**
+ * The websocket URL for an RPC endpoint, carrying the auth token.
+ *
+ * web3.js derives ws://host:port+1 on its own, which is right, but it has
+ * nowhere to put a token — so the URL is built here.
+ */
+const wsUrlFor = (httpUrl: string, token: string): string => {
+  const u = new URL(httpUrl);
+  u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
+  if (u.port) u.port = String(Number(u.port) + 1);
+  u.searchParams.set('token', token);
+  return u.toString();
+};
+
 const decodeStatus = (raw: Record<string, unknown>): MatchState['status'] =>
   (Object.keys(raw)[0] as MatchState['status']) ?? 'open';
+
+const decodeMarketType = (raw: Record<string, unknown>): MarketKind =>
+  Object.keys(raw ?? {})[0] === 'major' ? 'major' : 'meme';
+
+/**
+ * A fixed-width on-chain string back to a JS one.
+ *
+ * The field is zero-padded, and trailing NULs would otherwise render as boxes
+ * in a pixel font.
+ */
+const decodeFixed = (bytes: number[] | Uint8Array | undefined): string => {
+  if (!bytes) return '';
+  const arr = Array.from(bytes);
+  const end = arr.indexOf(0);
+  return new TextDecoder().decode(new Uint8Array(end === -1 ? arr : arr.slice(0, end)));
+};
 
 export class FogduelClient {
   readonly cluster: ClusterConfig;
   readonly l1: Connection;
-  readonly er: Connection;
+  er: Connection;
+  private readonly wallet: Wallet;
+  private readonly signer?: MessageSigner;
   private readonly l1Program: AnyProgram;
-  private readonly erProgram: AnyProgram;
+  private erProgram: AnyProgram;
+  private erToken: string | null = null;
+  private pendingAuth: Promise<void> | null = null;
 
-  constructor(wallet: Wallet, cluster: ClusterConfig = ACTIVE_CLUSTER) {
+  /**
+   * @param signer optional message signer used to unlock reads on the rollup.
+   *   Without it the client still trades — signing in is only needed to *read*
+   *   a sealed position, and the front door refuses everyone otherwise,
+   *   including the position's own owner.
+   */
+  constructor(wallet: Wallet, cluster: ClusterConfig = ACTIVE_CLUSTER, signer?: MessageSigner) {
     this.cluster = cluster;
+    this.wallet = wallet;
+    this.signer = signer;
     this.l1 = new Connection(cluster.l1, COMMITMENT);
     this.er = new Connection(cluster.er, COMMITMENT);
 
@@ -114,6 +165,56 @@ export class FogduelClient {
     const erProvider = new AnchorProvider(this.er, wallet, { commitment: COMMITMENT });
     this.l1Program = new Program(idl as Idl, l1Provider) as AnyProgram;
     this.erProgram = new Program(idl as Idl, erProvider) as AnyProgram;
+  }
+
+  /**
+   * The rollup program, with a token if one can be had.
+   *
+   * Every path to the rollup goes through here. The front door gates writes as
+   * well as reads, and a send that gets through but cannot confirm looks
+   * exactly like a slow rollup — so signing in is not something a caller
+   * should have to remember.
+   */
+  private async erProgramAuthed(): Promise<AnyProgram> {
+    await this.signInToEr().catch(() => undefined);
+    return this.erProgram;
+  }
+
+  /** True once this client holds a token for the rollup's front door. */
+  get authenticated(): boolean {
+    return this.erToken !== null;
+  }
+
+  /**
+   * Sign in to the rollup so this wallet's own position becomes readable.
+   *
+   * Costs one wallet signature and nothing on-chain. Concurrent callers share
+   * one attempt, because every poll tick would otherwise pop a signing prompt.
+   */
+  async signInToEr(): Promise<void> {
+    if (this.erToken || !this.signer) return;
+    if (this.pendingAuth) return this.pendingAuth;
+
+    this.pendingAuth = (async () => {
+      const token = await authenticate(this.cluster.er, this.signer!);
+      this.erToken = token;
+      this.er = new Connection(this.cluster.er, {
+        commitment: COMMITMENT,
+        httpHeaders: { Authorization: `Bearer ${token}` },
+        // The socket cannot carry a header, so it takes the token as a query
+        // param instead. Without this, sending works and *confirming* hangs —
+        // which looks exactly like a slow rollup.
+        wsEndpoint: wsUrlFor(this.cluster.er, token),
+      });
+      const provider = new AnchorProvider(this.er, this.wallet, { commitment: COMMITMENT });
+      this.erProgram = new Program(idl as Idl, provider) as AnyProgram;
+    })();
+
+    try {
+      await this.pendingAuth;
+    } finally {
+      this.pendingAuth = null;
+    }
   }
 
   get programId(): PublicKey {
@@ -296,7 +397,7 @@ export class FogduelClient {
    * Called after sealAndDelegateMatch when `cluster.tee` is true.
    */
   async initPositionPrivacy(match: PublicKey, owner: PublicKey, payer: PublicKey): Promise<void> {
-    await this.erProgram.methods
+    await (await this.erProgramAuthed()).methods
       .initPositionPrivacy(owner)
       .accounts({
         payer,
@@ -338,7 +439,7 @@ export class FogduelClient {
    *   sell — `amount` is base sold, scaled by BASE_SCALE
    */
   async applyFill(match: PublicKey, player: PublicKey, side: Side, amount: number): Promise<string> {
-    return this.erProgram.methods
+    return (await this.erProgramAuthed()).methods
       .applyFill(sideArg(side), new BN(Math.round(amount)))
       .accounts({
         player,
@@ -349,15 +450,30 @@ export class FogduelClient {
       .rpc();
   }
 
-  async commitAndUndelegate(match: PublicKey, payer: PublicKey, creator: PublicKey, joiner: PublicKey): Promise<void> {
-    await this.erProgram.methods
-      .commitAndUndelegatePositions()
-      .accounts({
-        payer,
-        positionA: positionPda(match, creator),
-        positionB: positionPda(match, joiner),
-      })
-      .rpc();
+  /**
+   * Bring both positions home from the rollup.
+   *
+   * One transaction each: a Position is 543 bytes and two will not fit in one
+   * transaction, which pushes the rollup's committor onto a chunked buffer
+   * path. Sequential rather than parallel, because both commits are scheduled
+   * against the same payer and the rollup processes them in order anyway.
+   */
+  async commitAndUndelegate(
+    match: PublicKey,
+    payer: PublicKey,
+    creator: PublicKey,
+    joiner: PublicKey
+  ): Promise<string[]> {
+    const sigs: string[] = [];
+    for (const owner of [creator, joiner]) {
+      sigs.push(
+        await (await this.erProgramAuthed()).methods
+          .commitAndUndelegatePosition()
+          .accounts({ payer, position: positionPda(match, owner) })
+          .rpc()
+      );
+    }
+    return sigs;
   }
 
   /* ------------------------------ settlement ----------------------------- */
@@ -420,13 +536,83 @@ export class FogduelClient {
       .sort((a: PlayerRecord, b: PlayerRecord) => b.taken - a.taken);
   }
 
-  /** Post an oracle mark. `px` is lamports per traded unit — see units.ts. */
+  /**
+   * Post a mark. `px` is the program's scale — see units.ts.
+   *
+   * Permissionless on-chain, but rate limited: at most 5% per second. A caller
+   * chasing a fast move should walk the mark rather than jump it, which is
+   * what `crankPrice` does.
+   */
   async pushPrice(match: PublicKey, authority: PublicKey, px: number, onEr = false): Promise<void> {
-    const program = onEr ? this.erProgram : this.l1Program;
+    const program = onEr ? await this.erProgramAuthed() : this.l1Program;
     await program.methods
       .pushPrice(new BN(Math.round(px)))
-      .accounts({ authority, priceFeed: feedPda(match) })
+      .accounts({ authority, matchAccount: match, priceFeed: feedPda(match) })
       .rpc();
+  }
+
+  /**
+   * Move the mark towards `targetPx`, as far as one push is allowed to.
+   *
+   * The program caps a single push at MAX_PUSH_BPS, so a client that posted a
+   * real market price after a sharp move would simply be rejected and the mark
+   * would stop tracking. Clamping here means the mark keeps following, one
+   * step per call, instead of getting stuck.
+   *
+   * Returns the mark that was actually posted, or null if it was already there.
+   */
+  async crankPrice(
+    match: PublicKey,
+    authority: PublicKey,
+    targetPx: number,
+    onEr = false
+  ): Promise<number | null> {
+    const current = await this.fetchPrice(match, onEr);
+    if (current <= 0) return null;
+
+    const maxStep = (current * MAX_PUSH_BPS) / BPS;
+    const clamped = Math.round(
+      Math.max(current - maxStep, Math.min(current + maxStep, targetPx))
+    );
+    if (clamped === current || clamped <= 0) return null;
+
+    try {
+      await this.pushPrice(match, authority, clamped, onEr);
+    } catch (e) {
+      // Both players crank the same feed, so losing the race is the normal
+      // case, not a fault: whoever got there first already posted this mark.
+      if (String(e).includes('PriceTooSoon')) return null;
+      throw e;
+    }
+    return clamped;
+  }
+
+  /**
+   * Walk the mark to `targetPx`, respecting the on-chain rate limit.
+   *
+   * For scripts and tests that want a specific mark rather than a live feed.
+   * The product does not use this — a real round follows the market, one
+   * clamped step at a time, and never teleports it.
+   */
+  async walkPriceTo(
+    match: PublicKey,
+    authority: PublicKey,
+    targetPx: number,
+    onEr = false,
+    maxSteps = 12
+  ): Promise<number> {
+    let last = await this.fetchPrice(match, onEr);
+    for (let i = 0; i < maxSteps; i += 1) {
+      if (Math.abs(last - targetPx) <= Math.max(1, targetPx / 10_000)) break;
+      // MIN_PUSH_INTERVAL is one second against the cluster clock, and the
+      // feed was last written when the match was created — so wait before the
+      // first post too, not only between posts.
+      await new Promise((r) => setTimeout(r, 1100));
+      const posted = await this.crankPrice(match, authority, targetPx, onEr);
+      if (posted === null) continue;
+      last = posted;
+    }
+    return last;
   }
 
   /* -------------------------------- reads -------------------------------- */
@@ -439,6 +625,9 @@ export class FogduelClient {
       creator: raw.creator,
       joiner: raw.joiner ?? null,
       mint: raw.mint,
+      marketType: decodeMarketType(raw.marketType),
+      symbol: decodeFixed(raw.symbol),
+      name: decodeFixed(raw.name),
       matchId: raw.matchId.toNumber(),
       startTs: raw.startTs.toNumber(),
       duration: raw.duration.toNumber(),
@@ -460,6 +649,9 @@ export class FogduelClient {
         creator: m.account.creator,
         joiner: m.account.joiner ?? null,
         mint: m.account.mint,
+        marketType: decodeMarketType(m.account.marketType),
+        symbol: decodeFixed(m.account.symbol),
+        name: decodeFixed(m.account.name),
         matchId: m.account.matchId.toNumber(),
         startTs: m.account.startTs.toNumber(),
         duration: m.account.duration.toNumber(),
@@ -477,8 +669,15 @@ export class FogduelClient {
    * Read a position. During a live round the account lives on the ER, so read
    * it there; afterwards it has been committed back and L1 is authoritative.
    */
+  /**
+   * A position, from the rollup or from L1.
+   *
+   * A rollup read goes through the front door, which refuses a sealed position
+   * to anyone without a token — so sign in first if we can. Passing `owner` as
+   * somebody else will simply be refused, which is the point.
+   */
   async fetchPosition(match: PublicKey, owner: PublicKey, fromEr: boolean): Promise<PositionState | null> {
-    const program = fromEr ? this.erProgram : this.l1Program;
+    const program = fromEr ? await this.erProgramAuthed() : this.l1Program;
     const raw = await program.account.position.fetchNullable(positionPda(match, owner));
     if (!raw) return null;
     return {
@@ -505,7 +704,7 @@ export class FogduelClient {
 
   /** The posted oracle mark as a `px`: lamports per traded unit. */
   async fetchPrice(match: PublicKey, fromEr: boolean): Promise<number> {
-    const program = fromEr ? this.erProgram : this.l1Program;
+    const program = fromEr ? await this.erProgramAuthed() : this.l1Program;
     const raw = await program.account.priceFeed.fetchNullable(feedPda(match));
     return raw ? raw.px.toNumber() : 0;
   }

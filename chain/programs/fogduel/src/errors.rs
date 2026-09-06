@@ -32,4 +32,8 @@ pub enum FogError {
     MathOverflow,
     #[msg("Vault has insufficient lamports")]
     VaultUnderfunded,
+    #[msg("Price posted too soon after the last one")]
+    PriceTooSoon,
+    #[msg("Price moved further in one push than the rate limit allows")]
+    PriceJump,
 }

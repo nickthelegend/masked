@@ -3,6 +3,13 @@ import { Keypair, type Transaction } from '@solana/web3.js';
 import { readFileSync } from 'node:fs';
 import { FogduelClient } from '../src/chain/client';
 import { CLUSTERS } from '../src/chain/config';
+import nacl from 'tweetnacl';
+
+/** A keypair, presented as something that can sign a login challenge. */
+const asSigner = (kp: Keypair) => ({
+  publicKey: kp.publicKey,
+  signMessage: async (m: Uint8Array) => nacl.sign.detached(m, kp.secretKey),
+});
 
 const wrap = (kp: Keypair) => ({
   publicKey: kp.publicKey, payer: kp,
@@ -12,7 +19,7 @@ const wrap = (kp: Keypair) => ({
 
 async function main() {
   const kp = Keypair.fromSecretKey(new Uint8Array(JSON.parse(readFileSync('.keys/player-c.json','utf8'))));
-  const client = new FogduelClient(wrap(kp) as never, CLUSTERS.local);
+  const client = new FogduelClient(wrap(kp) as never, CLUSTERS.local, asSigner(kp));
   const open = await client.fetchOpenMatches();
   const mine = open.filter((m) => m.creator.equals(kp.publicKey));
   for (const m of mine) {

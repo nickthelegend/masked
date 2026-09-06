@@ -19,10 +19,17 @@ import { DEMO_MINT } from '../src/chain/market';
 import { CLUSTERS, DELEGATION_PROGRAM_ID } from '../src/chain/config';
 import { positionPda } from '../src/chain/pdas';
 import { pxFromSolPerToken } from '../src/chain/units';
+import nacl from 'tweetnacl';
 
 const cluster = process.env.EXPO_PUBLIC_CLUSTER === 'devnet' ? CLUSTERS.devnet : CLUSTERS.local;
 
 const load = (p: string) => Keypair.fromSecretKey(new Uint8Array(JSON.parse(readFileSync(p, 'utf8'))));
+/** A keypair, presented as something that can sign a login challenge. */
+const asSigner = (kp: Keypair) => ({
+  publicKey: kp.publicKey,
+  signMessage: async (m: Uint8Array) => nacl.sign.detached(m, kp.secretKey),
+});
+
 const wrap = (kp: Keypair) => ({
   publicKey: kp.publicKey,
   payer: kp,
@@ -38,16 +45,21 @@ async function main() {
   const creator = load(`${process.env.HOME}/.config/solana/id.json`);
   const opponent = load('.keys/player-b.json');
 
-  const me = new FogduelClient(wrap(creator) as never, cluster);
-  const them = new FogduelClient(wrap(opponent) as never, cluster);
-  const rawEr = new Connection(cluster.er, 'confirmed');
+  const me = new FogduelClient(wrap(creator) as never, cluster, asSigner(creator));
+  const them = new FogduelClient(wrap(opponent) as never, cluster, asSigner(opponent));
+  // Two doors into the same rollup: the public front, which reads the ACL,
+  // and the validator's own port behind it, which answers anybody. The
+  // difference between them is the proof.
+  const front = new Connection(cluster.er, 'confirmed');
+  const behindTheDoor = cluster.erRaw ? new Connection(cluster.erRaw, 'confirmed') : null;
   const rawL1 = new Connection(cluster.l1, 'confirmed');
 
   rule();
   line(`FOGDUEL — PRIVACY PROOF   [cluster: ${cluster.name}, TEE: ${yes(cluster.tee)}]`);
   rule();
-  line(`  L1 : ${cluster.l1}`);
-  line(`  ER : ${cluster.er}`);
+  line(`  L1        : ${cluster.l1}`);
+  line(`  ER (front): ${cluster.er}`);
+  if (cluster.erRaw) line(`  ER (raw)  : ${cluster.erRaw}   <- the validator behind the door`);
   line(`  you      : ${creator.publicKey.toBase58()}`);
   line(`  opponent : ${opponent.publicKey.toBase58()}`);
   line();
@@ -117,57 +129,69 @@ async function main() {
   line(`  you reading YOUR OWN position .......... ${yes(!!myOwn)}` +
        (myOwn ? `  (baseQty=${myOwn.baseQty}, fills=${myOwn.fillCount})` : ''));
 
-  let opponentReadable = false;
-  let opponentBytes = 0;
-  try {
-    const raw = await rawEr.getAccountInfo(theirPos);
-    opponentReadable = !!raw;
-    opponentBytes = raw?.data.length ?? 0;
-  } catch {
-    opponentReadable = false;
-  }
-  line(`  you reading THEIR position ............. ${yes(opponentReadable)}` +
-       (opponentReadable ? `  (${opponentBytes} bytes)` : '  <- REFUSED'));
+  // The opponent, read with your own signed token. This is the read the whole
+  // product exists to refuse.
+  const theirsToMe = await me.fetchPosition(match, opponent.publicKey, true);
+  line(`  you reading THEIR position ............. ${yes(!!theirsToMe)}` +
+       (theirsToMe ? `  (${theirsToMe.fillCount} fills LEAKED)` : '  <- REFUSED'));
 
-  let anonReadable = false;
-  try {
-    const anon = new Connection(cluster.er, 'confirmed');
-    anonReadable = !!(await anon.getAccountInfo(theirPos));
-  } catch {
-    anonReadable = false;
+  // And with no token at all.
+  const anon = await front.getAccountInfo(theirPos).catch(() => null);
+  line(`  unauthenticated RPC reading it ........ ${yes(!!anon)}` +
+       (anon ? `  (${anon.data.length} bytes LEAKED)` : '  <- REFUSED'));
+
+  if (behindTheDoor) {
+    const raw = await behindTheDoor.getAccountInfo(theirPos).catch(() => null);
+    line(`  the validator behind the door ......... ${yes(!!raw)}` +
+         (raw ? `  (${raw.data.length} bytes)  <- as expected: not the door` : ''));
   }
-  line(`  unauthenticated RPC reading it ........ ${yes(anonReadable)}` +
-       (anonReadable ? '' : '  <- REFUSED'));
   line();
 
-  if (cluster.tee) {
-    line('  VERDICT: reads are gated by the TEE. The fog is enforced by the');
-    line('           rollup, not by the client.');
-  } else {
-    line('  VERDICT: the ACL exists on-chain and is delegated, but this is a');
-    line('           LOCAL (non-TEE) validator, which has no ingress gate — so');
-    line('           reads are NOT blocked here. Enforcement requires a TEE');
-    line('           validator (devnet-tee.magicblock.app).');
+  if (theirsToMe || anon) {
+    line('  VERDICT: a sealed position was readable through the public endpoint.');
+    line('           The privacy claim does not hold. Do not demo this.');
+    process.exit(1);
+  }
+
+  line('  VERDICT: the opponent is unreadable through the endpoint the app');
+  line('           uses, with or without a signed token, while your own');
+  line('           position reads fine. The gate is the on-chain ACL — proven');
+  line('           against a no-permission control in `npm run check:gate`.');
+  if (!cluster.tee) {
     line();
-    line('           The client refuses to read the opponent anyway — see');
-    line('           assertFogIntact() in src/chain/fog.ts — so the app never');
-    line('           displays what it should not know. That is a client-side');
-    line('           guarantee, and it is NOT a substitute for the TEE.');
+    line('           The gate here is a process we run, so a judge has our word');
+    line('           that it is the one we say it is. A TEE validator replaces');
+    line('           that word with an attestation. Everything else — the ACL,');
+    line('           the delegation, the refusal above — is already real.');
   }
   line();
 
   line('[5] the market moves, then the buzzer');
   // Move the mark so the settlement produces a real result rather than a
   // flat 0.00% on both sides.
-  await me.pushPrice(match, creator.publicKey, pxFromSolPerToken(0.1215));
-  line('    mark 100.00 -> 121.50');
+  await me.walkPriceTo(match, creator.publicKey, pxFromSolPerToken(0.1215));
+  line('    mark walked 0.1000 -> 0.1215 SOL, 5% a second, in public');
   await new Promise((r) => setTimeout(r, 16_000));
-  await me.commitAndUndelegate(match, creator.publicKey, creator.publicKey, opponent.publicKey);
-  for (let i = 0; i < 40; i++) {
-    const info = await rawL1.getAccountInfo(myPos);
-    if (info?.owner.equals(me.programId)) break;
+  const commitSigs = await me.commitAndUndelegate(match, creator.publicKey, creator.publicKey, opponent.publicKey);
+  line(`    ${commitSigs.length} commit txs on the rollup, one per position`);
+  // Both positions have to come home, not just yours: settle_match touches
+  // each of them and Anchor checks the owner of every account it is handed.
+  let landed = false;
+  for (let i = 0; i < 60; i++) {
+    const owners = await Promise.all(
+      [myPos, theirPos].map(async (k) => (await rawL1.getAccountInfo(k))?.owner)
+    );
+    if (owners.every((o) => o?.equals(me.programId))) {
+      landed = true;
+      break;
+    }
     await new Promise((r) => setTimeout(r, 1000));
   }
+  if (!landed) {
+    line('    undelegation did not land within 60s — the rollup did not commit.');
+    process.exit(1);
+  }
+  line('    both positions committed back to L1');
   await me.requestSettle(match, creator.publicKey);
   await me.settleMatch(match, creator.publicKey, creator.publicKey, opponent.publicKey);
   line();

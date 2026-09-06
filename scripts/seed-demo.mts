@@ -14,9 +14,16 @@ import { FogduelClient } from '../src/chain/client';
 import { DEMO_MINT } from '../src/chain/market';
 import { CLUSTERS } from '../src/chain/config';
 import { pxFromSolPerToken } from '../src/chain/units';
+import nacl from 'tweetnacl';
 
 const COUNT = Number(process.argv[2] ?? 5);
 const cluster = process.env.EXPO_PUBLIC_CLUSTER === 'devnet' ? CLUSTERS.devnet : CLUSTERS.local;
+
+/** A keypair, presented as something that can sign a login challenge. */
+const asSigner = (kp: Keypair) => ({
+  publicKey: kp.publicKey,
+  signMessage: async (m: Uint8Array) => nacl.sign.detached(m, kp.secretKey),
+});
 
 const wrap = (kp: Keypair) => ({
   publicKey: kp.publicKey,
@@ -39,7 +46,7 @@ async function main() {
   const house = Keypair.fromSecretKey(
     new Uint8Array(JSON.parse(readFileSync(`${process.env.HOME}/.config/solana/id.json`, 'utf8')))
   );
-  const houseClient = new FogduelClient(wrap(house) as never, cluster);
+  const houseClient = new FogduelClient(wrap(house) as never, cluster, asSigner(house));
   await houseClient.ensureTreasury(house.publicKey);
 
   const players = ROSTER.map((n) => loadOrCreate(`.keys/${n}.json`));
@@ -59,7 +66,7 @@ async function main() {
 
   for (let i = 0; i < COUNT; i += 1) {
     const opponent = players[i % players.length];
-    const oppClient = new FogduelClient(wrap(opponent) as never, cluster);
+    const oppClient = new FogduelClient(wrap(opponent) as never, cluster, asSigner(opponent));
     const entry = Math.round((stakes[i % stakes.length]) * LAMPORTS_PER_SOL);
     const matchId = Math.floor(Date.now() / 1000) * 1000 + 900 + i;
 
@@ -80,7 +87,7 @@ async function main() {
     await houseClient.applyFill(match, house.publicKey, 'buy', Math.floor(entry * 0.45));
     await oppClient.applyFill(match, opponent.publicKey, 'buy', Math.floor(entry * (0.2 + (i % 3) * 0.1)));
 
-    await houseClient.pushPrice(
+    await houseClient.walkPriceTo(
       match, house.publicKey, pxFromSolPerToken(0.1 * moves[i % moves.length]),
     );
     await new Promise((r) => setTimeout(r, 31_000));

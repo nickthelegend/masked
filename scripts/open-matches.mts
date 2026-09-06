@@ -5,6 +5,13 @@ import { FogduelClient } from '../src/chain/client';
 import { DEMO_MINT } from '../src/chain/market';
 import { CLUSTERS } from '../src/chain/config';
 import { pxFromSolPerToken } from '../src/chain/units';
+import nacl from 'tweetnacl';
+
+/** A keypair, presented as something that can sign a login challenge. */
+const asSigner = (kp: Keypair) => ({
+  publicKey: kp.publicKey,
+  signMessage: async (m: Uint8Array) => nacl.sign.detached(m, kp.secretKey),
+});
 
 const wrap = (kp: Keypair) => ({
   publicKey: kp.publicKey,
@@ -18,7 +25,7 @@ async function main() {
   const kp = Keypair.fromSecretKey(
     new Uint8Array(JSON.parse(readFileSync('.keys/player-c.json', 'utf8')))
   );
-  const client = new FogduelClient(wrap(kp) as never, CLUSTERS.local);
+  const client = new FogduelClient(wrap(kp) as never, CLUSTERS.local, asSigner(kp));
 
   const bal = await client.l1.getBalance(kp.publicKey);
   if (bal < 2 * LAMPORTS_PER_SOL) {

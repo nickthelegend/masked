@@ -19,6 +19,12 @@
 # arguments to the base validator only — and the public front needs CORS of its
 # own, or a browser cannot reach it. So the three are started here directly.
 #
+# All three keep their state under one directory, so resetting the base chain
+# and leaving the rollup's ledger behind is not possible. That mistake is
+# quiet and very confusing: the rollup keeps running against a chain that no
+# longer exists, accepts a commit, schedules it, and then fails to land it with
+# `ProgramAccountNotFound` from a slot tens of thousands ahead of the base.
+#
 set -euo pipefail
 
 BASE_PORT="${MB_BASE_PORT:-8999}"
@@ -30,6 +36,16 @@ DIR="${MASKED_LEDGER_DIR:-${TMPDIR:-/tmp}/masked-localnet}"
 mkdir -p "$DIR"
 
 up() { lsof -ti:"$1" >/dev/null 2>&1; }
+
+# MASKED_RESET=1 starts from genesis on every layer at once.
+if [ "${MASKED_RESET:-}" = "1" ]; then
+  echo "resetting $DIR"
+  for p in "$BASE_PORT" "$ER_PORT" "$PUBLIC_PORT"; do
+    lsof -ti:"$p" 2>/dev/null | xargs kill -9 2>/dev/null || true
+  done
+  sleep 2
+  rm -rf "$DIR/ledger" "$DIR/er"
+fi
 
 wait_rpc() {           # wait_rpc <port> <name>
   for _ in $(seq 1 120); do
@@ -66,6 +82,7 @@ else
   #   it exits immediately. This stack is headless.
   ephemeral-validator \
     --no-tui \
+    --storage "$DIR/er" \
     --listen "$HOST:$ER_PORT" \
     --remotes "http://$HOST:$BASE_PORT" \
     --remotes "ws://$HOST:$((BASE_PORT + 1))" \

@@ -56,8 +56,8 @@ async function read(c: Connection, k: PublicKey): Promise<number | null> {
 async function main() {
   const creator = load(`${process.env.HOME}/.config/solana/id.json`);
   const opponent = load('.keys/player-b.json');
-  const me = new FogduelClient(wrap(creator) as never, cluster);
-  const them = new FogduelClient(wrap(opponent) as never, cluster);
+  const me = new FogduelClient(wrap(creator) as never, cluster, asSigner(creator));
+  const them = new FogduelClient(wrap(opponent) as never, cluster, asSigner(opponent));
   const raw = new Connection(cluster.erRaw!, 'confirmed');
   const front = new Connection(cluster.er, 'confirmed');
   const l1 = new Connection(cluster.l1, 'confirmed');
