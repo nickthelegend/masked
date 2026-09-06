@@ -15,6 +15,14 @@
 
 use anchor_lang::prelude::*;
 use anchor_lang::system_program;
+use ephemeral_rollups_sdk::anchor::{commit, delegate, ephemeral};
+use ephemeral_rollups_sdk::consts::{EPHEMERAL_VAULT_ID, PERMISSION_PROGRAM_ID};
+use ephemeral_rollups_sdk::cpi::DelegateConfig;
+use ephemeral_rollups_sdk::ephem::commit_and_undelegate_accounts;
+use ephemeral_rollups_sdk::access_control::instructions::CreateEphemeralPermissionCpi;
+use ephemeral_rollups_sdk::access_control::structs::{
+    EphemeralMembersArgs, Member, AUTHORITY_FLAG, TX_BALANCES_FLAG, TX_LOGS_FLAG, TX_MESSAGE_FLAG,
+};
 
 pub mod errors;
 pub mod state;
@@ -35,6 +43,9 @@ pub const POSITION_PREFUND_LAMPORTS: u64 = 5_000_000;
 pub const MIN_DURATION: i64 = 10;
 pub const MAX_DURATION: i64 = 3600;
 
+/// `#[ephemeral]` wires in the magic-program plumbing every delegated program
+/// needs. It must sit above `#[program]`.
+#[ephemeral]
 #[program]
 pub mod fogduel {
     use super::*;
@@ -375,6 +386,94 @@ pub mod fogduel {
         ctx.accounts.treasury.bump = ctx.bumps.treasury;
         Ok(())
     }
+
+    /* ---------------------- MagicBlock: ER lifecycle ---------------------- */
+
+    /// Delegate one player's `Position` to an Ephemeral Rollup validator.
+    ///
+    /// After this lands the account is owned by the delegation program on L1
+    /// and is only writable on the ER. Pass the TEE validator identity to get
+    /// a *private* rollup — a plain ER validator gives speed but no privacy.
+    pub fn delegate_position_to_er(
+        ctx: Context<DelegatePositionToEr>,
+        owner: Pubkey,
+        validator: Option<Pubkey>,
+        commit_frequency_ms: u32,
+    ) -> Result<()> {
+        let match_key = ctx.accounts.match_account.key();
+        ctx.accounts.delegate_position(
+            &ctx.accounts.payer,
+            &[b"position", match_key.as_ref(), owner.as_ref()],
+            DelegateConfig {
+                commit_frequency_ms,
+                validator,
+            },
+        )?;
+        msg!("position delegated owner={} validator={:?}", owner, validator);
+        Ok(())
+    }
+
+    /* -------------------- MagicBlock: PER (the product) -------------------- */
+
+    /// Mark a delegated `Position` private on the ER.
+    ///
+    /// This is the instruction the whole product rests on. It creates an
+    /// ephemeral permission with `is_private: true` and exactly one member —
+    /// the position's owner. From this point the TEE blocks any read of this
+    /// account at ingress for every other key, including the opponent's and
+    /// including an unauthenticated public RPC.
+    ///
+    /// The flags matter as much as the membership: withholding the account but
+    /// leaking transaction logs or balances would expose the same fills by a
+    /// side channel, so logs, messages and balances are all gated to the owner.
+    ///
+    /// Idempotent — the permission program skips creation if one already
+    /// exists, so callers may retry freely.
+    ///
+    /// Runs on the ER, not L1.
+    pub fn init_position_privacy(ctx: Context<InitPositionPrivacy>, owner: Pubkey) -> Result<()> {
+        let match_key = ctx.accounts.match_account.key();
+        let bump = ctx.accounts.position.bump;
+        let seeds: &[&[u8]] = &[b"position", match_key.as_ref(), owner.as_ref(), &[bump]];
+
+        CreateEphemeralPermissionCpi {
+            permissioned_account: ctx.accounts.position.to_account_info(),
+            permission: ctx.accounts.permission.to_account_info(),
+            payer: ctx.accounts.payer.to_account_info(),
+            vault: ctx.accounts.ephemeral_vault.to_account_info(),
+            magic_program: ctx.accounts.magic_program.to_account_info(),
+            permission_program: ctx.accounts.permission_program.to_account_info(),
+            args: EphemeralMembersArgs {
+                is_private: true,
+                members: vec![Member {
+                    flags: AUTHORITY_FLAG | TX_LOGS_FLAG | TX_MESSAGE_FLAG | TX_BALANCES_FLAG,
+                    pubkey: owner,
+                }],
+            },
+        }
+        .invoke_signed(&[seeds])?;
+
+        msg!("position sealed private owner={}", owner);
+        Ok(())
+    }
+
+    /// Commit both positions back to L1 and release the delegation.
+    ///
+    /// Called on the ER once the clock expires. After this lands the positions
+    /// are readable on L1 again and `settle_match` can run.
+    pub fn commit_and_undelegate_positions(ctx: Context<CommitAndUndelegatePositions>) -> Result<()> {
+        commit_and_undelegate_accounts(
+            &ctx.accounts.payer.to_account_info(),
+            vec![
+                &ctx.accounts.position_a.to_account_info(),
+                &ctx.accounts.position_b.to_account_info(),
+            ],
+            &ctx.accounts.magic_context,
+            &ctx.accounts.magic_program,
+            None,
+        )?;
+        Ok(())
+    }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -559,4 +658,69 @@ pub struct InitTreasury<'info> {
     pub treasury: Account<'info, Treasury>,
 
     pub system_program: Program<'info, System>,
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                          MagicBlock ER / PER contexts                      */
+/* -------------------------------------------------------------------------- */
+
+/// `#[delegate]` expands the `del`-marked field into the buffer, delegation
+/// record and delegation metadata accounts, and generates `delegate_position`.
+#[delegate]
+#[derive(Accounts)]
+#[instruction(owner: Pubkey)]
+pub struct DelegatePositionToEr<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    #[account(seeds = [b"match", match_account.creator.as_ref(), &match_account.match_id.to_le_bytes()], bump = match_account.bump)]
+    pub match_account: Account<'info, Match>,
+
+    /// CHECK: seeds are asserted here; ownership moves to the delegation
+    /// program, so this cannot stay a typed `Account`.
+    #[account(mut, del, seeds = [b"position", match_account.key().as_ref(), owner.as_ref()], bump)]
+    pub position: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+#[instruction(owner: Pubkey)]
+pub struct InitPositionPrivacy<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    #[account(seeds = [b"match", match_account.creator.as_ref(), &match_account.match_id.to_le_bytes()], bump = match_account.bump)]
+    pub match_account: Account<'info, Match>,
+
+    #[account(mut, seeds = [b"position", match_account.key().as_ref(), owner.as_ref()], bump = position.bump)]
+    pub position: Account<'info, Position>,
+
+    /// CHECK: the permission PDA, derived and validated by the permission program.
+    #[account(mut)]
+    pub permission: UncheckedAccount<'info>,
+
+    /// CHECK: collects ephemeral-permission rent; fixed address from the SDK.
+    #[account(mut, address = EPHEMERAL_VAULT_ID)]
+    pub ephemeral_vault: UncheckedAccount<'info>,
+
+    /// CHECK: the magic program.
+    pub magic_program: Program<'info, ephemeral_rollups_sdk::anchor::MagicProgram>,
+
+    /// CHECK: the ACL program; fixed address from the SDK.
+    #[account(address = PERMISSION_PROGRAM_ID)]
+    pub permission_program: UncheckedAccount<'info>,
+}
+
+/// `#[commit]` injects `magic_context` and `magic_program`.
+#[commit]
+#[derive(Accounts)]
+pub struct CommitAndUndelegatePositions<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    #[account(mut)]
+    pub position_a: Account<'info, Position>,
+
+    #[account(mut)]
+    pub position_b: Account<'info, Position>,
 }
