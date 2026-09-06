@@ -16,3 +16,8 @@ export { default as ProgressBar, type ProgressBarProps } from './ProgressBar';
 export { default as Divider, type DividerProps } from './Divider';
 export { default as ScanlineOverlay, type ScanlineOverlayProps } from './ScanlineOverlay';
 export { default as FogOverlay, type FogOverlayProps } from './FogOverlay';
+
+/* composites */
+export { default as MaskAvatar, type MaskAvatarProps } from './MaskAvatar';
+export { default as StatTile, type StatTileProps } from './StatTile';
+export { default as Orb, type OrbProps, type OrbState } from './Orb';
