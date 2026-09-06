@@ -22,7 +22,8 @@
     "open": "tsx scripts/open-matches.mts",
     "truth": "tsx scripts/chain-truth.mts",
     "cancel": "tsx scripts/cancel-open.mts",
-    "check:sealed": "tsx scripts/check-sealed.mts"
+    "check:sealed": "tsx scripts/check-sealed.mts",
+    "check:pumpfun": "tsx scripts/check-pumpfun.mts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",

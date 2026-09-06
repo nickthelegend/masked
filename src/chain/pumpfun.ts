@@ -1,0 +1,121 @@
+/**
+ * Live pump.fun market data.
+ *
+ * Real HTTP calls to pump.fun's public API — real mints, real symbols, real
+ * logo images, and a price derived from each token's actual bonding-curve
+ * reserves. Nothing here is a fixture; if the API is unreachable the hook says
+ * so rather than serving a canned list.
+ *
+ * **What this is and is not.** A duel is fought over a *price series*, and
+ * positions are virtual inventory — no SPL is swapped mid-round, because a
+ * public swap print would hand the opponent the fills the fog exists to hide.
+ * So a pump.fun mint here identifies the market and supplies the mark price;
+ * it is not custodied and the duel is not routed through their bonding curve.
+ * The UI says so.
+ */
+
+const API = 'https://frontend-api-v3.pump.fun';
+
+/** Never let a hung request stall a render or a script. */
+const TIMEOUT_MS = 12_000;
+
+/**
+ * The API stalls for clients that do not look like a browser, so requests
+ * carry a browser Accept/User-Agent pair. (In a browser the UA header is
+ * set by the engine and this value is ignored.)
+ */
+const HEADERS: Record<string, string> = {
+  accept: 'application/json',
+  'user-agent':
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36',
+};
+
+/** Merge a caller's abort signal with our own timeout. */
+const withTimeout = (signal?: AbortSignal): AbortSignal =>
+  signal ? AbortSignal.any([signal, AbortSignal.timeout(TIMEOUT_MS)]) : AbortSignal.timeout(TIMEOUT_MS);
+
+/** pump.fun mints use 6 decimals; SOL reserves are lamports. */
+const TOKEN_DECIMALS = 6;
+const LAMPORTS = 1e9;
+
+export interface PumpMarket {
+  mint: string;
+  symbol: string;
+  name: string;
+  /** Remote logo served by pump.fun. */
+  imageUri: string | null;
+  /** Price in SOL per token, from the bonding curve. */
+  priceSol: number;
+  /** Price in USD, derived from the same reserves and the USD market cap. */
+  priceUsd: number;
+  usdMarketCap: number;
+  /** True once the curve has completed and it has migrated to a pool. */
+  complete: boolean;
+}
+
+/**
+ * Bonding-curve price: SOL reserves over token reserves, each in whole units.
+ *
+ * This is the curve's spot price, which is what pump.fun itself quotes — not a
+ * number we invented.
+ */
+export function priceFromReserves(virtualSolReserves: number, virtualTokenReserves: number): number {
+  if (!virtualTokenReserves) return 0;
+  const sol = virtualSolReserves / LAMPORTS;
+  const tokens = virtualTokenReserves / 10 ** TOKEN_DECIMALS;
+  return tokens === 0 ? 0 : sol / tokens;
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function toMarket(c: any): PumpMarket | null {
+  if (!c?.mint || !c?.symbol) return null;
+  const priceSol = priceFromReserves(Number(c.virtual_sol_reserves), Number(c.virtual_token_reserves));
+  const supply = Number(c.total_supply) / 10 ** TOKEN_DECIMALS;
+  const usdMarketCap = Number(c.usd_market_cap) || 0;
+  // Derive USD price from the same reserves the cap is built on, so the two
+  // numbers cannot disagree on screen.
+  const priceUsd = supply > 0 && usdMarketCap > 0 ? usdMarketCap / supply : 0;
+
+  return {
+    mint: String(c.mint),
+    symbol: String(c.symbol).slice(0, 10).toUpperCase(),
+    name: String(c.name ?? c.symbol),
+    imageUri: c.image_uri ? String(c.image_uri) : null,
+    priceSol,
+    priceUsd,
+    usdMarketCap,
+    complete: !!c.complete,
+  };
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+export class PumpFunError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PumpFunError';
+  }
+}
+
+/**
+ * Top markets by market cap. Throws on failure — callers surface the error
+ * rather than substituting placeholder tokens.
+ */
+export async function fetchTopMarkets(limit = 12, signal?: AbortSignal): Promise<PumpMarket[]> {
+  const url = `${API}/coins?limit=${limit}&sort=market_cap&order=DESC&includeNsfw=false`;
+  const res = await fetch(url, { signal: withTimeout(signal), headers: HEADERS });
+  if (!res.ok) throw new PumpFunError(`pump.fun returned ${res.status}`);
+
+  const body = await res.json();
+  if (!Array.isArray(body)) throw new PumpFunError('pump.fun returned an unexpected shape');
+
+  const markets = body.map(toMarket).filter((m): m is PumpMarket => m !== null && m.priceSol > 0);
+  if (markets.length === 0) throw new PumpFunError('pump.fun returned no usable markets');
+  return markets;
+}
+
+/** A single market by mint, for refreshing the price of a live duel. */
+export async function fetchMarket(mint: string, signal?: AbortSignal): Promise<PumpMarket | null> {
+  const res = await fetch(`${API}/coins/${mint}`, { signal: withTimeout(signal), headers: HEADERS });
+  if (!res.ok) return null;
+  return toMarket(await res.json());
+}
