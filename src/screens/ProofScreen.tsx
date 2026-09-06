@@ -18,6 +18,7 @@ import {
   ProofPanel,
   Row,
   Stack,
+  TxFeed,
   Wordmark,
   color,
   space,
@@ -27,6 +28,7 @@ import { ACTIVE_CLUSTER, DELEGATION_PROGRAM_ID, FOGDUEL_PROGRAM_ID, PERMISSION_P
 import { useDelegationStatus } from '../chain/useDelegationStatus';
 import { useLatency } from '../chain/useLatency';
 import { useChainStats } from '../chain/useChainStats';
+import { useTxFeed, explorerUrl } from '../chain/useTxFeed';
 
 const shortKey = (k: PublicKey | null) => (k ? `${k.toBase58().slice(0, 6)}…${k.toBase58().slice(-4)}` : '—');
 const ms = (n: number | null) => (n === null ? '—' : `${n.toFixed(1)}ms`);
@@ -55,6 +57,7 @@ export default function ProofScreen() {
     []
   );
   const { accounts, loaded } = useDelegationStatus(client, watch, 4000);
+  const { entries, loaded: txLoaded } = useTxFeed(10);
 
   return (
     <ScrollView
@@ -127,6 +130,13 @@ export default function ProofScreen() {
           { label: 'paid out', value: stats.loaded ? `${stats.paidOutSol.toFixed(3)} SOL` : '—' },
           { label: 'open matches', value: stats.loaded ? String(stats.openMatches) : '—' },
         ]}
+      />
+
+      <TxFeed
+        items={entries.map((e) => ({ ...e, url: explorerUrl(e.signature) }))}
+        loaded={txLoaded}
+        title="RECENT PROGRAM TRANSACTIONS"
+        emptyLabel="NOTHING YET — RUN npm run seed"
       />
 
       <Stack gap={space.sm}>
