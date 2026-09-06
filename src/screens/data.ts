@@ -109,7 +109,7 @@ export const HOW_IT_WORKS: HowStep[] = [
     plate: '#ffd21e',
     ink: '#3a2a00',
     title: '1 · STAKE',
-    body: 'Pick a pot from $1 to $100. Your opponent matches it. Both sides lock before a single fill.',
+    body: 'Pick a pot from 0.05◎ to 1◎. Your opponent matches it. Both sides lock before a single fill.',
   },
   {
     glyph: '\u25CF',
