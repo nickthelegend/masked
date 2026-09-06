@@ -1,8 +1,10 @@
 # FOGDUEL — BUILD PLAN
 
-> MagicBlock Solana Blitz v8. Rewritten 2026-09-07 against the current
-> codebase. Supersedes the earlier plan, which described work that is now done.
-> **Planning only — nothing in this document has been executed in this pass.**
+> MagicBlock Solana Blitz v8. Written 2026-09-07, then **executed**.
+> Statuses below reflect what was actually run and verified, not intent.
+>
+> **Execution result: Phase 1 complete, Phase 3 complete except recording,
+> Phase 4 prepared, Phase 2 blocked end to end on devnet funding.**
 
 ---
 
@@ -123,15 +125,15 @@ faucet that grants more.
 
 | # | Task | Status |
 |---|---|---|
-| 2.1 | Obtain ≥ 9 devnet SOL. Try in order: `solana airdrop 2` repeatedly with backoff; https://faucet.solana.com (web, captcha); the QuickNode / Helius devnet faucets; a funded teammate wallet. | BLOCKED — every public faucet refused at plan time |
+| 2.1 | Obtain ≥ 9 devnet SOL. Try in order: `solana airdrop 2` repeatedly with backoff; https://faucet.solana.com (web, captcha); the QuickNode / Helius devnet faucets; a funded teammate wallet. | BLOCKED — devnet faucet refused 20+ times; needs ~9 SOL |
 | 2.2 | `anchor deploy --provider.cluster devnet`. Record the program ID and the deploy signature. | BLOCKED by 2.1 |
 | 2.3 | Update `FOGDUEL_PROGRAM_ID` in `src/chain/config.ts` if the deployed ID differs, and re-run `npm run sync:idl`. | BLOCKED by 2.1 |
 | 2.4 | Run `EXPO_PUBLIC_CLUSTER=devnet npm run verify:client` — a full match against devnet + `devnet-tee.magicblock.app`. | BLOCKED by 2.1 |
 | 2.5 | Un-skip the two pending tests in `chain/tests/er-privacy.ts` (the ephemeral-permission path) and run them against the TEE. | BLOCKED by 2.1 |
 | 2.6 | Run `EXPO_PUBLIC_CLUSTER=devnet npm run prove:privacy`. The MID-ROUND VISIBILITY block must print `you reading THEIR position … NO ← REFUSED`. **This is the money shot.** | BLOCKED by 2.1 |
-| 2.7 | Wire `verifyTeeRpcIntegrity()` and `getAuthToken()` (both exported by `@magicblock-labs/ephemeral-rollups-sdk`) into the client so private reads carry an auth token, and show attestation status on `/proof`. | BLOCKED by 2.1 |
+| 2.7 | Wire `verifyTeeRpcIntegrity()` and `getAuthToken()` (both exported by `@magicblock-labs/ephemeral-rollups-sdk`) into the client so private reads carry an auth token, and show attestation status on `/proof`. | PARTIAL — initPositionPrivacy wired and called when cluster.tee; attestation display still BLOCKED by 2.1 |
 | 2.8 | Seed devnet with 3–5 real settled matches so the feed, board and `/proof` are not empty for judges. `npm run seed -- 5` already does this; it needs funded wallets on devnet. | BLOCKED by 2.1 |
-| 2.9 | If 2.1 cannot be unblocked by Sep 9, fall back: keep the local stack as the demo target, and make the honesty section on `/proof` and in the README the centrepiece rather than an apology. | NOT STARTED |
+| 2.9 | If 2.1 cannot be unblocked by Sep 9, fall back: keep the local stack as the demo target, and make the honesty section on `/proof` and in the README the centrepiece rather than an apology. | DONE — local stack is the demo target; honesty is centre-stage in /proof, README and SUBMISSION.md |
 
 ---
 
@@ -143,8 +145,8 @@ Small, cheap, and each one removes a stumble in front of a judge.
 |---|---|---|
 | 3.1 | `ROUND_SECONDS` is 300. A five-minute wait is unwatchable. Make it configurable and default the demo to 60s; the seeder already uses 30s. | DONE |
 | 3.2 | Every `create_match` call passes `mint: PublicKey.default` while the UI labels the market `$BONK`. Either pass a real devnet mint and label it from the match account, or relabel honestly as a synthetic market. Do not leave a fictional ticker over a null mint. | DONE |
-| 3.3 | Record the privacy proof: split screen, `/proof` and the UI on the left, `prove:privacy` running on the right. 45 seconds. | BLOCKED by 2.6 |
-| 3.4 | Record one full match end to end with two wallets. Under 3 minutes total. | BLOCKED by 2.2 |
+| 3.3 | Record the privacy proof: split screen, `/proof` and the UI on the left, `prove:privacy` running on the right. 45 seconds. | BLOCKED by 2.6 — script runs and is timed (66s), but on a non-TEE cluster it cannot show a refused read |
+| 3.4 | Record one full match end to end with two wallets. Under 3 minutes total. | BLOCKED by 2.2 — recording needs a devnet deploy to be worth recording |
 | 3.5 | Rehearse the README's 3-minute demo script end to end once, timed, and fix anything that stalls. | DONE |
 | 3.6 | Confirm the app is reachable at a URL a judge can open — either a deployed static export (`npx expo export -p web`) or a documented local run. | DONE |
 | 3.7 | Two-wallet demo needs both funded and both browsers ready before recording. Prepare and check in advance. | BLOCKED by 2.1 |
@@ -158,7 +160,7 @@ Small, cheap, and each one removes a stumble in front of a judge.
 | 4.1 | Update the README: replace "Program ID (local)" with the devnet ID, and add devnet tx signatures for one complete match. | BLOCKED by 2.2 |
 | 4.2 | Re-check the README "Honest limitations" section against reality after Phase 2 — several items should shrink or disappear. | DONE |
 | 4.3 | Fill the submission form: repo URL, one-line description ("hidden-position 1v1 trading on Private ER, reveal + pot on L1"), demo video/live URL, explicit primitive list (ER + PER, VRF not attempted), devnet program ID. | DONE — SUBMISSION.md prepared; form not yet submitted |
-| 4.4 | **Submit by Thu Sep 10 evening.** Do not aim at the Friday 05:00 boundary. | NOT STARTED |
+| 4.4 | **Submit by Thu Sep 10 evening.** Do not aim at the Friday 05:00 boundary. | NOT STARTED — cannot submit a devnet program ID that does not exist; SUBMISSION.md is ready to paste |
 
 ---
 
@@ -166,11 +168,11 @@ Small, cheap, and each one removes a stumble in front of a judge.
 
 | # | Task | Status |
 |---|---|---|
-| 5.1 | Session keys, so a fill does not need a wallet signature each time. Pattern: `session-keys/anchor`. | NOT STARTED |
-| 5.2 | Magic Router (`sendMagicTransaction`) so the client stops choosing endpoints by hand. | NOT STARTED |
-| 5.3 | VRF blind-token select. Pattern: `roll-dice/anchor`. | NOT STARTED |
-| 5.4 | Spectator mode — watch a live match with both sides fogged. | NOT STARTED |
-| 5.5 | Real oracle price (Pyth/Switchboard) replacing the cranked `PriceFeed`. | NOT STARTED |
+| 5.1 | Session keys, so a fill does not need a wallet signature each time. Pattern: `session-keys/anchor`. | NOT STARTED — optional, correctly deprioritised |
+| 5.2 | Magic Router (`sendMagicTransaction`) so the client stops choosing endpoints by hand. | NOT STARTED — optional |
+| 5.3 | VRF blind-token select. Pattern: `roll-dice/anchor`. | NOT STARTED — optional |
+| 5.4 | Spectator mode — watch a live match with both sides fogged. | NOT STARTED — optional |
+| 5.5 | Real oracle price (Pyth/Switchboard) replacing the cranked `PriceFeed`. | NOT STARTED — optional |
 
 ---
 
@@ -285,3 +287,78 @@ npx mb-test-validator --reset --ledger /tmp/fd-ledger \
 npx ephemeral-validator --remotes http://127.0.0.1:8999 \
   --lifecycle ephemeral --listen 127.0.0.1:7799 --storage /tmp/fd-er --reset --no-tui
 ```
+
+
+---
+
+# 11. EXECUTION RESULT
+
+## 11.1 Done and verified
+
+**Phase 1 — privacy is in the product (7/7).** This was the headline gap:
+`useDuel` delegated positions but never created their ACLs, so a match played
+through the UI was unsealed. `client.sealAndDelegateMatch()` now owns the
+ordering — create each ACL, delegate each ACL, then delegate each position —
+and both UI entry points call it. `npm run check:sealed` proves 2/2 ACLs land
+on chain via the exact method the UI calls, and `/proof` shows them.
+
+Two things the work itself corrected:
+- I had asserted a sealed ACL is owned by `ACLseo…`. It is not — sealing
+  delegates it, so it ends up owned by `DELeGG…`. The `/proof` panel would
+  otherwise have reported every sealed match as unsealed.
+- `/proof`'s evidence panels required a connected wallet. Account owners are
+  public, and a judge who has not connected one is exactly who that screen is
+  for. They now read from their own Connection.
+
+**Phase 3 — demo readiness (4/7).** Round length is a real parameter again
+(60s demo default, 300s full, env-overridable) and the lobby badge derives from
+it. The fictional `$BONK` over `PublicKey.default` is gone: a real SPL mint was
+created with `spl-token create-token` and the label resolves from the match's
+actual mint, showing `SYNTHETIC` when there is none. A production static export
+serves all five routes with real data and zero console errors.
+
+**Phase 4 — submission prepared (2/4).** `SUBMISSION.md` holds every form
+field, the five verification commands, and the blockers stated plainly. The
+README's limitations were rewritten — the old text said the privacy layer was
+"code-complete but unproved", which is now only half true.
+
+## 11.2 Not done, and exactly why
+
+**Phase 2 in full — blocked on devnet SOL.** `solana airdrop` was attempted
+**20+ times** across `api.devnet.solana.com` and `api.testnet.solana.com` during
+this run and refused every time as rate-limited. `faucet.solana.com` requires a
+browser captcha, which was not bypassed. The `.so` is 636KB, so rent-exemption
+plus the deploy buffer needs roughly **5-9 SOL** — several successful airdrops,
+not one. Everything downstream (TEE proof, devnet program ID, recordings,
+submission) inherits this.
+
+This is a credential/resource that genuinely does not exist here, so it was
+noted and skipped rather than faked.
+
+**Phase 3.3 / 3.4 — recordings.** The proof script runs and is timed at 66s,
+but on a non-TEE cluster it cannot show a refused read, which is the whole
+point of the recording. Recording a full match is likewise worth doing against
+devnet, not localhost.
+
+**Phase 4.4 — submission.** Not submitted. Submitting a local program ID as if
+it were deployed would be a false claim.
+
+**Phase 5 — untouched, by design.** Correctly last and correctly cuttable.
+
+## 11.3 Final verification state
+
+| Suite | Result |
+|---|---|
+| `npm run check` (5 suites, 74 assertions) | green |
+| `npm run check:sealed` | 2/2 ACLs on chain, 2/2 delegated |
+| `npm run verify:client` | full match end to end |
+| `npm run prove:privacy` | runs, honest verdict, 66s |
+| `anchor test` | 20 passing, 2 skipped |
+| Browser sweep (5 routes, all tabs) | renders, zero console errors |
+| Static export | all 5 routes, real data, zero errors |
+
+## 11.4 The one thing that would change the outcome
+
+Fund `3YUgUPu9AdJj6FCFFvzR9pJixCN7EcAnCXMJoTuYwsS5` with ~9 devnet SOL. Then
+Phase 2 unblocks in roughly an hour, and with it Phases 3.3, 3.4, 4.1 and 4.4.
+Every piece downstream is already written and waiting.
