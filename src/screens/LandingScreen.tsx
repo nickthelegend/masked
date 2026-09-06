@@ -36,7 +36,7 @@ import { FEED, HOW_IT_WORKS, LANDING_STATS, MODES, RAKE, TICKER_ITEMS } from './
 /** Above this width the hero splits into copy + device columns. */
 const WIDE = 900;
 const MAX_CONTENT = 1120;
-const HERO_SHELL_HEIGHT = 620;
+const HERO_SHELL_HEIGHT = 700;
 const MODE_PREVIEW = 6;
 const MODE_MIN_WIDTH = 250;
 const REVEAL_MIN_WIDTH = 320;
