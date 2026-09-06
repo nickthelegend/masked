@@ -23,3 +23,7 @@ export { default as StatTile, type StatTileProps } from './StatTile';
 export { default as Orb, type OrbProps, type OrbState } from './Orb';
 export { default as TapeChart, type TapeChartProps } from './TapeChart';
 export { linePath, bounds, walk, toEnd, mulberry32 } from './series';
+export { default as Ticker, type TickerProps } from './Ticker';
+export { default as TabBar, type TabBarProps, type TabSpec, TABS } from './TabBar';
+export { default as PocketShell, type PocketShellProps } from './PocketShell';
+export { default as BeachBackdrop, type BeachBackdropProps } from './BeachBackdrop';
