@@ -16,16 +16,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PublicKey } from '@solana/web3.js';
 import { useWallet } from '@solana/wallet-adapter-react';
 import type { AnchorWallet } from '@solana/wallet-adapter-react';
-import { mmss } from '../ui';
+import { mmss, useToast } from '../ui';
 import type { Fill } from '../ui';
+import { explainError, withRetry } from '../chain/errors';
+import { assertFogIntact } from '../chain/fog';
 import { FogduelClient, BASE_SCALE, PRICE_SCALE, type MatchState, type PositionState } from '../chain/client';
 import { ACTIVE_CLUSTER } from '../chain/config';
 import { OPPONENT, RAKE, ROUND_SECONDS } from './data';
 
 export type DuelPhase = 'lobby' | 'searching' | 'live' | 'reveal';
 
-/** Base units bought per LONG press — a meaningful slice of the quote balance. */
-const FILL_QTY = 0.4;
+/** Default base units per LONG press — a meaningful slice of the quote balance. */
+const DEFAULT_FILL_QTY = 0.4;
 /** Poll cadence for on-chain state during a live round. */
 const POLL_MS = 1000;
 
@@ -51,6 +53,8 @@ export interface Duel {
   busy: boolean;
   error: string | null;
   matchAddress: string | null;
+  fillSize: number;
+  setFillSize: (qty: number) => void;
   setStake: (stake: number) => void;
   findMatch: () => void;
   startMatch: () => void;
@@ -65,6 +69,7 @@ const bpsToPct = (bps: number) => bps / 100;
 
 export function useDuel(): Duel {
   const wallet = useWallet();
+  const toast = useToast();
   const connected = wallet.connected && !!wallet.publicKey;
 
   const client = useMemo(() => {
@@ -79,6 +84,7 @@ export function useDuel(): Duel {
 
   const [phase, setPhase] = useState<DuelPhase>('lobby');
   const [stake, setStake] = useState(5);
+  const [fillSize, setFillSize] = useState(DEFAULT_FILL_QTY);
   const [balance, setBalance] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -178,16 +184,21 @@ export function useDuel(): Duel {
       ]);
       if (m) setMatch(m);
       if (mine) setMyPosition(mine);
-      // After settlement the tape is public — reading the opponent is correct.
-      if (theirs) setOpponentPosition(theirs);
+      // After settlement the tape is public, so reading the opponent is
+      // legitimate. Routed through the guard so the rule is enforced in one
+      // place rather than trusted at each call site.
       setPhase('reveal');
+      assertFogIntact('reveal', 'opponent position');
+      if (theirs) setOpponentPosition(theirs);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'settlement failed');
+      const friendly = explainError(e);
+      setError(friendly.title);
+      toast.error(friendly.title, friendly.detail);
       settledRef.current = false;
     } finally {
       setBusy(false);
     }
-  }, [client, match, wallet.publicKey]);
+  }, [client, match, wallet.publicKey, toast]);
 
   useEffect(() => {
     if (phase === 'live' && secondsLeft === 0) void settle();
@@ -195,22 +206,28 @@ export function useDuel(): Duel {
 
   /* ----------------------------- transitions ----------------------------- */
   const guard = useCallback(
-    async (fn: () => Promise<void>) => {
+    async (label: string, fn: () => Promise<void>) => {
       if (!client || !wallet.publicKey) {
         setError('Connect a wallet first.');
+        toast.error('CONNECT A WALLET', 'Nothing can be signed without one.');
         return;
       }
       setBusy(true);
       setError(null);
       try {
-        await fn();
+        // Retry only the failures where retrying is meaningful — a declined
+        // signature or a self-join is final.
+        await withRetry(fn);
+        toast.ok(label);
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'transaction failed');
+        const friendly = explainError(e);
+        setError(friendly.title);
+        toast.error(friendly.title, friendly.detail);
       } finally {
         setBusy(false);
       }
     },
-    [client, wallet.publicKey]
+    [client, wallet.publicKey, toast]
   );
 
   const findMatch = useCallback(() => {
@@ -222,7 +239,7 @@ export function useDuel(): Duel {
    * wait. This is the real matchmaking path — no fabricated opponent.
    */
   const startMatch = useCallback(() => {
-    void guard(async () => {
+    void guard('MATCH READY', async () => {
       const me = wallet.publicKey!;
       await client!.ensureTreasury(me);
 
@@ -270,16 +287,16 @@ export function useDuel(): Duel {
   }, [guard, client, wallet.publicKey, entryLamports]);
 
   const openLong = useCallback(() => {
-    void guard(async () => {
+    void guard('LONG FILLED', async () => {
       if (!match) return;
-      await client!.applyFill(match.address, wallet.publicKey!, 'buy', FILL_QTY);
+      await client!.applyFill(match.address, wallet.publicKey!, 'buy', fillSize);
       const mine = await client!.fetchPosition(match.address, wallet.publicKey!, true);
       if (mine) setMyPosition(mine);
     });
-  }, [guard, client, match, wallet.publicKey]);
+  }, [guard, client, match, wallet.publicKey, fillSize]);
 
   const closeLong = useCallback(() => {
-    void guard(async () => {
+    void guard('POSITION CLOSED', async () => {
       if (!match || !myPosition || myPosition.baseQty <= 0) return;
       await client!.applyFill(match.address, wallet.publicKey!, 'sell', myPosition.baseQty / BASE_SCALE);
       const mine = await client!.fetchPosition(match.address, wallet.publicKey!, true);
@@ -347,6 +364,8 @@ export function useDuel(): Duel {
     busy,
     error,
     matchAddress: match?.address.toBase58() ?? null,
+    fillSize,
+    setFillSize,
     setStake,
     findMatch,
     startMatch,
