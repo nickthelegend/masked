@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Animated, Easing, StyleSheet, View, type ViewStyle } from 'react-native';
 import PixelText from './PixelText';
 import { color } from './theme';
+import { USE_NATIVE_DRIVER } from './motion';
 
 export interface FogOverlayProps {
   /** When false the curtain is not rendered and the content shows through. */
@@ -62,7 +63,7 @@ export default function FogOverlay({
       toValue: 1,
       duration: 420,
       easing: Easing.out(Easing.quad),
-      useNativeDriver: true,
+      useNativeDriver: USE_NATIVE_DRIVER,
     });
     anim.start();
     return () => anim.stop();
@@ -71,7 +72,7 @@ export default function FogOverlay({
   useEffect(() => {
     if (!animate || !active) return undefined;
     const loop = Animated.loop(
-      Animated.timing(drift, { toValue: 1, duration, easing: Easing.linear, useNativeDriver: true }),
+      Animated.timing(drift, { toValue: 1, duration, easing: Easing.linear, useNativeDriver: USE_NATIVE_DRIVER }),
     );
     loop.start();
     return () => loop.stop();
@@ -85,10 +86,9 @@ export default function FogOverlay({
     <Animated.View
       style={[
         StyleSheet.absoluteFill,
-        { overflow: 'hidden', opacity: lift.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }) },
+        { overflow: 'hidden', pointerEvents: 'none', opacity: lift.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }) },
         style,
       ]}
-      pointerEvents="none"
     >
       <View style={[StyleSheet.absoluteFill, { backgroundColor: color.ink, opacity: cover }]} />
       <Animated.View

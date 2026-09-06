@@ -3,7 +3,7 @@ import { Animated, Easing, StyleSheet, View } from 'react-native';
 import PixelText from './PixelText';
 import Stack from './Stack';
 import { color, space } from './theme';
-import { DURATION, useReducedMotion } from './motion';
+import { DURATION, useReducedMotion, USE_NATIVE_DRIVER } from './motion';
 
 export interface RevealCurtainProps {
   /** Flip to true at the buzzer. */
@@ -40,9 +40,9 @@ export default function RevealCurtain({ active, label = 'TAPE UNSEALED', sublabe
       return undefined;
     }
     const anim = Animated.sequence([
-      Animated.timing(progress, { toValue: 0.45, duration: DURATION.quick, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      Animated.timing(progress, { toValue: 0.45, duration: DURATION.quick, easing: Easing.out(Easing.quad), useNativeDriver: USE_NATIVE_DRIVER }),
       Animated.delay(DURATION.beat),
-      Animated.timing(progress, { toValue: 1, duration: DURATION.beat, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      Animated.timing(progress, { toValue: 1, duration: DURATION.beat, easing: Easing.in(Easing.quad), useNativeDriver: USE_NATIVE_DRIVER }),
     ]);
     anim.start(({ finished }) => {
       if (finished && !done.current) {
@@ -56,7 +56,7 @@ export default function RevealCurtain({ active, label = 'TAPE UNSEALED', sublabe
   if (!active || reduced) return null;
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+    <View style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
       {Array.from({ length: BARS }).map((_, i) => {
         const fromLeft = i % 2 === 0;
         return (

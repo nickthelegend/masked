@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { color } from './theme';
+import { USE_NATIVE_DRIVER } from './motion';
 
 /**
  * The band layout was drawn against a 700px-tall screen. Every offset below is
@@ -62,8 +63,8 @@ export default function BeachBackdrop({ animate = true, height }: BeachBackdropP
   useEffect(() => {
     if (!animate) return undefined;
     const loops = [
-      Animated.loop(Animated.timing(near, { toValue: 1, duration: 7000, easing: Easing.linear, useNativeDriver: true })),
-      Animated.loop(Animated.timing(far, { toValue: 1, duration: 11000, easing: Easing.linear, useNativeDriver: true })),
+      Animated.loop(Animated.timing(near, { toValue: 1, duration: 7000, easing: Easing.linear, useNativeDriver: USE_NATIVE_DRIVER })),
+      Animated.loop(Animated.timing(far, { toValue: 1, duration: 11000, easing: Easing.linear, useNativeDriver: USE_NATIVE_DRIVER })),
     ];
     loops.forEach((l) => l.start());
     return () => loops.forEach((l) => l.stop());
@@ -100,7 +101,7 @@ export default function BeachBackdrop({ animate = true, height }: BeachBackdropP
   const stripes = Math.ceil(Math.max(0, resolved - s(SAND_TOP)) / s(SAND_STRIPE)) + 1;
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none" onLayout={onLayout}>
+    <View style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]} onLayout={onLayout}>
       {SKY.map(([i, top]) => band(top, BAND_HEIGHT, color.sunset[i], `sky-${top}`))}
 
       <View

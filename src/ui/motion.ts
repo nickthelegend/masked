@@ -6,7 +6,17 @@
  * as frames rather than as animation.
  */
 import { useEffect, useState } from 'react';
-import { AccessibilityInfo } from 'react-native';
+import { AccessibilityInfo, Platform } from 'react-native';
+
+/**
+ * Whether Animated can use the native driver.
+ *
+ * react-native-web has no native animation module, so passing
+ * `useNativeDriver: true` there logs a warning on every single animation and
+ * silently falls back to JS anyway. Declaring it honestly removes the noise
+ * and makes the code say what actually happens.
+ */
+export const USE_NATIVE_DRIVER = Platform.OS !== 'web';
 
 /** Frame duration at a notional 12fps — the grid motion is quantised to. */
 export const FRAME_MS = 83;

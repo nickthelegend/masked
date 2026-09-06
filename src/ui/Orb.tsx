@@ -4,6 +4,7 @@ import Svg, { Circle, G, Rect } from 'react-native-svg';
 import { color } from './theme';
 
 import { orbStateForPnl, type OrbState } from './orbState';
+import { USE_NATIVE_DRIVER } from './motion';
 
 export { orbStateForPnl };
 export type { OrbState };
@@ -49,8 +50,8 @@ export default function Orb({ size = 140, state = 'fog', animate = true }: OrbPr
     if (!animate) return undefined;
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 1400, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0, duration: 1400, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 1400, easing: Easing.inOut(Easing.quad), useNativeDriver: USE_NATIVE_DRIVER }),
+        Animated.timing(pulse, { toValue: 0, duration: 1400, easing: Easing.inOut(Easing.quad), useNativeDriver: USE_NATIVE_DRIVER }),
       ]),
     );
     loop.start();

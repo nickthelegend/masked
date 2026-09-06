@@ -4,7 +4,7 @@ import Row from './Row';
 import PixelText from './PixelText';
 import { color, space } from './theme';
 import { mmss } from './format';
-import { DURATION, useReducedMotion } from './motion';
+import { DURATION, useReducedMotion, USE_NATIVE_DRIVER } from './motion';
 
 export interface RoundClockProps {
   /** Seconds remaining. Formatted `m:ss` and clamped at zero. */
@@ -44,8 +44,8 @@ export default function RoundClock({
     // One step per second, matching the tick it is counting.
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: DURATION.snap, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0, duration: DURATION.beat, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: DURATION.snap, easing: Easing.out(Easing.quad), useNativeDriver: USE_NATIVE_DRIVER }),
+        Animated.timing(pulse, { toValue: 0, duration: DURATION.beat, easing: Easing.in(Easing.quad), useNativeDriver: USE_NATIVE_DRIVER }),
       ])
     );
     loop.start();

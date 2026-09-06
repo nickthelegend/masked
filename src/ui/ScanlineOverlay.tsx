@@ -22,7 +22,7 @@ export default function ScanlineOverlay({
   style,
 }: ScanlineOverlayProps) {
   return (
-    <View style={[StyleSheet.absoluteFill, { overflow: 'hidden', gap: lineHeight }, style]} pointerEvents="none">
+    <View style={[StyleSheet.absoluteFill, { overflow: 'hidden', gap: lineHeight, pointerEvents: 'none' }, style]}>
       {Array.from({ length: lines }).map((_, i) => (
         <View
           key={i}

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, View, type LayoutChangeEvent } from 'react-native';
 import PixelText from './PixelText';
 import { border, color } from './theme';
+import { USE_NATIVE_DRIVER } from './motion';
 
 export interface TickerProps {
   /** Headlines. Joined with a mid-dot separator and printed twice. */
@@ -44,7 +45,7 @@ export default function Ticker({ items = [], duration = 18000, distance, height 
     if (!animate || travel <= 0) return undefined;
     x.setValue(0);
     const loop = Animated.loop(
-      Animated.timing(x, { toValue: 1, duration, easing: Easing.linear, useNativeDriver: true }),
+      Animated.timing(x, { toValue: 1, duration, easing: Easing.linear, useNativeDriver: USE_NATIVE_DRIVER }),
     );
     loop.start();
     return () => loop.stop();

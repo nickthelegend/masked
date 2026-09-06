@@ -7,6 +7,7 @@ import Stack from './Stack';
 import IconPlate from './IconPlate';
 import { QuestIcon, DuelIcon, MenuIcon } from './icons';
 import { color, onInk, space } from './theme';
+import { USE_NATIVE_DRIVER } from './motion';
 
 export type ToastTone = 'ok' | 'error' | 'info';
 
@@ -49,9 +50,9 @@ function ToastRow({ toast, onDone }: { toast: Toast; onDone: (id: number) => voi
   const spec = TONE[toast.tone];
 
   useEffect(() => {
-    Animated.timing(slide, { toValue: 1, duration: 160, easing: Easing.out(Easing.quad), useNativeDriver: true }).start();
+    Animated.timing(slide, { toValue: 1, duration: 160, easing: Easing.out(Easing.quad), useNativeDriver: USE_NATIVE_DRIVER }).start();
     const id = setTimeout(() => {
-      Animated.timing(slide, { toValue: 0, duration: 140, easing: Easing.in(Easing.quad), useNativeDriver: true }).start(
+      Animated.timing(slide, { toValue: 0, duration: 140, easing: Easing.in(Easing.quad), useNativeDriver: USE_NATIVE_DRIVER }).start(
         () => onDone(toast.id)
       );
     }, LIFETIME_MS);
@@ -110,8 +111,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={api}>
       {children}
       <View
-        pointerEvents="none"
-        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: space.md, gap: space.sm }}
+        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: space.md, gap: space.sm, pointerEvents: 'none' }}
       >
         {toasts.map((t) => (
           <ToastRow key={t.id} toast={t} onDone={remove} />
