@@ -87,6 +87,8 @@ export default function MaskedApp() {
                 onSkip={duel.settleNow}
                 busy={duel.busy}
                 error={duel.error}
+                sealed={duel.sealed}
+                teeEnforced={duel.teeEnforced}
               />
             ) : null}
 

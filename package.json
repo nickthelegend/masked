@@ -21,7 +21,8 @@
     "check:preflight": "tsx scripts/check-preflight.mts",
     "open": "tsx scripts/open-matches.mts",
     "truth": "tsx scripts/chain-truth.mts",
-    "cancel": "tsx scripts/cancel-open.mts"
+    "cancel": "tsx scripts/cancel-open.mts",
+    "check:sealed": "tsx scripts/check-sealed.mts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",

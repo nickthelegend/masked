@@ -7,15 +7,21 @@
  * program when it settles, and both transitions are visible as they happen.
  */
 import { useEffect, useState } from 'react';
-import { PublicKey } from '@solana/web3.js';
-import { DELEGATION_PROGRAM_ID, FOGDUEL_PROGRAM_ID, ACTIVE_CLUSTER } from './config';
-import type { FogduelClient } from './client';
+import { Connection, PublicKey } from '@solana/web3.js';
+import { DELEGATION_PROGRAM_ID, FOGDUEL_PROGRAM_ID, PERMISSION_PROGRAM_ID, ACTIVE_CLUSTER } from './config';
 
 export interface AccountStatus {
   label: string;
   address: PublicKey;
   owner: PublicKey | null;
   delegated: boolean;
+  /**
+   * This account is a live ACL. True whether it is still owned by the
+   * permission program or has since been delegated to the rollup — sealing
+   * does both, so checking only for ACLseo would report a sealed match as
+   * unsealed.
+   */
+  isPermission: boolean;
   onEr: boolean;
   bytes: number;
 }
@@ -25,8 +31,14 @@ export interface DelegationStatus {
   loaded: boolean;
 }
 
+/**
+ * Reads account ownership directly from the RPC.
+ *
+ * Deliberately takes no wallet: account owners are public, and gating this
+ * evidence behind a connected wallet meant /proof showed nothing to a judge
+ * who had not connected one — which is exactly the person it is for.
+ */
 export function useDelegationStatus(
-  client: FogduelClient | null,
   watch: Array<{ label: string; address: PublicKey }>,
   pollMs = 2000
 ): DelegationStatus {
@@ -36,19 +48,22 @@ export function useDelegationStatus(
   const key = watch.map((w) => w.address.toBase58()).join(',');
 
   useEffect(() => {
-    if (!client || watch.length === 0) {
+    if (watch.length === 0) {
       setAccounts([]);
+      setLoaded(true);
       return undefined;
     }
     let alive = true;
+    const l1 = new Connection(ACTIVE_CLUSTER.l1, 'confirmed');
+    const er = new Connection(ACTIVE_CLUSTER.er, 'confirmed');
 
     const read = async () => {
       try {
         const rows = await Promise.all(
           watch.map(async (w) => {
             const [l1Info, erInfo] = await Promise.all([
-              client.l1.getAccountInfo(w.address).catch(() => null),
-              client.er.getAccountInfo(w.address).catch(() => null),
+              l1.getAccountInfo(w.address).catch(() => null),
+              er.getAccountInfo(w.address).catch(() => null),
             ]);
             const owner = l1Info?.owner ?? null;
             return {
@@ -56,6 +71,7 @@ export function useDelegationStatus(
               address: w.address,
               owner,
               delegated: !!owner && owner.equals(DELEGATION_PROGRAM_ID),
+              isPermission: !!owner && (owner.equals(PERMISSION_PROGRAM_ID) || owner.equals(DELEGATION_PROGRAM_ID)),
               onEr: !!erInfo,
               bytes: l1Info?.data.length ?? 0,
             };
@@ -77,9 +93,9 @@ export function useDelegationStatus(
       clearInterval(id);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client, key, pollMs]);
+  }, [key, pollMs]);
 
   return { accounts, loaded };
 }
 
-export { DELEGATION_PROGRAM_ID, FOGDUEL_PROGRAM_ID, ACTIVE_CLUSTER };
+export { DELEGATION_PROGRAM_ID, FOGDUEL_PROGRAM_ID, PERMISSION_PROGRAM_ID, ACTIVE_CLUSTER };

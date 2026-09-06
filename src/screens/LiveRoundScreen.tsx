@@ -35,6 +35,10 @@ export interface LiveRoundScreenProps {
   onSkip: () => void;
   busy?: boolean;
   error?: string | null;
+  /** Both positions carry an on-chain ACL. Read from chain, not assumed. */
+  sealed?: boolean;
+  /** Whether this cluster enforces that ACL at read time (TEE only). */
+  teeEnforced?: boolean;
 }
 
 /**
@@ -56,6 +60,8 @@ export default function LiveRoundScreen({
   onSkip,
   busy = false,
   error = null,
+  sealed = false,
+  teeEnforced = false,
 }: LiveRoundScreenProps) {
   return (
     <Stack pad={space.md} gap={space.md}>
@@ -89,14 +95,22 @@ export default function LiveRoundScreen({
 
       <Row gap={space.sm} align="stretch">
         <PnLReadout panel flex={1} label="YOU" value={myPnl} note={positionLabel} />
-        <PnLReadout
-          panel
-          flex={1}
-          label={opponentName.toUpperCase()}
-          fogged
-          note={`FOGGED · ${opponentFills} FILLS`}
-          accent={color.panelLight}
-        />
+        <Stack flex={1} gap={space.xs}>
+          <PnLReadout
+            panel
+            label={opponentName.toUpperCase()}
+            fogged
+            note={`FOGGED · ${opponentFills} FILLS`}
+            accent={color.panelLight}
+          />
+          {/* Says exactly what is true: sealed means the ACL is on chain;
+              enforced means the rollup will refuse a read against it. */}
+          <Badge
+            label={sealed ? (teeEnforced ? 'SEALED · TEE ENFORCED' : 'SEALED · ACL ON CHAIN') : 'NOT SEALED'}
+            tone={sealed ? (teeEnforced ? 'live' : 'soon') : 'loss'}
+            variant="tabLabel"
+          />
+        </Stack>
       </Row>
 
       <Row gap={space.sm}>

@@ -69,8 +69,9 @@ async function main() {
     });
     await oppClient.joinMatch(match, opponent.publicKey, house.publicKey);
 
-    await houseClient.delegatePosition(match, house.publicKey, house.publicKey);
-    await houseClient.delegatePosition(match, opponent.publicKey, house.publicKey);
+    // Seal exactly as the product does, so seeded history is indistinguishable
+    // from a match a player actually played.
+    await houseClient.sealAndDelegateMatch(match, house.publicKey, opponent.publicKey, house.publicKey);
 
     // Both sides trade, with different conviction, so PnL differs.
     await houseClient.applyFill(match, house.publicKey, 'buy', 0.45);

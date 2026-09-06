@@ -7,8 +7,6 @@
  */
 import { useMemo } from 'react';
 import { ScrollView, View } from 'react-native';
-import { useWallet } from '@solana/wallet-adapter-react';
-import type { AnchorWallet } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
 import {
   Badge,
@@ -23,30 +21,22 @@ import {
   color,
   space,
 } from '../ui';
-import { FogduelClient } from '../chain/client';
 import { ACTIVE_CLUSTER, DELEGATION_PROGRAM_ID, FOGDUEL_PROGRAM_ID, PERMISSION_PROGRAM_ID } from '../chain/config';
 import { useDelegationStatus } from '../chain/useDelegationStatus';
 import { useLatency } from '../chain/useLatency';
 import { useChainStats } from '../chain/useChainStats';
 import { useTxFeed, explorerUrl } from '../chain/useTxFeed';
+import { useTapes } from '../chain/useTapes';
+import { positionPda } from '../chain/pdas';
+import { permissionPdaFromAccount } from '@magicblock-labs/ephemeral-rollups-sdk';
+import { PublicKey as PK } from '@solana/web3.js';
 
 const shortKey = (k: PublicKey | null) => (k ? `${k.toBase58().slice(0, 6)}…${k.toBase58().slice(-4)}` : '—');
 const ms = (n: number | null) => (n === null ? '—' : `${n.toFixed(1)}ms`);
 
 export default function ProofScreen() {
-  const wallet = useWallet();
   const stats = useChainStats(8000);
   const latency = useLatency();
-
-  const client = useMemo(() => {
-    if (!wallet.publicKey || !wallet.signTransaction || !wallet.signAllTransactions) return null;
-    const w: AnchorWallet = {
-      publicKey: wallet.publicKey,
-      signTransaction: wallet.signTransaction,
-      signAllTransactions: wallet.signAllTransactions,
-    };
-    return new FogduelClient(w as never, ACTIVE_CLUSTER);
-  }, [wallet.publicKey, wallet.signTransaction, wallet.signAllTransactions]);
 
   const watch = useMemo(
     () => [
@@ -56,8 +46,22 @@ export default function ProofScreen() {
     ],
     []
   );
-  const { accounts, loaded } = useDelegationStatus(client, watch, 4000);
+  const { accounts, loaded } = useDelegationStatus(watch, 4000);
   const { entries, loaded: txLoaded, ledgerPruned, firstAvailableBlock } = useTxFeed(10);
+  const { tapes } = useTapes(12_000);
+
+  // Watch the ACLs of the most recently settled duel, so the permission
+  // accounts are visible as real on-chain objects rather than a claim.
+  const aclWatch = useMemo(() => {
+    const t = tapes[0];
+    if (!t) return [];
+    const matchKey = new PK(t.match);
+    return [
+      { label: 'winner position ACL', address: permissionPdaFromAccount(positionPda(matchKey, t.winner)) },
+      { label: 'loser position ACL', address: permissionPdaFromAccount(positionPda(matchKey, t.loser)) },
+    ];
+  }, [tapes]);
+  const { accounts: acls } = useDelegationStatus(aclWatch, 6000);
 
   return (
     <ScrollView
@@ -110,7 +114,7 @@ export default function ProofScreen() {
 
       <ProofPanel
         title="PROGRAMS ON CHAIN"
-        note={loaded ? undefined : 'connect a wallet to read live account state'}
+        note={loaded ? undefined : 'reading…'}
         rows={
           accounts.length
             ? accounts.map((a) => ({
@@ -140,6 +144,30 @@ export default function ProofScreen() {
             value: stats.loaded && stats.reachable ? String(stats.openMatches) : '—',
           },
         ]}
+      />
+
+      <ProofPanel
+        title="ACCESS CONTROL LISTS"
+        note={
+          aclWatch.length === 0
+            ? 'No settled duel yet — play one and its ACLs appear here.'
+            : "The most recent duel's permission accounts, read from chain."
+        }
+        status={
+          acls.length > 0 && acls.every((a) => a.isPermission)
+            ? { label: 'ON CHAIN', tone: 'live' }
+            : { label: 'NONE', tone: 'soon' }
+        }
+        rows={
+          acls.length > 0
+            ? acls.map((a) => ({
+                label: a.label,
+                value: a.owner ? `${shortKey(a.address)} · ${a.owner.toBase58().slice(0, 6)}…` : 'ABSENT',
+                tone: (a.isPermission ? 'good' : 'bad') as 'good' | 'bad',
+                mono: true,
+              }))
+            : [{ label: 'permission accounts', value: '—' }]
+        }
       />
 
       <TxFeed

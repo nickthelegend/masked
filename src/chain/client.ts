@@ -10,6 +10,8 @@
 import { AnchorProvider, BN, Program, type Idl, type Wallet } from '@coral-xyz/anchor';
 import { Connection, PublicKey, SystemProgram, type Commitment } from '@solana/web3.js';
 import {
+  EPHEMERAL_VAULT_ID,
+  MAGIC_PROGRAM_ID,
   PERMISSION_PROGRAM_ID,
   permissionPdaFromAccount,
   delegationRecordPdaFromDelegatedAccount,
@@ -216,6 +218,72 @@ export class FogduelClient {
         systemProgram: SystemProgram.programId,
       })
       .rpc();
+  }
+
+  /**
+   * Seal a live match: give both positions an access-control list, delegate
+   * those lists, then delegate the positions themselves.
+   *
+   * The order is not arbitrary and is proved by chain/tests/permission.ts.
+   * A position must get its permission *before* it is delegated — once the
+   * delegation program owns the account, the program can no longer sign for
+   * it and CreatePermission fails.
+   *
+   * This exists as one method so the ordering lives in exactly one place. It
+   * used to live only in a test and a script, which meant a player going
+   * through the UI got an unsealed match.
+   */
+  async sealAndDelegateMatch(
+    match: PublicKey,
+    creator: PublicKey,
+    joiner: PublicKey,
+    payer: PublicKey
+  ): Promise<void> {
+    for (const owner of [creator, joiner]) {
+      // Idempotent on the program side, so a retry after a partial failure is
+      // safe rather than fatal.
+      await this.createPositionPermission(match, owner, payer);
+    }
+    for (const owner of [creator, joiner]) {
+      await this.delegatePositionPermission(match, owner, payer);
+    }
+    for (const owner of [creator, joiner]) {
+      await this.delegatePosition(match, owner, payer);
+    }
+  }
+
+  /**
+   * Mark a delegated position private on a TEE rollup.
+   *
+   * Runs on the ER, not L1, and only works on a TEE validator — on a plain
+   * rollup the permission account is not delegated and the write is refused.
+   * Called after sealAndDelegateMatch when `cluster.tee` is true.
+   */
+  async initPositionPrivacy(match: PublicKey, owner: PublicKey, payer: PublicKey): Promise<void> {
+    await this.erProgram.methods
+      .initPositionPrivacy(owner)
+      .accounts({
+        payer,
+        matchAccount: match,
+        position: positionPda(match, owner),
+        permission: permissionPdaFromAccount(positionPda(match, owner)),
+        ephemeralVault: EPHEMERAL_VAULT_ID,
+        magicProgram: MAGIC_PROGRAM_ID,
+        permissionProgram: PERMISSION_PROGRAM_ID,
+      })
+      .rpc();
+  }
+
+  /** Is this position's ACL actually on chain? Read, never assumed. */
+  async isPositionSealed(match: PublicKey, owner: PublicKey): Promise<boolean> {
+    const permission = permissionPdaFromAccount(positionPda(match, owner));
+    const info = await this.l1.getAccountInfo(permission).catch(() => null);
+    return !!info;
+  }
+
+  /** The permission PDA for a position, for inspectors and tests. */
+  permissionFor(match: PublicKey, owner: PublicKey): PublicKey {
+    return permissionPdaFromAccount(positionPda(match, owner));
   }
 
   /** Raw on-chain owner of an account — used by the delegation inspector. */

@@ -100,13 +100,13 @@ path a player takes.** No devnet work is worth anything until this is true.
 
 | # | Task | Status |
 |---|---|---|
-| 1.1 | In `useDuel.startMatch` and `joinMatchByAddress`, after both positions are delegated, call `client.createPositionPermission(match, owner, payer)` for both players. | NOT STARTED |
-| 1.2 | Then call `client.delegatePositionPermission(match, owner, payer)` for both, so the ACL is delegated to the same validator as the position. | NOT STARTED |
-| 1.3 | Order matters: create the permission **before** delegating the position, or the PDA is owned by the delegation program and the CPI will fail. Verify the ordering against `chain/tests/permission.ts`, which does create → delegate-permission → delegate-position. | NOT STARTED |
-| 1.4 | Surface it in the UI: a "SEALED" badge on the opponent panel once the permission is confirmed on chain, driven by a real `getAccountInfo` on the permission PDA — not a local boolean. | NOT STARTED |
-| 1.5 | Extend `useDelegationStatus` to watch the two permission PDAs so `/proof` shows them flipping to `ACLseo…` alongside the positions. | NOT STARTED |
-| 1.6 | Wire `init_position_privacy` into `client.ts`. It is the only program instruction with no client method (`process_undelegation` is called by the delegation program, not by us) and it is the TEE path needed in Phase 2. | NOT STARTED |
-| 1.7 | Add a browser test to `TEST-PLAN.md` section H: after starting a match through the UI, both permission PDAs exist on chain with the owner as sole member. | NOT STARTED |
+| 1.1 | In `useDuel.startMatch` and `joinMatchByAddress`, after both positions are delegated, call `client.createPositionPermission(match, owner, payer)` for both players. | DONE |
+| 1.2 | Then call `client.delegatePositionPermission(match, owner, payer)` for both, so the ACL is delegated to the same validator as the position. | DONE |
+| 1.3 | Order matters: create the permission **before** delegating the position, or the PDA is owned by the delegation program and the CPI will fail. Verify the ordering against `chain/tests/permission.ts`, which does create → delegate-permission → delegate-position. | DONE |
+| 1.4 | Surface it in the UI: a "SEALED" badge on the opponent panel once the permission is confirmed on chain, driven by a real `getAccountInfo` on the permission PDA — not a local boolean. | DONE |
+| 1.5 | Extend `useDelegationStatus` to watch the two permission PDAs so `/proof` shows them flipping to `ACLseo…` alongside the positions. | DONE |
+| 1.6 | Wire `init_position_privacy` into `client.ts`. It is the only program instruction with no client method (`process_undelegation` is called by the delegation program, not by us) and it is the TEE path needed in Phase 2. | DONE |
+| 1.7 | Add a browser test to `TEST-PLAN.md` section H: after starting a match through the UI, both permission PDAs exist on chain with the owner as sole member. | DONE |
 
 ---
 

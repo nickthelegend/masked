@@ -86,6 +86,13 @@ async function main() {
     await me.delegatePositionPermission(match, owner, creator.publicKey, pos);
     await me.delegatePosition(match, owner, creator.publicKey);
   }
+  if (cluster.tee) {
+    // The TEE-only step that turns the ACL into an enforced read gate.
+    for (const owner of [creator.publicKey, opponent.publicKey]) {
+      await me.initPositionPrivacy(match, owner, creator.publicKey);
+    }
+    line('    ephemeral permissions created (TEE read gate active)');
+  }
   for (const [label, pos] of [['yours', myPos], ['theirs', theirPos]] as const) {
     const info = await rawL1.getAccountInfo(pos);
     const delegated = info?.owner.equals(DELEGATION_PROGRAM_ID);

@@ -60,10 +60,12 @@ async function main() {
   assert.equal(m.pot, ENTRY * 2);
   console.log('   live, pot:', m.pot / LAMPORTS_PER_SOL, 'SOL');
 
-  console.log('4. delegate both positions to the ER');
-  await client.delegatePosition(match, creator.publicKey, creator.publicKey);
-  await client.delegatePosition(match, joiner.publicKey, creator.publicKey);
-  console.log('   delegated');
+  console.log('4. seal + delegate both positions (the exact UI path)');
+  await client.sealAndDelegateMatch(match, creator.publicKey, joiner.publicKey, creator.publicKey);
+  const sealedA = await client.isPositionSealed(match, creator.publicKey);
+  const sealedB = await client.isPositionSealed(match, joiner.publicKey);
+  assert.ok(sealedA && sealedB, 'both positions must carry an on-chain ACL');
+  console.log('   sealed (2/2 ACLs on chain) and delegated');
 
   console.log('5. apply_fill on the ER');
   await client.applyFill(match, creator.publicKey, 'buy', 0.4);

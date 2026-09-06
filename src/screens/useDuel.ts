@@ -53,6 +53,10 @@ export interface Duel {
   /* chain-aware additions */
   connected: boolean;
   busy: boolean;
+  /** True once both positions carry an on-chain access-control list. */
+  sealed: boolean;
+  /** Whether this cluster actually enforces the ACL at read time. */
+  teeEnforced: boolean;
   error: string | null;
   matchAddress: string | null;
   myAddress: string | null;
@@ -94,6 +98,8 @@ export function useDuel(): Duel {
   const [fillSize, setFillSize] = useState(DEFAULT_FILL_QTY);
   const [balance, setBalance] = useState(0);
   const [busy, setBusy] = useState(false);
+  // Read back from chain after sealing — never a local optimistic flag.
+  const [sealed, setSealed] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [match, setMatch] = useState<MatchState | null>(null);
@@ -293,8 +299,18 @@ export function useDuel(): Duel {
       const m = await client!.fetchMatch(target);
       if (!m || !m.joiner) return;
 
-      await client!.delegatePosition(target, creator, me);
-      await client!.delegatePosition(target, m.joiner, me);
+      // Seal before delegating: ACL, then delegate the ACL, then delegate the
+      // position. Doing this here — rather than only in a script — is what
+      // makes a match played through the UI actually private.
+      await client!.sealAndDelegateMatch(target, creator, m.joiner, me);
+      if (ACTIVE_CLUSTER.tee) {
+        // TEE clusters take the extra ephemeral-permission step that turns the
+        // ACL into an enforced read gate.
+        for (const owner of [creator, m.joiner]) {
+          await client!.initPositionPrivacy(target, owner, me);
+        }
+      }
+      setSealed(await client!.isPositionSealed(target, creator));
 
       settledRef.current = false;
       setMatch(m);
@@ -336,8 +352,13 @@ export function useDuel(): Duel {
         const m = await client!.fetchMatch(target);
         if (!m || !m.joiner) return;
 
-        await client!.delegatePosition(target, creatorKey, me);
-        await client!.delegatePosition(target, m.joiner, me);
+        await client!.sealAndDelegateMatch(target, creatorKey, m.joiner, me);
+        if (ACTIVE_CLUSTER.tee) {
+          for (const owner of [creatorKey, m.joiner]) {
+            await client!.initPositionPrivacy(target, owner, me);
+          }
+        }
+        setSealed(await client!.isPositionSealed(target, creatorKey));
 
         settledRef.current = false;
         setMatch(m);
@@ -362,6 +383,7 @@ export function useDuel(): Duel {
   );
 
   const rematch = useCallback(() => {
+    setSealed(false);
     setMatch(null);
     setMyPosition(null);
     setOpponentPosition(null);
@@ -372,6 +394,7 @@ export function useDuel(): Duel {
   }, []);
 
   const backToLobby = useCallback(() => {
+    setSealed(false);
     setMatch(null);
     setPhase('lobby');
   }, []);
@@ -419,6 +442,8 @@ export function useDuel(): Duel {
     won: match?.winner ? !!(wallet.publicKey && match.winner.equals(wallet.publicKey)) : false,
     connected,
     busy,
+    sealed,
+    teeEnforced: ACTIVE_CLUSTER.tee,
     error,
     matchAddress: match?.address.toBase58() ?? null,
     myAddress: wallet.publicKey?.toBase58() ?? null,
