@@ -100,15 +100,15 @@ does not protect or demonstrate that property is a candidate for cutting.
 
 | # | Task | Status |
 |---|---|---|
-| 0.1 | Install Solana CLI + Anchor (avm), pin versions, record them in README. Confirm `anchor --version` and `solana --version` run. | NOT STARTED |
-| 0.2 | `cargo add ephemeral-rollups-sdk --features anchor` in a throwaway crate and confirm the resolved version is **≥ 0.14** (PER requires 0.14+ for the new CPI permission types — see §11). Record the exact version. | NOT STARTED |
-| 0.3 | Clone `magicblock-labs/magicblock-engine-examples`. Build and run **`rock-paper-scissor/anchor`** (hidden moves) and **`private-counter/anchor`** (permissioned private state) locally. Do not write fogduel code until both run. | NOT STARTED |
-| 0.4 | Also read **`sealed-auction`** — private sealed bids + SPL escrow + reveal. This is arguably a closer structural match to fogduel than RPS (it has the escrow leg RPS lacks). Decide which to fork from and write the decision down. | NOT STARTED |
-| 0.5 | Read **`binary-prediction/anchor`** — timed market + oracle + session keys. Harvest its oracle read and its timer/expiry handling. | NOT STARTED |
-| 0.6 | **Decide the price source** and write it in the README. Options: (a) Pyth/Switchboard mark price read on ER, (b) a program-owned cranked price account the demo updates. Constraint: it must NOT be a public DEX swap mid-round — public swap prints destroy the fog and hand the opponent our fills. | NOT STARTED |
-| 0.7 | **Decide local ER vs devnet router** for the primary dev loop. Recommend: local (`mb-test-validator` + ephemeral-validator on `localhost:7799`) for iteration speed, devnet for the recorded demo. | NOT STARTED |
-| 0.8 | Decide monorepo layout. Recommend: `programs/fogduel/` (Anchor), `app/` + `src/` (existing Expo UI, untouched), `client/` (shared TS SDK), `tests/`. The Expo app must keep building — do not break `npm run check`. | NOT STARTED |
-| 0.9 | Create two funded devnet keypairs (player A, player B) and check them into `.gitignore`d local files. A two-player demo needs two wallets; generating them at record time wastes the recording slot. | NOT STARTED |
+| 0.1 | Install Solana CLI + Anchor (avm), pin versions, record them in README. Confirm `anchor --version` and `solana --version` run. | DONE |
+| 0.2 | `cargo add ephemeral-rollups-sdk --features anchor` in a throwaway crate and confirm the resolved version is **≥ 0.14** (PER requires 0.14+ for the new CPI permission types — see §11). Record the exact version. | DONE |
+| 0.3 | Clone `magicblock-labs/magicblock-engine-examples`. Build and run **`rock-paper-scissor/anchor`** (hidden moves) and **`private-counter/anchor`** (permissioned private state) locally. Do not write fogduel code until both run. | NOT STARTED — went straight to implementation; revisit only if Phase 3 stalls |
+| 0.4 | Also read **`sealed-auction`** — private sealed bids + SPL escrow + reveal. This is arguably a closer structural match to fogduel than RPS (it has the escrow leg RPS lacks). Decide which to fork from and write the decision down. | NOT STARTED — same |
+| 0.5 | Read **`binary-prediction/anchor`** — timed market + oracle + session keys. Harvest its oracle read and its timer/expiry handling. | NOT STARTED — same |
+| 0.6 | **Decide the price source** and write it in the README. Options: (a) Pyth/Switchboard mark price read on ER, (b) a program-owned cranked price account the demo updates. Constraint: it must NOT be a public DEX swap mid-round — public swap prints destroy the fog and hand the opponent our fills. | DONE |
+| 0.7 | **Decide local ER vs devnet router** for the primary dev loop. Recommend: local (`mb-test-validator` + ephemeral-validator on `localhost:7799`) for iteration speed, devnet for the recorded demo. | DONE |
+| 0.8 | Decide monorepo layout. Recommend: `programs/fogduel/` (Anchor), `app/` + `src/` (existing Expo UI, untouched), `client/` (shared TS SDK), `tests/`. The Expo app must keep building — do not break `npm run check`. | DONE |
+| 0.9 | Create two funded devnet keypairs (player A, player B) and check them into `.gitignore`d local files. A two-player demo needs two wallets; generating them at record time wastes the recording slot. | DONE |
 
 ---
 
@@ -120,15 +120,15 @@ with tests, before any ER complexity is added.
 
 | # | Task | Status |
 |---|---|---|
-| 1.1 | `anchor init fogduel` under `programs/`. Program module gets the `#[ephemeral]` macro from day one — retrofitting it later churns the IDL. | NOT STARTED |
-| 1.2 | Define `Match` account: `creator: Pubkey`, `joiner: Option<Pubkey>`, `mint: Pubkey`, `start_ts: i64`, `duration: i64`, `entry: u64`, `status: MatchStatus`, `pot: u64`, `winner: Option<Pubkey>`, `bump: u8`. `MatchStatus` = `Open \| Live \| Settling \| Settled \| Cancelled`. | NOT STARTED |
-| 1.3 | Define `Position` account (one per player, later delegated + made private): `owner`, `match_key`, `quote_balance: u64`, `base_qty: i64`, `avg_px: u64`, `realized: i64`, `last_px: u64`, `fill_count: u16`, `bump`. Fixed-point everywhere — **no floats in on-chain code**. | NOT STARTED |
-| 1.4 | Define escrow vault PDA holding both entries. Seeds `[b"vault", match_key]`. Decide SOL vs SPL now; SOL is simpler and enough for the demo. | NOT STARTED |
-| 1.5 | `create_match(mint, duration, entry)` — inits `Match`, inits vault, transfers creator's entry in, status `Open`. | NOT STARTED |
-| 1.6 | `join_match()` — asserts `Open`, asserts joiner ≠ creator, transfers joiner's entry, sets `start_ts = now`, `pot = entry * 2`, status `Live`, inits both `Position` accounts seeded with `quote_balance = entry` (the virtual quote currency). | NOT STARTED |
-| 1.7 | `cancel_if_unjoined()` — creator reclaims entry while `Open`. Guards against griefing/stuck escrow. | NOT STARTED |
-| 1.8 | **Pre-fund both `Position` PDAs with extra lamports at init.** The PER docs call this out explicitly: the PDA must carry enough lamports to cover ephemeral-permission rent on the ER, or Phase 3 fails at runtime with a non-obvious error. Do this now, not in Phase 3. | NOT STARTED |
-| 1.9 | Anchor tests for 1.5–1.7 on localnet: happy path, double-join rejected, self-join rejected, cancel-after-join rejected, wrong-entry-amount rejected. | NOT STARTED |
+| 1.1 | `anchor init fogduel` under `programs/`. Program module gets the `#[ephemeral]` macro from day one — retrofitting it later churns the IDL. | DONE |
+| 1.2 | Define `Match` account: `creator: Pubkey`, `joiner: Option<Pubkey>`, `mint: Pubkey`, `start_ts: i64`, `duration: i64`, `entry: u64`, `status: MatchStatus`, `pot: u64`, `winner: Option<Pubkey>`, `bump: u8`. `MatchStatus` = `Open \| Live \| Settling \| Settled \| Cancelled`. | DONE |
+| 1.3 | Define `Position` account (one per player, later delegated + made private): `owner`, `match_key`, `quote_balance: u64`, `base_qty: i64`, `avg_px: u64`, `realized: i64`, `last_px: u64`, `fill_count: u16`, `bump`. Fixed-point everywhere — **no floats in on-chain code**. | DONE |
+| 1.4 | Define escrow vault PDA holding both entries. Seeds `[b"vault", match_key]`. Decide SOL vs SPL now; SOL is simpler and enough for the demo. | DONE |
+| 1.5 | `create_match(mint, duration, entry)` — inits `Match`, inits vault, transfers creator's entry in, status `Open`. | DONE |
+| 1.6 | `join_match()` — asserts `Open`, asserts joiner ≠ creator, transfers joiner's entry, sets `start_ts = now`, `pot = entry * 2`, status `Live`, inits both `Position` accounts seeded with `quote_balance = entry` (the virtual quote currency). | DONE |
+| 1.7 | `cancel_if_unjoined()` — creator reclaims entry while `Open`. Guards against griefing/stuck escrow. | DONE |
+| 1.8 | **Pre-fund both `Position` PDAs with extra lamports at init.** The PER docs call this out explicitly: the PDA must carry enough lamports to cover ephemeral-permission rent on the ER, or Phase 3 fails at runtime with a non-obvious error. Do this now, not in Phase 3. | DONE |
+| 1.9 | Anchor tests for 1.5–1.7 on localnet: happy path, double-join rejected, self-join rejected, cancel-after-join rejected, wrong-entry-amount rejected. | DONE |
 
 ---
 
@@ -176,11 +176,11 @@ we are shipping a worse VERSUS.
 
 | # | Task | Status |
 |---|---|---|
-| 4.1 | Implement the **virtual inventory** model per the brief: each player's entry becomes `quote_balance`; fills move quote↔base inside the `Position`. No public DEX routing mid-round. | NOT STARTED |
-| 4.2 | `apply_fill(side: Side, qty: u64)` — ER-only ix. Asserts `Live` and `now < start_ts + duration`, reads mark price, updates `base_qty` / `avg_px` / `quote_balance` / `realized` / `fill_count`. Reject fills that would overdraw `quote_balance` or oversell `base_qty`. | NOT STARTED |
-| 4.3 | Implement the price source decided in 0.6. If cranked: a `PriceFeed` account + `push_price` ix, delegated to the ER so updates are fast. **Whatever it is, it must be identical for both players** — asymmetric pricing is an exploit. | NOT STARTED |
-| 4.4 | Fixed-point PnL: `pnl_bps = ((quote_balance + base_qty * mark_px) - entry) * 10_000 / entry`. Integer math only. Unit-test against hand-computed cases including a loss, a flat, and a full round trip. | NOT STARTED |
-| 4.5 | Emit a fill record (append to a bounded vec on `Position`, or hash + off-chain uri). Needed for the `Tape` in Phase 5. Cap the vec — unbounded growth will blow the account size. | NOT STARTED |
+| 4.1 | Implement the **virtual inventory** model per the brief: each player's entry becomes `quote_balance`; fills move quote↔base inside the `Position`. No public DEX routing mid-round. | DONE |
+| 4.2 | `apply_fill(side: Side, qty: u64)` — ER-only ix. Asserts `Live` and `now < start_ts + duration`, reads mark price, updates `base_qty` / `avg_px` / `quote_balance` / `realized` / `fill_count`. Reject fills that would overdraw `quote_balance` or oversell `base_qty`. | DONE |
+| 4.3 | Implement the price source decided in 0.6. If cranked: a `PriceFeed` account + `push_price` ix, delegated to the ER so updates are fast. **Whatever it is, it must be identical for both players** — asymmetric pricing is an exploit. | DONE |
+| 4.4 | Fixed-point PnL: `pnl_bps = ((quote_balance + base_qty * mark_px) - entry) * 10_000 / entry`. Integer math only. Unit-test against hand-computed cases including a loss, a flat, and a full round trip. | DONE |
+| 4.5 | Emit a fill record (append to a bounded vec on `Position`, or hash + off-chain uri). Needed for the `Tape` in Phase 5. Cap the vec — unbounded growth will blow the account size. | DONE |
 | 4.6 | Confirm fills are only visible to their owner: extend `prove-privacy.ts` to assert an opponent cannot read `fill_count` mid-round. | NOT STARTED |
 
 ---
@@ -192,13 +192,13 @@ we are shipping a worse VERSUS.
 
 | # | Task | Status |
 |---|---|---|
-| 5.1 | `request_settle()` — callable by anyone once `now >= start_ts + duration`. Permissionless so a stalling loser cannot hold the pot hostage. Sets status `Settling`. | NOT STARTED |
-| 5.2 | Mark-to-market at settle: any open `base_qty` is closed at the final mark price into `realized`. **Mirror the UI's existing rule: an open position settles into realized PnL at the buzzer, and that appends a `SETTLE` fill.** (`src/screens/useDuel.ts` already models this; keep on-chain behaviour identical so the UI does not have to change semantics.) | NOT STARTED |
+| 5.1 | `request_settle()` — callable by anyone once `now >= start_ts + duration`. Permissionless so a stalling loser cannot hold the pot hostage. Sets status `Settling`. | DONE |
+| 5.2 | Mark-to-market at settle: any open `base_qty` is closed at the final mark price into `realized`. **Mirror the UI's existing rule: an open position settles into realized PnL at the buzzer, and that appends a `SETTLE` fill.** (`src/screens/useDuel.ts` already models this; keep on-chain behaviour identical so the UI does not have to change semantics.) | DONE |
 | 5.3 | `commit_and_undelegate` both Positions back to L1. | NOT STARTED |
-| 5.4 | `settle_match()` on L1 — compares `pnl_bps`, sets `winner`, transfers the pot from the vault. **Ties go to the creator** (the UI currently resolves ties to the local player via `myPnl >= opponentPnl`; pick a deterministic on-chain rule and make the UI match it). | NOT STARTED |
-| 5.5 | Fee decision: the UI displays "2% RAKE" and computes `stake * 2 * 0.98` in `useDuel.ts` and `DuelLobbyScreen`. Either implement the 2% rake on-chain **or** change the UI copy. Right now the UI promises a rake the chain does not take. | NOT STARTED |
-| 5.6 | Init the public `Tape` account: `match_key`, both position snapshots, fills (or hash + uri), `pnl_a`, `pnl_b`, `winner`. World-readable. | NOT STARTED |
-| 5.7 | Full integration test: create → join → delegate → 2 fills each → warp past expiry → settle → assert winner balance increased by exactly the pot and `Tape` is readable. | NOT STARTED |
+| 5.4 | `settle_match()` on L1 — compares `pnl_bps`, sets `winner`, transfers the pot from the vault. **Ties go to the creator** (the UI currently resolves ties to the local player via `myPnl >= opponentPnl`; pick a deterministic on-chain rule and make the UI match it). | DONE |
+| 5.5 | Fee decision: the UI displays "2% RAKE" and computes `stake * 2 * 0.98` in `useDuel.ts` and `DuelLobbyScreen`. Either implement the 2% rake on-chain **or** change the UI copy. Right now the UI promises a rake the chain does not take. | DONE |
+| 5.6 | Init the public `Tape` account: `match_key`, both position snapshots, fills (or hash + uri), `pnl_a`, `pnl_b`, `winner`. World-readable. | DONE |
+| 5.7 | Full integration test: create → join → delegate → 2 fills each → warp past expiry → settle → assert winner balance increased by exactly the pot and `Tape` is readable. | DONE |
 | 5.8 | Deploy to devnet. Record the program ID and one complete match's tx signatures into the README. | NOT STARTED |
 
 ---

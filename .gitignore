@@ -4,3 +4,8 @@ dist/
 web-build/
 *.log
 .DS_Store
+.keys/
+
+chain/target/
+chain/node_modules/
+chain/.anchor/
