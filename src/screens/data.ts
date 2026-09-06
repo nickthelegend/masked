@@ -21,7 +21,16 @@ export interface FeedMatch {
  * list that used to live here was demo data and has been deleted.
  */
 
-export const FEED_FILTERS = ['REVEALS', 'LIVE FOG', 'FRIENDS'] as const;
+/**
+ * Feed filters. These actually filter — the previous set included a
+ * "FRIENDS" tab with no social graph behind it and a "LIVE FOG" tab that
+ * showed the same settled reveals as the others.
+ */
+export const FEED_FILTERS = ['REVEALS', 'BIG POTS', 'MINE'] as const;
+export type FeedFilter = (typeof FEED_FILTERS)[number];
+
+/** A pot at or above this many lamports counts as a big one. */
+export const BIG_POT_LAMPORTS = 0.2 * 1e9;
 
 
 export interface BoardRow {
@@ -60,18 +69,16 @@ export interface QuestDef {
   progress: string;
 }
 
-export const QUESTS: QuestDef[] = [
-  { name: 'Win 3 fog duels', reward: '+$5', value: 0.66, progress: '2 / 3' },
-  { name: 'Fade a winner', reward: '+$2', value: 0, progress: '0 / 1' },
-  { name: 'Post 5 reveals', reward: '+250 XP', value: 0.4, progress: '2 / 5' },
-  { name: 'Rematch the same wallet', reward: '+$1', value: 1, progress: '1 / 1' },
-];
+/* QUESTS deleted — progress is derived from on-chain PlayerStats in
+   src/chain/useQuests.ts rather than hardcoded. */
 
 /* TICKER_ITEMS deleted — the ticker reads real chain activity via
    src/chain/useTickerItems.ts. */
 
 export const TOKEN = '$BONK';
-export const OPPONENT = 'nofills.sol';
+/** Shown before an opponent has actually joined. Not a handle — nobody is
+ *  there yet, and inventing a name would imply otherwise. */
+export const OPPONENT_PENDING = 'AWAITING OPPONENT';
 export const ROUND_SECONDS = 300;
 export const RAKE = 0.02;
 

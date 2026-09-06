@@ -24,7 +24,7 @@ import { FOGDUEL_PROGRAM_ID } from '../chain/config';
 import { assertFogIntact } from '../chain/fog';
 import { FogduelClient, BASE_SCALE, PRICE_SCALE, type MatchState, type PositionState } from '../chain/client';
 import { ACTIVE_CLUSTER } from '../chain/config';
-import { OPPONENT, RAKE, ROUND_SECONDS } from './data';
+import { OPPONENT_PENDING, RAKE, ROUND_SECONDS } from './data';
 
 export type DuelPhase = 'lobby' | 'searching' | 'live' | 'reveal';
 
@@ -410,7 +410,7 @@ export function useDuel(): Duel {
     fills,
     opponentName: match?.joiner && wallet.publicKey && !match.joiner.equals(wallet.publicKey)
       ? `${match.joiner.toBase58().slice(0, 6)}…`
-      : OPPONENT,
+      : OPPONENT_PENDING,
     opponentPnl,
     // Mid-round this is all the opponent ever exposes: a count, never a size,
     // side or price. After settlement the committed position is public.
