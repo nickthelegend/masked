@@ -1,10 +1,105 @@
-import { View } from 'react-native';
-import { PixelText, color } from '../ui';
+/**
+ * MASKED — the running app. Composes the screens inside the pocket shell and
+ * owns nothing but navigation; the duel itself lives in `useDuel`.
+ */
+import { useState } from 'react';
+import { SafeAreaView, ScrollView, StatusBar, View } from 'react-native';
+import { BeachBackdrop, PocketShell, TabBar, Ticker, color } from '../ui';
+import AppHeader from './AppHeader';
+import FeedScreen from './FeedScreen';
+import LeaderboardScreen from './LeaderboardScreen';
+import DuelLobbyScreen from './DuelLobbyScreen';
+import MatchmakingScreen from './MatchmakingScreen';
+import LiveRoundScreen from './LiveRoundScreen';
+import RevealScreen from './RevealScreen';
+import ModesScreen from './ModesScreen';
+import QuestsScreen from './QuestsScreen';
+import { TICKER_ITEMS } from './data';
+import { useDuel } from './useDuel';
+
+const SCREEN_HEIGHT = 700;
 
 export default function MaskedApp() {
+  const [tab, setTab] = useState('duel');
+  const duel = useDuel();
+
+  const toMatchmaking = () => {
+    setTab('duel');
+    duel.findMatch();
+  };
+
+  const postToFeed = () => {
+    setTab('feed');
+    duel.backToLobby();
+  };
+
   return (
-    <View style={{ flex: 1, backgroundColor: color.screen, alignItems: 'center', justifyContent: 'center' }}>
-      <PixelText variant="wordmark">MASKED</PixelText>
+    <View style={{ flex: 1, backgroundColor: color.sunset[0] }}>
+      <StatusBar barStyle="light-content" />
+      <BeachBackdrop />
+
+      <SafeAreaView style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+        <PocketShell screenHeight={SCREEN_HEIGHT}>
+          <AppHeader balance={duel.balance} onHome={() => setTab('feed')} />
+          <Ticker items={TICKER_ITEMS} />
+
+          <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+            {tab === 'feed' ? <FeedScreen onChallenge={toMatchmaking} /> : null}
+            {tab === 'board' ? <LeaderboardScreen /> : null}
+            {tab === 'modes' ? <ModesScreen /> : null}
+            {tab === 'quests' ? <QuestsScreen /> : null}
+
+            {tab === 'duel' && duel.phase === 'lobby' ? (
+              <DuelLobbyScreen
+                stake={duel.stake}
+                onStakeChange={duel.setStake}
+                pot={duel.pot}
+                onFind={toMatchmaking}
+              />
+            ) : null}
+
+            {tab === 'duel' && duel.phase === 'searching' ? (
+              <MatchmakingScreen pot={duel.pot} onStart={duel.startMatch} />
+            ) : null}
+
+            {tab === 'duel' && duel.phase === 'live' ? (
+              <LiveRoundScreen
+                secondsLeft={duel.secondsLeft}
+                pot={duel.pot}
+                series={duel.series}
+                price={duel.price}
+                myPnl={duel.myPnl}
+                positionLabel={duel.positionLabel}
+                opponentName={duel.opponentName}
+                opponentFills={duel.opponentFills}
+                fills={duel.fills}
+                onLong={duel.openLong}
+                onClose={duel.closeLong}
+                onSkip={duel.settleNow}
+              />
+            ) : null}
+
+            {tab === 'duel' && duel.phase === 'reveal' ? (
+              <RevealScreen
+                won={duel.won}
+                pot={duel.pot}
+                stake={duel.stake}
+                equity={duel.equity}
+                myPnl={duel.myPnl}
+                opponentPnl={duel.opponentPnl}
+                myFills={duel.fills.length}
+                opponentFills={duel.opponentFills}
+                opponentName={duel.opponentName}
+                onRematch={duel.rematch}
+                onFade={duel.rematch}
+                onPost={postToFeed}
+              />
+            ) : null}
+          </ScrollView>
+
+          <TabBar active={tab} onChange={setTab} />
+        </PocketShell>
+      </SafeAreaView>
     </View>
   );
 }

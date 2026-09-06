@@ -21,6 +21,14 @@ export interface TickerProps {
 const SEP = '   ·   ';
 
 /**
+ * The strip is laid out this wide so neither copy of the line can wrap. It is
+ * clipped by the 26px shell strip regardless, so the excess costs nothing —
+ * and without it, a line longer than the shell wraps to two rows and spills
+ * over the header above.
+ */
+const STRIP_WIDTH = 4000;
+
+/**
  * Win marquee across the top of the shell.
  *
  * The line is printed twice and the strip travels exactly one copy's width, so
@@ -67,14 +75,15 @@ export default function Ticker({ items = [], duration = 18000, distance, height 
           // clipped to the shell width — otherwise each copy ellipsises.
           position: 'absolute',
           left: 0,
+          width: STRIP_WIDTH,
           flexDirection: 'row',
           transform: [{ translateX: x.interpolate({ inputRange: [0, 1], outputRange: [0, -travel] }) }],
         }}
       >
-        <PixelText variant="bodySmall" color={color.textDim} onLayout={onCopyLayout}>
+        <PixelText variant="bodySmall" numberOfLines={1} color={color.textDim} onLayout={onCopyLayout}>
           {line}
         </PixelText>
-        <PixelText variant="bodySmall" color={color.textDim}>
+        <PixelText variant="bodySmall" numberOfLines={1} color={color.textDim}>
           {line}
         </PixelText>
       </Animated.View>

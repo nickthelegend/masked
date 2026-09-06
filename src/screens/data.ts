@@ -1,0 +1,126 @@
+/**
+ * Demo content for the MASKED screens, lifted verbatim from the working app.
+ * Kept apart from the screens so a screen file is layout only.
+ */
+import type { PodiumEntry } from '../ui';
+
+export interface FeedMatch {
+  token: string;
+  pot: string;
+  winner: string;
+  loser: string;
+  winnerPnl: string;
+  loserPnl: string;
+  ago: string;
+  winnerSeries: number[];
+  loserSeries: number[];
+}
+
+export const FEED: FeedMatch[] = [
+  {
+    token: '$BONK',
+    pot: '$50',
+    winner: 'nofills.sol',
+    loser: 'jpegliq',
+    winnerPnl: '+4.12%',
+    loserPnl: '-1.80%',
+    ago: '2m ago',
+    winnerSeries: [0, 3, 1, 6, 4, 9, 7, 12],
+    loserSeries: [0, -1, 2, -3, -2, -5, -3, -6],
+  },
+  {
+    token: '$WIF',
+    pot: '$10',
+    winner: 'vwapgoblin',
+    loser: 'shadowbid',
+    winnerPnl: '+2.06%',
+    loserPnl: '+0.44%',
+    ago: '11m ago',
+    winnerSeries: [0, 2, 4, 3, 7, 6, 8, 9],
+    loserSeries: [0, 1, 3, 2, 4, 2, 3, 4],
+  },
+  {
+    token: '$POPCAT',
+    pot: '$200',
+    winner: 'maskedmoe',
+    loser: 'exitliq',
+    winnerPnl: '+7.90%',
+    loserPnl: '-5.10%',
+    ago: '26m ago',
+    winnerSeries: [0, -2, 3, 8, 6, 14, 11, 18],
+    loserSeries: [0, -3, -1, -6, -4, -9, -11, -13],
+  },
+];
+
+export const FEED_FILTERS = ['REVEALS', 'LIVE FOG', 'FRIENDS'] as const;
+
+export const PODIUM: PodiumEntry[] = [
+  { name: 'nofills.sol', place: 1, wins: '21W' },
+  { name: 'shadowbid', place: 2, wins: '14W' },
+  { name: 'vwapgoblin', place: 3, wins: '11W' },
+];
+
+export interface BoardRow {
+  rank: number;
+  name: string;
+  won: string;
+  wins: string;
+}
+
+export const BOARD: BoardRow[] = [
+  { rank: 4, name: 'liqhunter', won: '+$120', wins: '18W' },
+  { rank: 5, name: 'fogboy', won: '+$96', wins: '15W' },
+  { rank: 6, name: 'tapeworm', won: '+$88', wins: '14W' },
+  { rank: 7, name: '0xsilent', won: '+$70', wins: '12W' },
+  { rank: 8, name: 'benttape', won: '+$62', wins: '11W' },
+  { rank: 9, name: 'candlejack', won: '+$54', wins: '9W' },
+  { rank: 10, name: 'rugpatrol', won: '+$48', wins: '9W' },
+  { rank: 11, name: 'sizeplease', won: '+$40', wins: '7W' },
+];
+
+export interface ModeDef {
+  name: string;
+  description: string;
+  status: 'LIVE' | 'SOON';
+}
+
+export const MODES: ModeDef[] = [
+  { name: 'FOG DUEL', description: 'Same token, 5 min, hidden positions.', status: 'LIVE' },
+  { name: 'CHICKEN', description: 'First seller pays a penalty to holders.', status: 'SOON' },
+  { name: 'FADE ME', description: 'Opponent must take the opposite side.', status: 'SOON' },
+  { name: 'GHOST ROYALE', description: 'Bottom 3 cut every 90 seconds.', status: 'SOON' },
+  { name: 'BLIND DRAFT', description: 'VRF picks 3 tokens, you pick privately.', status: 'SOON' },
+  { name: 'HOT POTATO', description: 'Empty-handed at the buzzer = loss.', status: 'SOON' },
+  { name: 'SQUAD FOG', description: '2v2. Teammates visible, enemies fogged.', status: 'SOON' },
+  { name: 'SUDDEN REVEAL', description: '4 min fog, then 60s public chaos.', status: 'SOON' },
+  { name: 'COPY BAN', description: 'You see that they traded, not what.', status: 'SOON' },
+  { name: 'ASSASSINATION', description: 'Beat the marked wallet blind.', status: 'SOON' },
+  { name: 'HOLD THE LINE', description: 'Early exit pays the table.', status: 'SOON' },
+  { name: 'THESIS FIGHT', description: 'Lock a private thesis, reveal with tape.', status: 'SOON' },
+];
+
+export interface QuestDef {
+  name: string;
+  reward: string;
+  value: number;
+  progress: string;
+}
+
+export const QUESTS: QuestDef[] = [
+  { name: 'Win 3 fog duels', reward: '+$5', value: 0.66, progress: '2 / 3' },
+  { name: 'Fade a winner', reward: '+$2', value: 0, progress: '0 / 1' },
+  { name: 'Post 5 reveals', reward: '+250 XP', value: 0.4, progress: '2 / 5' },
+  { name: 'Rematch the same wallet', reward: '+$1', value: 1, progress: '1 / 1' },
+];
+
+export const TICKER_ITEMS = [
+  't_kev_2 WON $7.65 ON FOG DUEL',
+  'nofills.sol 6 WIN STREAK',
+  'vwapgoblin FADED jpegliq FOR $24',
+  'LIVE FOGS: 38',
+];
+
+export const TOKEN = '$BONK';
+export const OPPONENT = 'nofills.sol';
+export const ROUND_SECONDS = 300;
+export const RAKE = 0.02;
