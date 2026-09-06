@@ -43,3 +43,4 @@ export { default as Wordmark, type WordmarkProps } from './Wordmark';
 /* icons */
 export * from './icons';
 export { default as ConnectWalletButton, type ConnectWalletButtonProps } from './ConnectWalletButton';
+export { default as ProofPanel, type ProofPanelProps, type ProofRow } from './ProofPanel';
