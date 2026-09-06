@@ -18,7 +18,8 @@
     "check:fog": "tsx scripts/check-fog.mts",
     "check:errors": "tsx scripts/check-errors.mts",
     "seed": "tsx scripts/seed-demo.mts",
-    "check:preflight": "tsx scripts/check-preflight.mts"
+    "check:preflight": "tsx scripts/check-preflight.mts",
+    "open": "tsx scripts/open-matches.mts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",

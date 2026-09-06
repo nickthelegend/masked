@@ -55,6 +55,7 @@ export interface Duel {
   busy: boolean;
   error: string | null;
   matchAddress: string | null;
+  myAddress: string | null;
   fillSize: number;
   setFillSize: (qty: number) => void;
   setStake: (stake: number) => void;
@@ -65,6 +66,10 @@ export interface Duel {
   settleNow: () => void;
   rematch: () => void;
   backToLobby: () => void;
+  /** Join a specific open match from the book. */
+  joinMatch: (address: string, creator: string) => void;
+  /** Cancel your own unjoined match and reclaim the entry. */
+  cancelMatch: (address: string) => void;
 }
 
 const bpsToPct = (bps: number) => bps / 100;
@@ -319,6 +324,43 @@ export function useDuel(): Duel {
     });
   }, [guard, client, match, myPosition, wallet.publicKey]);
 
+  /** Take a specific match off the book. */
+  const joinMatchByAddress = useCallback(
+    (address: string, creator: string) => {
+      void guard('MATCH JOINED', async () => {
+        const me = wallet.publicKey!;
+        const target = new PublicKey(address);
+        const creatorKey = new PublicKey(creator);
+
+        await client!.joinMatch(target, me, creatorKey);
+        const m = await client!.fetchMatch(target);
+        if (!m || !m.joiner) return;
+
+        await client!.delegatePosition(target, creatorKey, me);
+        await client!.delegatePosition(target, m.joiner, me);
+
+        settledRef.current = false;
+        setMatch(m);
+        setSeries([]);
+        setEquity([0]);
+        setSecondsLeft(m.duration);
+        setPrice(await client!.fetchPrice(target, true));
+        setPhase('live');
+      });
+    },
+    [guard, client, wallet.publicKey]
+  );
+
+  const cancelMatchByAddress = useCallback(
+    (address: string) => {
+      void guard('MATCH CANCELLED', async () => {
+        await client!.cancelMatch(new PublicKey(address), wallet.publicKey!);
+        setMatch(null);
+      });
+    },
+    [guard, client, wallet.publicKey]
+  );
+
   const rematch = useCallback(() => {
     setMatch(null);
     setMyPosition(null);
@@ -379,6 +421,7 @@ export function useDuel(): Duel {
     busy,
     error,
     matchAddress: match?.address.toBase58() ?? null,
+    myAddress: wallet.publicKey?.toBase58() ?? null,
     fillSize,
     setFillSize,
     setStake,
@@ -389,5 +432,7 @@ export function useDuel(): Duel {
     settleNow: () => void settle(),
     rematch,
     backToLobby,
+    joinMatch: joinMatchByAddress,
+    cancelMatch: cancelMatchByAddress,
   };
 }

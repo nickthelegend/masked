@@ -59,7 +59,15 @@ export default function MaskedApp() {
             ) : null}
 
             {tab === 'duel' && duel.phase === 'searching' ? (
-              <MatchmakingScreen pot={duel.pot} onStart={duel.startMatch} />
+              <MatchmakingScreen
+                pot={duel.pot}
+                stake={duel.stake}
+                busy={duel.busy}
+                myAddress={duel.myAddress}
+                onStart={duel.startMatch}
+                onJoin={duel.joinMatch}
+                onCancel={duel.cancelMatch}
+              />
             ) : null}
 
             {tab === 'duel' && duel.phase === 'live' ? (

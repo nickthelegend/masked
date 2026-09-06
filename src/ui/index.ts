@@ -51,3 +51,4 @@ export { default as RevealCurtain, type RevealCurtainProps } from './RevealCurta
 export { default as PnLOdometer, type PnLOdometerProps } from './PnLOdometer';
 export { useReducedMotion, DURATION, FRAME_MS } from './motion';
 export { default as TxFeed, type TxFeedProps, type TxFeedItem } from './TxFeed';
+export { default as MatchRow, type MatchRowProps } from './MatchRow';
