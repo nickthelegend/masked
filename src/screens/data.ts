@@ -2,7 +2,6 @@
  * Demo content for the MASKED screens, lifted verbatim from the working app.
  * Kept apart from the screens so a screen file is layout only.
  */
-import type { PodiumEntry } from '../ui';
 
 export interface FeedMatch {
   token: string;
@@ -16,49 +15,14 @@ export interface FeedMatch {
   loserSeries: number[];
 }
 
-export const FEED: FeedMatch[] = [
-  {
-    token: '$BONK',
-    pot: '$50',
-    winner: 'nofills.sol',
-    loser: 'jpegliq',
-    winnerPnl: '+4.12%',
-    loserPnl: '-1.80%',
-    ago: '2m ago',
-    winnerSeries: [0, 3, 1, 6, 4, 9, 7, 12],
-    loserSeries: [0, -1, 2, -3, -2, -5, -3, -6],
-  },
-  {
-    token: '$WIF',
-    pot: '$10',
-    winner: 'vwapgoblin',
-    loser: 'shadowbid',
-    winnerPnl: '+2.06%',
-    loserPnl: '+0.44%',
-    ago: '11m ago',
-    winnerSeries: [0, 2, 4, 3, 7, 6, 8, 9],
-    loserSeries: [0, 1, 3, 2, 4, 2, 3, 4],
-  },
-  {
-    token: '$POPCAT',
-    pot: '$200',
-    winner: 'maskedmoe',
-    loser: 'exitliq',
-    winnerPnl: '+7.90%',
-    loserPnl: '-5.10%',
-    ago: '26m ago',
-    winnerSeries: [0, -2, 3, 8, 6, 14, 11, 18],
-    loserSeries: [0, -3, -1, -6, -4, -9, -11, -13],
-  },
-];
+/**
+ * The feed is read from chain (see src/chain/useTapes.ts). This interface is
+ * retained because MatchCard's props are shaped by it; the hardcoded match
+ * list that used to live here was demo data and has been deleted.
+ */
 
 export const FEED_FILTERS = ['REVEALS', 'LIVE FOG', 'FRIENDS'] as const;
 
-export const PODIUM: PodiumEntry[] = [
-  { name: 'nofills.sol', place: 1, wins: '21W' },
-  { name: 'shadowbid', place: 2, wins: '14W' },
-  { name: 'vwapgoblin', place: 3, wins: '11W' },
-];
 
 export interface BoardRow {
   rank: number;
@@ -67,16 +31,6 @@ export interface BoardRow {
   wins: string;
 }
 
-export const BOARD: BoardRow[] = [
-  { rank: 4, name: 'liqhunter', won: '+$120', wins: '18W' },
-  { rank: 5, name: 'fogboy', won: '+$96', wins: '15W' },
-  { rank: 6, name: 'tapeworm', won: '+$88', wins: '14W' },
-  { rank: 7, name: '0xsilent', won: '+$70', wins: '12W' },
-  { rank: 8, name: 'benttape', won: '+$62', wins: '11W' },
-  { rank: 9, name: 'candlejack', won: '+$54', wins: '9W' },
-  { rank: 10, name: 'rugpatrol', won: '+$48', wins: '9W' },
-  { rank: 11, name: 'sizeplease', won: '+$40', wins: '7W' },
-];
 
 export interface ModeDef {
   name: string;

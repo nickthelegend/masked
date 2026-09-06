@@ -32,7 +32,8 @@ import {
 } from '../ui';
 import AppHeader from './AppHeader';
 import DuelLobbyScreen from './DuelLobbyScreen';
-import { FEED, HOW_IT_WORKS, LANDING_STAT_LABELS, MODES, RAKE, TICKER_ITEMS } from './data';
+import { HOW_IT_WORKS, LANDING_STAT_LABELS, MODES, RAKE, TICKER_ITEMS, TOKEN } from './data';
+import { bpsPct, short, useTapes } from '../chain/useTapes';
 import { useChainStats } from '../chain/useChainStats';
 
 /** Above this width the hero splits into copy + device columns. */
@@ -50,6 +51,7 @@ export default function LandingScreen() {
   const wide = width >= WIDE;
   const [stake, setStake] = useState(5);
   const stats = useChainStats();
+  const { tapes, loaded: tapesLoaded } = useTapes();
 
   // "HOW IT WORKS" scrolls to the explainer rather than dumping you into a
   // duel — the label has to mean what it says.
@@ -203,12 +205,32 @@ export default function LandingScreen() {
         </Stack>
 
         <Row gap={space.md} wrap align="stretch">
-          {FEED.slice(0, REVEAL_PREVIEW).map((m) => (
-            <Box key={m.token} flex={1} style={{ minWidth: REVEAL_MIN_WIDTH }}>
-              <MatchCard {...m} onChallenge={goPlay} onCopy={goPlay} onFade={goPlay} />
+          {/* Real settled tapes, same source as the in-app feed. */}
+          {tapes.slice(0, REVEAL_PREVIEW).map((t) => (
+            <Box key={t.match} flex={1} style={{ minWidth: REVEAL_MIN_WIDTH }}>
+              <MatchCard
+                token={TOKEN}
+                pot={`${(t.potPaid / 1e9).toFixed(2)}◎`}
+                ago={`${Math.max(0, Math.floor((Date.now() / 1000 - t.settledTs) / 60))}m ago`}
+                winner={short(t.winner)}
+                loser={short(t.loser)}
+                winnerPnl={bpsPct(t.winnerPnlBps)}
+                loserPnl={bpsPct(t.loserPnlBps)}
+                winnerSeries={t.winnerSeries}
+                loserSeries={t.loserSeries}
+                onChallenge={goPlay}
+                onCopy={goPlay}
+                onFade={goPlay}
+              />
             </Box>
           ))}
         </Row>
+
+        {tapesLoaded && tapes.length === 0 ? (
+          <PixelText variant="bodySmall" color={color.textFaint}>
+            NO DUELS SETTLED YET — THE FIRST ONE LANDS HERE
+          </PixelText>
+        ) : null}
       </Stack>
 
       {/* ---- footer ---- */}
