@@ -11,6 +11,7 @@ import { useRouter } from 'expo-router';
 import {
   Badge,
   BeachBackdrop,
+  ConnectWalletButton,
   Box,
   Divider,
   IconPlate,
@@ -121,7 +122,10 @@ export default function LandingScreen() {
         <Stack pad={space.xl} gap={space.xxl} style={{ width: '100%', maxWidth: MAX_CONTENT, alignSelf: 'center' }}>
           <Row justify="space-between" gap={space.md}>
             <Wordmark size={wide ? 18 : 14} />
-            <PixelButton tone="gold" label="PLAY" size={10} padY={space.md} onPress={goPlay} />
+            <Row gap={space.sm}>
+              <ConnectWalletButton size={9} padY={space.md} />
+              <PixelButton tone="gold" label="PLAY" size={10} padY={space.md} onPress={goPlay} />
+            </Row>
           </Row>
 
           {wide ? (

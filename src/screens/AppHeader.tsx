@@ -1,5 +1,5 @@
 import { Pressable } from 'react-native';
-import { Box, IconPlate, MenuIcon, PixelText, ResetIcon, Row, color, space } from '../ui';
+import { Box, ConnectWalletButton, IconPlate, MenuIcon, PixelText, ResetIcon, Row, color, space } from '../ui';
 
 export interface AppHeaderProps {
   balance: number;
@@ -34,9 +34,11 @@ export default function AppHeader({ balance, onHome, onMenu }: AppHeaderProps) {
         </PixelText>
       </Row>
 
-      <PixelText variant="wordmark" size={15} align="center" style={{ flex: 1 }}>
+      <PixelText variant="wordmark" size={13} align="center" style={{ flex: 1 }}>
         MASKED
       </PixelText>
+
+      <ConnectWalletButton size={8} padY={8} />
 
       <Pressable onPress={onMenu} accessibilityRole="button" accessibilityLabel="Menu" android_ripple={null}>
         <Box

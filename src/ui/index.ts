@@ -42,3 +42,4 @@ export { default as Wordmark, type WordmarkProps } from './Wordmark';
 
 /* icons */
 export * from './icons';
+export { default as ConnectWalletButton, type ConnectWalletButtonProps } from './ConnectWalletButton';
