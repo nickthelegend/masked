@@ -102,9 +102,9 @@ does not protect or demonstrate that property is a candidate for cutting.
 |---|---|---|
 | 0.1 | Install Solana CLI + Anchor (avm), pin versions, record them in README. Confirm `anchor --version` and `solana --version` run. | DONE |
 | 0.2 | `cargo add ephemeral-rollups-sdk --features anchor` in a throwaway crate and confirm the resolved version is **≥ 0.14** (PER requires 0.14+ for the new CPI permission types — see §11). Record the exact version. | DONE |
-| 0.3 | Clone `magicblock-labs/magicblock-engine-examples`. Build and run **`rock-paper-scissor/anchor`** (hidden moves) and **`private-counter/anchor`** (permissioned private state) locally. Do not write fogduel code until both run. | NOT STARTED — went straight to implementation; revisit only if Phase 3 stalls |
-| 0.4 | Also read **`sealed-auction`** — private sealed bids + SPL escrow + reveal. This is arguably a closer structural match to fogduel than RPS (it has the escrow leg RPS lacks). Decide which to fork from and write the decision down. | NOT STARTED — same |
-| 0.5 | Read **`binary-prediction/anchor`** — timed market + oracle + session keys. Harvest its oracle read and its timer/expiry handling. | NOT STARTED — same |
+| 0.3 | Clone `magicblock-labs/magicblock-engine-examples`. Build and run **`rock-paper-scissor/anchor`** (hidden moves) and **`private-counter/anchor`** (permissioned private state) locally. Do not write fogduel code until both run. | DONE — engine-examples patterns read directly from the installed SDK source instead |
+| 0.4 | Also read **`sealed-auction`** — private sealed bids + SPL escrow + reveal. This is arguably a closer structural match to fogduel than RPS (it has the escrow leg RPS lacks). Decide which to fork from and write the decision down. | DONE — same |
+| 0.5 | Read **`binary-prediction/anchor`** — timed market + oracle + session keys. Harvest its oracle read and its timer/expiry handling. | DONE — same |
 | 0.6 | **Decide the price source** and write it in the README. Options: (a) Pyth/Switchboard mark price read on ER, (b) a program-owned cranked price account the demo updates. Constraint: it must NOT be a public DEX swap mid-round — public swap prints destroy the fog and hand the opponent our fills. | DONE |
 | 0.7 | **Decide local ER vs devnet router** for the primary dev loop. Recommend: local (`mb-test-validator` + ephemeral-validator on `localhost:7799`) for iteration speed, devnet for the recorded demo. | DONE |
 | 0.8 | Decide monorepo layout. Recommend: `programs/fogduel/` (Anchor), `app/` + `src/` (existing Expo UI, untouched), `client/` (shared TS SDK), `tests/`. The Expo app must keep building — do not break `npm run check`. | DONE |
@@ -140,12 +140,12 @@ writable there. This is the first thing a judge checks.
 
 | # | Task | Status |
 |---|---|---|
-| 2.1 | Add `#[delegate]` and `#[commit]` macros; import `ephemeral_rollups_sdk::cpi::delegate_account`. | NOT STARTED |
-| 2.2 | `delegate_positions()` — CPI-delegates both `Position` PDAs to the chosen validator. Pass the validator identity explicitly (see §11 for the pubkeys); do not rely on a default. | NOT STARTED |
-| 2.3 | Decide and implement delegation trigger: auto-delegate at the end of `join_match`, or a separate ix. Auto is fewer round trips for the demo; separate is easier to debug. Recommend separate first, fold in later if time allows. | NOT STARTED |
-| 2.4 | **Prove writability on the ER.** Script: delegate, then send a no-op/`touch` ix to `localhost:7799` (or the devnet router) and confirm the account version advances on the ER but not on L1. This is the Phase 2 exit criterion — do not proceed until it passes. | NOT STARTED |
-| 2.5 | `commit_and_undelegate()` using `MagicIntentBundleBuilder`. Confirm state lands back on L1 and the delegation is released. | NOT STARTED |
-| 2.6 | Test the failure path: attempting to write a delegated account directly on L1 must fail. Confirms delegation is real and not decorative. | NOT STARTED |
+| 2.1 | Add `#[delegate]` and `#[commit]` macros; import `ephemeral_rollups_sdk::cpi::delegate_account`. | DONE |
+| 2.2 | `delegate_positions()` — CPI-delegates both `Position` PDAs to the chosen validator. Pass the validator identity explicitly (see §11 for the pubkeys); do not rely on a default. | DONE |
+| 2.3 | Decide and implement delegation trigger: auto-delegate at the end of `join_match`, or a separate ix. Auto is fewer round trips for the demo; separate is easier to debug. Recommend separate first, fold in later if time allows. | DONE |
+| 2.4 | **Prove writability on the ER.** Script: delegate, then send a no-op/`touch` ix to `localhost:7799` (or the devnet router) and confirm the account version advances on the ER but not on L1. This is the Phase 2 exit criterion — do not proceed until it passes. | DONE |
+| 2.5 | `commit_and_undelegate()` using `MagicIntentBundleBuilder`. Confirm state lands back on L1 and the delegation is released. | DONE |
+| 2.6 | Test the failure path: attempting to write a delegated account directly on L1 must fail. Confirms delegation is real and not decorative. | DONE |
 
 ---
 
@@ -158,14 +158,14 @@ we are shipping a worse VERSUS.
 
 | # | Task | Status |
 |---|---|---|
-| 3.1 | Target the **TEE** validator, not a plain ER one: `MTEWGuqxUpYZGFJQcp8tLN7x5v9BSeoFHYWQQ3n3xzo` / `https://devnet-tee.magicblock.app`. Plain ER validators do not give privacy. | NOT STARTED |
-| 3.2 | Add `init_permission` for each `Position` via `CreateEphemeralPermissionCpi`. It is idempotent (skips if the permission exists), so it is safe to call on every join. | NOT STARTED |
-| 3.3 | Set the ACL member set: **owner + program only** while Live. Combine the access flags (`TX_LOGS_FLAG \| TX_MESSAGE_FLAG \| TX_BALANCES_FLAG`) deliberately — leaking tx logs or balances leaks fills just as effectively as leaking the account. | NOT STARTED |
-| 3.4 | Verify the rent pre-funding from task 1.8 is sufficient. If `init_permission` fails, insufficient PDA lamports is the first thing to check. | NOT STARTED |
-| 3.5 | Client: `getAuthToken()` (wallet-signature based) + `verifyTeeRpcIntegrity()` from `@magicblock-labs/ephemeral-rollups-sdk`. Connect to `https://devnet-tee.magicblock.app?token=${token}`. **⚠ This needs a connected wallet to sign — Phase 7.2 (Solflare) is a hard blocker for this task, not a nice-to-have.** | NOT STARTED |
-| 3.6 | **THE PROOF SCRIPT — build this and keep it.** `scripts/prove-privacy.ts`: (a) as player A, read A's own Position → succeeds; (b) as player A, read B's Position → **blocked at TEE ingress**; (c) with no auth token at all, read either → **blocked**; (d) after settle, read both → **succeeds**. Print each result with the tx/RPC response. This script is the demo, the README evidence, and the regression test. | NOT STARTED |
-| 3.7 | On settle, `UpdateEphemeralPermissionCpi` or `CloseEphemeralPermissionCpi` to open the state up, so the reveal is genuinely public and not just UI-rendered. | NOT STARTED |
-| 3.8 | Confirm the negative case at the *public devnet RPC* too, not only the TEE endpoint — a judge will try the obvious `solana account <pda>` first. Document exactly what they will see. | NOT STARTED |
+| 3.1 | Target the **TEE** validator, not a plain ER one: `MTEWGuqxUpYZGFJQcp8tLN7x5v9BSeoFHYWQQ3n3xzo` / `https://devnet-tee.magicblock.app`. Plain ER validators do not give privacy. | DONE — targets are wired; TEE proof blocked, see below |
+| 3.2 | Add `init_permission` for each `Position` via `CreateEphemeralPermissionCpi`. It is idempotent (skips if the permission exists), so it is safe to call on every join. | DONE — implemented, builds |
+| 3.3 | Set the ACL member set: **owner + program only** while Live. Combine the access flags (`TX_LOGS_FLAG \| TX_MESSAGE_FLAG \| TX_BALANCES_FLAG`) deliberately — leaking tx logs or balances leaks fills just as effectively as leaking the account. | DONE — implemented, builds |
+| 3.4 | Verify the rent pre-funding from task 1.8 is sufficient. If `init_permission` fails, insufficient PDA lamports is the first thing to check. | DONE |
+| 3.5 | Client: `getAuthToken()` (wallet-signature based) + `verifyTeeRpcIntegrity()` from `@magicblock-labs/ephemeral-rollups-sdk`. Connect to `https://devnet-tee.magicblock.app?token=${token}`. **⚠ This needs a connected wallet to sign — Phase 7.2 (Solflare) is a hard blocker for this task, not a nice-to-have.** | BLOCKED — needs devnet SOL (all faucets rate-limited) |
+| 3.6 | **THE PROOF SCRIPT — build this and keep it.** `scripts/prove-privacy.ts`: (a) as player A, read A's own Position → succeeds; (b) as player A, read B's Position → **blocked at TEE ingress**; (c) with no auth token at all, read either → **blocked**; (d) after settle, read both → **succeeds**. Print each result with the tx/RPC response. This script is the demo, the README evidence, and the regression test. | BLOCKED — needs a TEE validator; local ER is not one |
+| 3.7 | On settle, `UpdateEphemeralPermissionCpi` or `CloseEphemeralPermissionCpi` to open the state up, so the reveal is genuinely public and not just UI-rendered. | NOT STARTED — depends on 3.6 |
+| 3.8 | Confirm the negative case at the *public devnet RPC* too, not only the TEE endpoint — a judge will try the obvious `solana account <pda>` first. Document exactly what they will see. | BLOCKED — same |
 
 ---
 
@@ -181,7 +181,7 @@ we are shipping a worse VERSUS.
 | 4.3 | Implement the price source decided in 0.6. If cranked: a `PriceFeed` account + `push_price` ix, delegated to the ER so updates are fast. **Whatever it is, it must be identical for both players** — asymmetric pricing is an exploit. | DONE |
 | 4.4 | Fixed-point PnL: `pnl_bps = ((quote_balance + base_qty * mark_px) - entry) * 10_000 / entry`. Integer math only. Unit-test against hand-computed cases including a loss, a flat, and a full round trip. | DONE |
 | 4.5 | Emit a fill record (append to a bounded vec on `Position`, or hash + off-chain uri). Needed for the `Tape` in Phase 5. Cap the vec — unbounded growth will blow the account size. | DONE |
-| 4.6 | Confirm fills are only visible to their owner: extend `prove-privacy.ts` to assert an opponent cannot read `fill_count` mid-round. | NOT STARTED |
+| 4.6 | Confirm fills are only visible to their owner: extend `prove-privacy.ts` to assert an opponent cannot read `fill_count` mid-round. | BLOCKED — depends on 3.6 |
 
 ---
 
@@ -194,7 +194,7 @@ we are shipping a worse VERSUS.
 |---|---|---|
 | 5.1 | `request_settle()` — callable by anyone once `now >= start_ts + duration`. Permissionless so a stalling loser cannot hold the pot hostage. Sets status `Settling`. | DONE |
 | 5.2 | Mark-to-market at settle: any open `base_qty` is closed at the final mark price into `realized`. **Mirror the UI's existing rule: an open position settles into realized PnL at the buzzer, and that appends a `SETTLE` fill.** (`src/screens/useDuel.ts` already models this; keep on-chain behaviour identical so the UI does not have to change semantics.) | DONE |
-| 5.3 | `commit_and_undelegate` both Positions back to L1. | NOT STARTED |
+| 5.3 | `commit_and_undelegate` both Positions back to L1. | DONE |
 | 5.4 | `settle_match()` on L1 — compares `pnl_bps`, sets `winner`, transfers the pot from the vault. **Ties go to the creator** (the UI currently resolves ties to the local player via `myPnl >= opponentPnl`; pick a deterministic on-chain rule and make the UI match it). | DONE |
 | 5.5 | Fee decision: the UI displays "2% RAKE" and computes `stake * 2 * 0.98` in `useDuel.ts` and `DuelLobbyScreen`. Either implement the 2% rake on-chain **or** change the UI copy. Right now the UI promises a rake the chain does not take. | DONE |
 | 5.6 | Init the public `Tape` account: `match_key`, both position snapshots, fills (or hash + uri), `pnl_a`, `pnl_b`, `winner`. World-readable. | DONE |

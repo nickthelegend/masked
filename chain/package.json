@@ -5,9 +5,11 @@
     "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check"
   },
   "dependencies": {
-    "@coral-xyz/anchor": "^0.32.1"
+    "@coral-xyz/anchor": "^0.32.1",
+    "@magicblock-labs/ephemeral-rollups-sdk": "^0.17.0"
   },
   "devDependencies": {
+    "@magicblock-labs/ephemeral-validator": "^0.14.10",
     "@types/bn.js": "^5.1.0",
     "@types/chai": "^4.3.0",
     "@types/mocha": "^9.0.0",

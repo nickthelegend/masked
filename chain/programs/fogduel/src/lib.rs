@@ -436,10 +436,18 @@ pub mod fogduel {
         let bump = ctx.accounts.position.bump;
         let seeds: &[&[u8]] = &[b"position", match_key.as_ref(), owner.as_ref(), &[bump]];
 
+        // The position PDA pays for its own permission rent, and signs for it.
+        //
+        // This is the point of pre-funding it at init (see
+        // POSITION_PREFUND_LAMPORTS). The ER runs an `ephemeral` lifecycle:
+        // it only accepts writes to *delegated* accounts, so an ordinary
+        // wallet cannot be the CPI payer here — the transaction is rejected
+        // with "This account may not be used to pay transaction fees". The
+        // position is delegated and funded, so it can.
         CreateEphemeralPermissionCpi {
             permissioned_account: ctx.accounts.position.to_account_info(),
             permission: ctx.accounts.permission.to_account_info(),
-            payer: ctx.accounts.payer.to_account_info(),
+            payer: ctx.accounts.position.to_account_info(),
             vault: ctx.accounts.ephemeral_vault.to_account_info(),
             magic_program: ctx.accounts.magic_program.to_account_info(),
             permission_program: ctx.accounts.permission_program.to_account_info(),
@@ -686,7 +694,8 @@ pub struct DelegatePositionToEr<'info> {
 #[derive(Accounts)]
 #[instruction(owner: Pubkey)]
 pub struct InitPositionPrivacy<'info> {
-    #[account(mut)]
+    /// Transaction fee payer only. Deliberately NOT `mut`: on the ER a
+    /// writable non-delegated account fails transaction verification.
     pub payer: Signer<'info>,
 
     #[account(seeds = [b"match", match_account.creator.as_ref(), &match_account.match_id.to_le_bytes()], bump = match_account.bump)]
