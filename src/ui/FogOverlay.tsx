@@ -67,13 +67,14 @@ export default function FogOverlay({
           left: 0,
           right: 0,
           top: -step,
+          gap: band,
           transform: [
             { translateY: drift.interpolate({ inputRange: [0, 1], outputRange: [0, step] }) },
           ],
         }}
       >
         {Array.from({ length: BANDS }).map((_, i) => (
-          <View key={i} style={{ height: band, marginTop: i === 0 ? 0 : band, backgroundColor: color.panelLight, opacity: 0.35 }} />
+          <View key={i} style={{ height: band, backgroundColor: color.panelLight, opacity: 0.35 }} />
         ))}
       </Animated.View>
       {label ? (

@@ -70,10 +70,10 @@ export default function BeachBackdrop({ animate = true }: BeachBackdropProps) {
         style={{
           position: 'absolute',
           left: '50%',
-          marginLeft: -70,
           top: 300,
           width: 140,
           height: 140,
+          transform: [{ translateX: -70 }],
           backgroundColor: color.sunset[6],
         }}
       />

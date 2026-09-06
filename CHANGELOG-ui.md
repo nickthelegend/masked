@@ -32,6 +32,12 @@ comment**:
 - `shade` — `plinthDim #c9971a` (TabBar's inactive DUEL plinth), `led #ff8a90`
   (PocketShell power LED).
 
+`ui/rn/Orb.js` likewise carries its own six-color palette (`#2d3f7d`, `#4f6fd8`,
+`#0f6f8c`, `#bff2ff`, `#a06e00`, `#fff3b8`) plus the `#000` at 0.08 used for its
+scanline mask. None are in `tokens.js`. The Orb is a self-contained SVG whose
+rings only work as a set, so these are ported verbatim and kept local to
+`Orb.tsx` and `ScanlineOverlay.tsx` rather than promoted into the palette.
+
 Colors that appear **only** in the app file and nowhere in tokens or the blessed
 components were mapped to the nearest token:
 
