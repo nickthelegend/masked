@@ -18,7 +18,6 @@ import {
   space,
 } from '../ui';
 import type { Fill } from '../ui';
-import { TOKEN } from './data';
 
 export interface LiveRoundScreenProps {
   secondsLeft: number;
@@ -37,6 +36,8 @@ export interface LiveRoundScreenProps {
   error?: string | null;
   /** Both positions carry an on-chain ACL. Read from chain, not assumed. */
   sealed?: boolean;
+  /** Market label resolved from the match's real mint. */
+  market?: string;
   /** Whether this cluster enforces that ACL at read time (TEE only). */
   teeEnforced?: boolean;
 }
@@ -61,6 +62,7 @@ export default function LiveRoundScreen({
   busy = false,
   error = null,
   sealed = false,
+  market = 'SYNTHETIC',
   teeEnforced = false,
 }: LiveRoundScreenProps) {
   return (
@@ -71,7 +73,7 @@ export default function LiveRoundScreen({
               red when down, cyan while flat. */}
           <Orb size={22} state={orbStateForPnl(myPnl)} />
           <PixelText variant="numeric" size={8} color={color.textDim}>
-            {TOKEN}
+            {market}
           </PixelText>
         </Row>
         <RoundClock seconds={secondsLeft} />

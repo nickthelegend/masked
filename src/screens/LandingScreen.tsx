@@ -32,8 +32,9 @@ import {
 } from '../ui';
 import AppHeader from './AppHeader';
 import DuelLobbyScreen from './DuelLobbyScreen';
-import { HOW_IT_WORKS, LANDING_STAT_LABELS, MODES, RAKE, TOKEN } from './data';
+import { HOW_IT_WORKS, LANDING_STAT_LABELS, MODES, RAKE } from './data';
 import { useTickerItems } from '../chain/useTickerItems';
+import { DEMO_MINT, marketLabel } from '../chain/market';
 import { bpsPct, short, useTapes } from '../chain/useTapes';
 import { useChainStats } from '../chain/useChainStats';
 
@@ -242,7 +243,7 @@ export default function LandingScreen() {
           {tapes.slice(0, REVEAL_PREVIEW).map((t) => (
             <Box key={t.match} flex={1} style={{ minWidth: REVEAL_MIN_WIDTH }}>
               <MatchCard
-                token={TOKEN}
+                token={marketLabel(DEMO_MINT)}
                 pot={`${(t.potPaid / 1e9).toFixed(2)}◎`}
                 ago={`${Math.max(0, Math.floor((Date.now() / 1000 - t.settledTs) / 60))}m ago`}
                 winner={short(t.winner)}

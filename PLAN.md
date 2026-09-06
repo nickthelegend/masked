@@ -141,8 +141,8 @@ Small, cheap, and each one removes a stumble in front of a judge.
 
 | # | Task | Status |
 |---|---|---|
-| 3.1 | `ROUND_SECONDS` is 300. A five-minute wait is unwatchable. Make it configurable and default the demo to 60s; the seeder already uses 30s. | NOT STARTED |
-| 3.2 | Every `create_match` call passes `mint: PublicKey.default` while the UI labels the market `$BONK`. Either pass a real devnet mint and label it from the match account, or relabel honestly as a synthetic market. Do not leave a fictional ticker over a null mint. | NOT STARTED |
+| 3.1 | `ROUND_SECONDS` is 300. A five-minute wait is unwatchable. Make it configurable and default the demo to 60s; the seeder already uses 30s. | DONE |
+| 3.2 | Every `create_match` call passes `mint: PublicKey.default` while the UI labels the market `$BONK`. Either pass a real devnet mint and label it from the match account, or relabel honestly as a synthetic market. Do not leave a fictional ticker over a null mint. | DONE |
 | 3.3 | Record the privacy proof: split screen, `/proof` and the UI on the left, `prove:privacy` running on the right. 45 seconds. | BLOCKED by 2.6 |
 | 3.4 | Record one full match end to end with two wallets. Under 3 minutes total. | BLOCKED by 2.2 |
 | 3.5 | Rehearse the README's 3-minute demo script end to end once, timed, and fix anything that stalls. | NOT STARTED |

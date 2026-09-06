@@ -88,6 +88,7 @@ export default function MaskedApp() {
                 busy={duel.busy}
                 error={duel.error}
                 sealed={duel.sealed}
+                market={duel.market}
                 teeEnforced={duel.teeEnforced}
               />
             ) : null}

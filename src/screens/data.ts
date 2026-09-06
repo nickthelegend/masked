@@ -75,11 +75,25 @@ export interface QuestDef {
 /* TICKER_ITEMS deleted — the ticker reads real chain activity via
    src/chain/useTickerItems.ts. */
 
-export const TOKEN = '$BONK';
+/* TOKEN deleted — the market label is resolved from the match's real mint
+   in src/chain/market.ts. It used to read "$BONK" over PublicKey.default. */
 /** Shown before an opponent has actually joined. Not a handle — nobody is
  *  there yet, and inventing a name would imply otherwise. */
 export const OPPONENT_PENDING = 'AWAITING OPPONENT';
-export const ROUND_SECONDS = 300;
+/**
+ * Round length in seconds.
+ *
+ * The product round is five minutes. A five-minute wait is unwatchable on
+ * camera, so the demo default is 60s and EXPO_PUBLIC_ROUND_SECONDS overrides
+ * both. The program accepts anything from MIN_DURATION (10s) to MAX_DURATION
+ * (3600s), so this is a real parameter, not a display trick.
+ */
+export const FULL_ROUND_SECONDS = 300;
+export const DEMO_ROUND_SECONDS = 60;
+
+const envRound = Number(process.env.EXPO_PUBLIC_ROUND_SECONDS);
+export const ROUND_SECONDS =
+  Number.isFinite(envRound) && envRound >= 10 && envRound <= 3600 ? envRound : DEMO_ROUND_SECONDS;
 export const RAKE = 0.02;
 
 /* ---------- landing ---------- */

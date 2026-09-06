@@ -8,11 +8,12 @@
  * The gap this closes: the ACL previously existed only in a test and a script,
  * so a match played through the UI was never sealed.
  */
-import { Keypair, LAMPORTS_PER_SOL, PublicKey, Connection, type Transaction } from '@solana/web3.js';
+import { Keypair, LAMPORTS_PER_SOL, Connection, type Transaction } from '@solana/web3.js';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { permissionPdaFromAccount, PERMISSION_PROGRAM_ID } from '@magicblock-labs/ephemeral-rollups-sdk';
 import { FogduelClient } from '../src/chain/client';
+import { DEMO_MINT } from '../src/chain/market';
 import { CLUSTERS, DELEGATION_PROGRAM_ID } from '../src/chain/config';
 import { positionPda } from '../src/chain/pdas';
 
@@ -47,7 +48,7 @@ async function main() {
 
   console.log('1. create + join');
   const match = await me.createMatch({
-    creator: creator.publicKey, matchId, mint: PublicKey.default,
+    creator: creator.publicKey, matchId, mint: DEMO_MINT,
     durationSecs: 60, entryLamports: ENTRY, startPrice: 100,
   });
   await them.joinMatch(match, joiner.publicKey, creator.publicKey);

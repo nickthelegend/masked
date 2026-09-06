@@ -1,7 +1,7 @@
 import { Badge, MatchRow, Orb, PixelButton, PixelText, Row, Stack, color, sol, space } from '../ui';
 import { short } from '../chain/useTapes';
 import { useOpenMatches } from '../chain/useOpenMatches';
-import { TOKEN } from './data';
+import { DEMO_MINT, marketLabel } from '../chain/market';
 
 export interface MatchmakingScreenProps {
   pot: number;
@@ -41,7 +41,7 @@ export default function MatchmakingScreen({
       <Orb size={110} state="fog" />
 
       <PixelText variant="body">
-        POT {sol(pot)} · {TOKEN}
+        POT {sol(pot)} · {marketLabel(DEMO_MINT)}
       </PixelText>
 
       <PixelButton tone="gold" label="OPEN A MATCH" size={11} loading={busy} onPress={onStart} />

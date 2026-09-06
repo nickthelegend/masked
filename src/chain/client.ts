@@ -42,6 +42,8 @@ export interface MatchState {
   address: PublicKey;
   creator: PublicKey;
   joiner: PublicKey | null;
+  /** The market this duel is fought over. */
+  mint: PublicKey;
   matchId: number;
   startTs: number;
   duration: number;
@@ -394,6 +396,7 @@ export class FogduelClient {
       address: match,
       creator: raw.creator,
       joiner: raw.joiner ?? null,
+      mint: raw.mint,
       matchId: raw.matchId.toNumber(),
       startTs: raw.startTs.toNumber(),
       duration: raw.duration.toNumber(),
@@ -414,6 +417,7 @@ export class FogduelClient {
         address: m.publicKey,
         creator: m.account.creator,
         joiner: m.account.joiner ?? null,
+        mint: m.account.mint,
         matchId: m.account.matchId.toNumber(),
         startTs: m.account.startTs.toNumber(),
         duration: m.account.duration.toNumber(),

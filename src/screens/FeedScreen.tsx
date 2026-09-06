@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { MatchCard, PixelText, PixelButton, Row, Stack, color, space } from '../ui';
-import { BIG_POT_LAMPORTS, FEED_FILTERS, TOKEN, type FeedFilter } from './data';
+import { BIG_POT_LAMPORTS, FEED_FILTERS, type FeedFilter } from './data';
+import { DEMO_MINT, marketLabel } from '../chain/market';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { bpsPct, short, useTapes } from '../chain/useTapes';
 
@@ -48,7 +49,7 @@ export default function FeedScreen({ onChallenge }: FeedScreenProps) {
       {tapes.map((t) => (
         <MatchCard
           key={t.match}
-          token={TOKEN}
+          token={marketLabel(DEMO_MINT)}
           pot={`${(t.potPaid / 1e9).toFixed(2)}◎`}
           ago={ago(t.settledTs)}
           winner={short(t.winner)}

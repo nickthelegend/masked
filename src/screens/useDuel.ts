@@ -24,6 +24,7 @@ import { FOGDUEL_PROGRAM_ID } from '../chain/config';
 import { assertFogIntact } from '../chain/fog';
 import { FogduelClient, BASE_SCALE, PRICE_SCALE, type MatchState, type PositionState } from '../chain/client';
 import { ACTIVE_CLUSTER } from '../chain/config';
+import { DEMO_MINT, marketLabel } from '../chain/market';
 import { OPPONENT_PENDING, RAKE, ROUND_SECONDS } from './data';
 
 export type DuelPhase = 'lobby' | 'searching' | 'live' | 'reveal';
@@ -55,6 +56,8 @@ export interface Duel {
   busy: boolean;
   /** True once both positions carry an on-chain access-control list. */
   sealed: boolean;
+  /** Market label, resolved from the match's real mint. */
+  market: string;
   /** Whether this cluster actually enforces the ACL at read time. */
   teeEnforced: boolean;
   error: string | null;
@@ -284,7 +287,7 @@ export function useDuel(): Duel {
         target = await client!.createMatch({
           creator: me,
           matchId,
-          mint: PublicKey.default,
+          mint: DEMO_MINT,
           durationSecs: ROUND_SECONDS,
           entryLamports,
           startPrice: 100,
@@ -443,6 +446,7 @@ export function useDuel(): Duel {
     connected,
     busy,
     sealed,
+    market: marketLabel(match?.mint ?? DEMO_MINT),
     teeEnforced: ACTIVE_CLUSTER.tee,
     error,
     matchAddress: match?.address.toBase58() ?? null,

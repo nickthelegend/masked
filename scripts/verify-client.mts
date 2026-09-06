@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { positionPda } from '../src/chain/pdas';
 import { FogduelClient } from '../src/chain/client';
+import { DEMO_MINT } from '../src/chain/market';
 import { CLUSTERS } from '../src/chain/config';
 
 async function main() {
@@ -40,7 +41,7 @@ async function main() {
 
   console.log('1. create_match');
   const match = await client.createMatch({
-    creator: creator.publicKey, matchId, mint: PublicKey.default,
+    creator: creator.publicKey, matchId, mint: DEMO_MINT,
     durationSecs: 12, entryLamports: ENTRY, startPrice: 100,
   });
   let m = (await client.fetchMatch(match))!;

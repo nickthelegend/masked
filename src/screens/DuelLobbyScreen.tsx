@@ -1,5 +1,6 @@
 import { Badge, Box, MaskAvatar, PixelButton, PixelText, Row, Stack, StakePicker, color, sol, onInk, space } from '../ui';
-import { TOKEN } from './data';
+import { DEMO_MINT, marketLabel, marketMintLabel } from '../chain/market';
+import { ROUND_SECONDS } from './data';
 
 export interface DuelLobbyScreenProps {
   stake: number;
@@ -22,6 +23,12 @@ const RIGHT_RAIL: Array<[string, string, string]> = [
 ];
 
 const RAIL_WIDTH = 72;
+
+/** "60S" or "5 MIN", matching whatever the round is actually set to. */
+const roundLabel =
+  ROUND_SECONDS % 60 === 0 && ROUND_SECONDS >= 120
+    ? `${ROUND_SECONDS / 60} MIN`
+    : `${ROUND_SECONDS}S`;
 
 function Rail({ items }: { items: Array<[string, string, string]> }) {
   return (
@@ -46,11 +53,16 @@ export default function DuelLobbyScreen({ stake, onStakeChange, pot, onFind }: D
 
         <Stack flex={1} align="center" justify="center" gap={space.sm} bg={color.chartBg} outline={color.ink} padY={space.md}>
           <PixelText variant="label" size={8} color={color.textDim}>
-            TODAY&apos;S TOKEN
+            TODAY&apos;S MARKET
           </PixelText>
-          <PixelText variant="statBig">{TOKEN}</PixelText>
+          <PixelText variant="statBig">{marketLabel(DEMO_MINT)}</PixelText>
+          {/* Provenance: this is a real mint on this cluster, not a borrowed ticker. */}
+          <PixelText variant="bodySmall" size={10} color={color.textFaint}>
+            {marketMintLabel(DEMO_MINT)}
+          </PixelText>
           <MaskAvatar size={118} ring={color.blue} glyphSize={44} />
-          <Badge label="HIDDEN FILLS · 5 MIN" tone="quiet" variant="bodySmall" />
+          {/* Derived from the actual round length, not a fixed string. */}
+          <Badge label={`HIDDEN FILLS · ${roundLabel}`} tone="quiet" variant="bodySmall" />
         </Stack>
 
         <Rail items={RIGHT_RAIL} />

@@ -1,7 +1,8 @@
 /** Opens N unjoined matches so the book has something in it for a demo. */
-import { Keypair, LAMPORTS_PER_SOL, PublicKey, type Transaction } from '@solana/web3.js';
+import { Keypair, LAMPORTS_PER_SOL, type Transaction } from '@solana/web3.js';
 import { readFileSync } from 'node:fs';
 import { FogduelClient } from '../src/chain/client';
+import { DEMO_MINT } from '../src/chain/market';
 import { CLUSTERS } from '../src/chain/config';
 
 const wrap = (kp: Keypair) => ({
@@ -29,7 +30,7 @@ async function main() {
     const entry = Math.round(stakes[i % stakes.length] * LAMPORTS_PER_SOL);
     const matchId = Math.floor(Date.now() / 1000) * 1000 + 700 + i;
     const m = await client.createMatch({
-      creator: kp.publicKey, matchId, mint: PublicKey.default,
+      creator: kp.publicKey, matchId, mint: DEMO_MINT,
       durationSecs: 120, entryLamports: entry, startPrice: 100,
     });
     console.log(`opened ${m.toBase58().slice(0, 8)}… at ${entry / LAMPORTS_PER_SOL}◎`);

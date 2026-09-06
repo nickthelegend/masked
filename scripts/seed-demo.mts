@@ -8,9 +8,10 @@
  *
  *   npm run seed -- 6
  */
-import { Keypair, LAMPORTS_PER_SOL, PublicKey, type Transaction } from '@solana/web3.js';
+import { Keypair, LAMPORTS_PER_SOL, type Transaction } from '@solana/web3.js';
 import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { FogduelClient } from '../src/chain/client';
+import { DEMO_MINT } from '../src/chain/market';
 import { CLUSTERS } from '../src/chain/config';
 
 const COUNT = Number(process.argv[2] ?? 5);
@@ -62,7 +63,7 @@ async function main() {
 
     process.stdout.write(`  match ${i + 1}/${COUNT} … `);
     const match = await houseClient.createMatch({
-      creator: house.publicKey, matchId, mint: PublicKey.default,
+      creator: house.publicKey, matchId, mint: DEMO_MINT,
       // Long enough to absorb four delegation round trips before the first
       // fill — at 10s the clock expired mid-seed.
       durationSecs: 30, entryLamports: entry, startPrice: 100,
