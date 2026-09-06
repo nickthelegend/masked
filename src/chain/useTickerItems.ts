@@ -10,6 +10,7 @@ import { useMemo } from 'react';
 import { useTapes } from './useTapes';
 import { usePlayerStats } from './usePlayerStats';
 import { useOpenMatches } from './useOpenMatches';
+import { useChainStats } from './useChainStats';
 
 const short = (k: { toBase58(): string }) => {
   const s = k.toBase58();
@@ -20,6 +21,7 @@ export function useTickerItems(): string[] {
   const { tapes } = useTapes(15_000);
   const { board } = usePlayerStats(15_000);
   const { matches } = useOpenMatches(15_000);
+  const { reachable } = useChainStats(15_000);
 
   return useMemo(() => {
     const lines: string[] = [];
@@ -37,7 +39,10 @@ export function useTickerItems(): string[] {
     if (matches.length > 0) lines.push(`OPEN FOGS: ${matches.length}`);
     if (tapes.length > 0) lines.push(`DUELS SETTLED: ${tapes.length}`);
 
-    // Until anything has happened, say so rather than inventing activity.
-    return lines.length > 0 ? lines : ['NO DUELS SETTLED YET — OPEN THE FIRST ONE'];
-  }, [tapes, board, matches]);
+    if (lines.length > 0) return lines;
+    // An empty chain and an unreachable one are different messages.
+    return reachable
+      ? ['NO DUELS SETTLED YET — OPEN THE FIRST ONE']
+      : ['CANNOT REACH THE CLUSTER — IS THE VALIDATOR RUNNING?'];
+  }, [tapes, board, matches, reachable]);
 }

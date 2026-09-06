@@ -109,10 +109,19 @@ export default function LandingScreen() {
       <Divider color={color.panelLight} />
 
       <Row gap={space.xl} wrap>
-        {/* Read from chain, not invented. Zeros are honest on an empty cluster. */}
-        <StatTile value={stats.loaded ? String(stats.openMatches) : '—'} label={LANDING_STAT_LABELS[0]} align="left" />
-        <StatTile value={stats.loaded ? `${stats.paidOutSol.toFixed(2)}◎` : '—'} label={LANDING_STAT_LABELS[1]} align="left" />
-        <StatTile value={stats.loaded ? String(stats.settled) : '—'} label={LANDING_STAT_LABELS[2]} align="left" />
+        {/* Read from chain, not invented. */}
+        {(() => {
+          // "—" means we could not read the chain. A number always means a
+          // number we actually read.
+          const known = stats.loaded && stats.reachable;
+          return (
+            <>
+              <StatTile value={known ? String(stats.openMatches) : '—'} label={LANDING_STAT_LABELS[0]} align="left" />
+              <StatTile value={known ? `${stats.paidOutSol.toFixed(2)}◎` : '—'} label={LANDING_STAT_LABELS[1]} align="left" />
+              <StatTile value={known ? String(stats.settled) : '—'} label={LANDING_STAT_LABELS[2]} align="left" />
+            </>
+          );
+        })()}
       </Row>
     </Stack>
     </PixelPanel>

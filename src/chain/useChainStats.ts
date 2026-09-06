@@ -16,9 +16,17 @@ export interface ChainStats {
   paidOutSol: number;
   settled: number;
   loaded: boolean;
+  /**
+   * False when the RPC could not be reached.
+   *
+   * Without this the UI rendered a confident "0 DUELS SETTLED" whenever the
+   * validator was down — presenting a failure to read as a fact about the
+   * chain. Unknown and zero are different things and must look different.
+   */
+  reachable: boolean;
 }
 
-const EMPTY: ChainStats = { openMatches: 0, paidOutSol: 0, settled: 0, loaded: false };
+const EMPTY: ChainStats = { openMatches: 0, paidOutSol: 0, settled: 0, loaded: false, reachable: true };
 
 /** A read-only provider — the landing page must work with no wallet attached. */
 const readOnlyWallet = {
@@ -48,9 +56,10 @@ export function useChainStats(pollMs = 15_000): ChainStats {
         const paid = tapes.reduce((sum: number, t: any) => sum + t.account.potPaid.toNumber(), 0) / 1e9;
         /* eslint-enable @typescript-eslint/no-explicit-any */
 
-        setStats({ openMatches: open, paidOutSol: paid, settled: tapes.length, loaded: true });
+        setStats({ openMatches: open, paidOutSol: paid, settled: tapes.length, loaded: true, reachable: true });
       } catch {
-        if (alive) setStats((s) => ({ ...s, loaded: true }));
+        // Keep the last known values but mark them unverified.
+        if (alive) setStats((s) => ({ ...s, loaded: true, reachable: false }));
       }
     };
 

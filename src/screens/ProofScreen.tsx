@@ -126,9 +126,19 @@ export default function ProofScreen() {
       <ProofPanel
         title="SETTLED ON CHAIN"
         rows={[
-          { label: 'duels settled', value: stats.loaded ? String(stats.settled) : '—', tone: 'good' },
-          { label: 'paid out', value: stats.loaded ? `${stats.paidOutSol.toFixed(3)} SOL` : '—' },
-          { label: 'open matches', value: stats.loaded ? String(stats.openMatches) : '—' },
+          {
+            label: 'duels settled',
+            value: stats.loaded && stats.reachable ? String(stats.settled) : 'UNREACHABLE',
+            tone: (stats.reachable ? 'good' : 'bad') as 'good' | 'bad',
+          },
+          {
+            label: 'paid out',
+            value: stats.loaded && stats.reachable ? `${stats.paidOutSol.toFixed(3)} SOL` : '—',
+          },
+          {
+            label: 'open matches',
+            value: stats.loaded && stats.reachable ? String(stats.openMatches) : '—',
+          },
         ]}
       />
 
