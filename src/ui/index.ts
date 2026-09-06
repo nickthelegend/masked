@@ -38,3 +38,4 @@ export { default as LeaderRow, type LeaderRowProps } from './LeaderRow';
 export { default as Podium, type PodiumProps, type PodiumEntry, type Place } from './Podium';
 export { default as ModeTile, type ModeTileProps, type ModeStatus } from './ModeTile';
 export { default as QuestRow, type QuestRowProps } from './QuestRow';
+export { default as Wordmark, type WordmarkProps } from './Wordmark';

@@ -124,3 +124,49 @@ export const TOKEN = '$BONK';
 export const OPPONENT = 'nofills.sol';
 export const ROUND_SECONDS = 300;
 export const RAKE = 0.02;
+
+/* ---------- landing ---------- */
+
+export interface LandingStat {
+  value: string;
+  label: string;
+}
+
+/** Demo figures, in the same spirit as the fake feed and board above. */
+export const LANDING_STATS: LandingStat[] = [
+  { value: '38', label: 'LIVE FOGS' },
+  { value: '$12.4K', label: 'PAID OUT 24H' },
+  { value: '1204', label: 'DUELS TODAY' },
+];
+
+export interface HowStep {
+  glyph: string;
+  plate: string;
+  ink: string;
+  title: string;
+  body: string;
+}
+
+export const HOW_IT_WORKS: HowStep[] = [
+  {
+    glyph: '\u25C6',
+    plate: '#ffd21e',
+    ink: '#3a2a00',
+    title: '1 · STAKE',
+    body: 'Pick a pot from $1 to $100. Your opponent matches it. Both sides lock before a single fill.',
+  },
+  {
+    glyph: '\u25CF',
+    plate: '#35e0ff',
+    ink: '#06263a',
+    title: '2 · TRADE FOGGED',
+    body: 'Five minutes, one token. You see your own tape. Of theirs you see a fill count and nothing else.',
+  },
+  {
+    glyph: '\u25B2',
+    plate: '#2fbf5c',
+    ink: '#05270f',
+    title: '3 · REVEAL',
+    body: 'At 0:00 both tapes unseal. Best PnL takes the pot, less a 2% rake. Rematch or fade on the spot.',
+  },
+];

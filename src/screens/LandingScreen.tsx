@@ -1,10 +1,215 @@
-import { PixelText, Stack, color, space } from '../ui';
+/**
+ * The marketing page at `/`.
+ *
+ * Built entirely from the component library — the hero is a real, clickable
+ * PocketShell running the actual duel lobby, so the page demonstrates the
+ * product instead of illustrating it. Every CTA funnels to /play.
+ */
+import { useRef, useState } from 'react';
+import { ScrollView, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native';
+import { useRouter } from 'expo-router';
+import {
+  Badge,
+  BeachBackdrop,
+  Box,
+  Divider,
+  IconPlate,
+  MatchCard,
+  ModeTile,
+  PixelButton,
+  PixelPanel,
+  PixelText,
+  PocketShell,
+  Row,
+  Stack,
+  StatTile,
+  TabBar,
+  Ticker,
+  Wordmark,
+  color,
+  space,
+} from '../ui';
+import AppHeader from './AppHeader';
+import DuelLobbyScreen from './DuelLobbyScreen';
+import { FEED, HOW_IT_WORKS, LANDING_STATS, MODES, RAKE, TICKER_ITEMS } from './data';
+
+/** Above this width the hero splits into copy + device columns. */
+const WIDE = 900;
+const MAX_CONTENT = 1120;
+const HERO_SHELL_HEIGHT = 620;
+const MODE_PREVIEW = 6;
+const MODE_MIN_WIDTH = 250;
+const REVEAL_MIN_WIDTH = 320;
+const REVEAL_PREVIEW = 2;
 
 export default function LandingScreen() {
-  return (
-    <Stack flex={1} bg={color.bg} align="center" justify="center" gap={space.md}>
-      <PixelText variant="wordmark">MASKED</PixelText>
-      <PixelText variant="bodySmall">landing goes here</PixelText>
+  const router = useRouter();
+  const { width } = useWindowDimensions();
+  const wide = width >= WIDE;
+  const [stake, setStake] = useState(5);
+
+  // "HOW IT WORKS" scrolls to the explainer rather than dumping you into a
+  // duel — the label has to mean what it says.
+  const scrollRef = useRef<ScrollView>(null);
+  const [howY, setHowY] = useState(0);
+  const onHowLayout = (e: LayoutChangeEvent) => setHowY(e.nativeEvent.layout.y);
+
+  const goPlay = () => router.push('/play');
+  const goHow = () => scrollRef.current?.scrollTo({ y: howY, animated: true });
+
+  const heroCopy = (
+    // The sunset is a ground for the device, not for type — `text` on the
+    // orange bands is well under 4.5:1. The copy gets a panel to sit on.
+    <PixelPanel pad={space.xl} flex={wide ? 1 : undefined} style={{ maxWidth: 560 }}>
+    <Stack gap={space.lg}>
+      <Badge label="LIVE ON SOLANA" tone="live" variant="label" />
+
+      <Stack gap={space.xs}>
+        <PixelText variant="statBig" size={wide ? 26 : 20} color={color.white}>
+          TRADE BLIND.
+        </PixelText>
+        <PixelText variant="statBig" size={wide ? 26 : 20} color={color.yellow}>
+          TAKE THE POT.
+        </PixelText>
+      </Stack>
+
+      <PixelText variant="body">
+        1v1 fog duels. Two traders stake a pot and trade the same token for five minutes with every position
+        hidden. At the buzzer the tape reveals — best PnL takes the pot.
+      </PixelText>
+
+      <Row gap={space.sm} wrap>
+        <PixelButton tone="primary" label="PLAY FREE" size={12} padY={16} onPress={goPlay} />
+        <PixelButton tone="quiet" bg={color.panelLight} label="HOW IT WORKS" size={10} padY={16} onPress={goHow} />
+      </Row>
+
+      <Divider color={color.panelLight} />
+
+      <Row gap={space.xl} wrap>
+        {LANDING_STATS.map((s) => (
+          <StatTile key={s.label} value={s.value} label={s.label} align="left" />
+        ))}
+      </Row>
     </Stack>
+    </PixelPanel>
+  );
+
+  const heroDevice = (
+    <View style={{ width: '100%', maxWidth: 440 }}>
+      <PocketShell screenHeight={HERO_SHELL_HEIGHT}>
+        <AppHeader balance={50} onHome={goPlay} onMenu={goPlay} />
+        <Ticker items={TICKER_ITEMS} />
+        <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+          <DuelLobbyScreen
+            stake={stake}
+            onStakeChange={setStake}
+            pot={stake * 2 * (1 - RAKE)}
+            onFind={goPlay}
+          />
+        </ScrollView>
+        <TabBar active="duel" onChange={goPlay} />
+      </PocketShell>
+    </View>
+  );
+
+  return (
+    <ScrollView ref={scrollRef} style={{ flex: 1, backgroundColor: color.bg }} showsVerticalScrollIndicator={false}>
+      {/* ---- hero, on the beach ---- */}
+      <View>
+        <BeachBackdrop />
+
+        <Stack pad={space.xl} gap={space.xxl} style={{ width: '100%', maxWidth: MAX_CONTENT, alignSelf: 'center' }}>
+          <Row justify="space-between" gap={space.md}>
+            <Wordmark size={wide ? 18 : 14} />
+            <PixelButton tone="gold" label="PLAY" size={10} padY={space.md} onPress={goPlay} />
+          </Row>
+
+          {wide ? (
+            <Row gap={space.xxl} align="center" justify="space-between">
+              {heroCopy}
+              {heroDevice}
+            </Row>
+          ) : (
+            <Stack gap={space.xxl} align="center">
+              {heroCopy}
+              {heroDevice}
+            </Stack>
+          )}
+        </Stack>
+      </View>
+
+      <Ticker items={TICKER_ITEMS} />
+
+      {/* ---- how it works ---- */}
+      <Stack
+        onLayout={onHowLayout}
+        pad={space.xl}
+        gap={space.lg}
+        style={{ width: '100%', maxWidth: MAX_CONTENT, alignSelf: 'center' }}
+      >
+        <Stack gap={space.sm}>
+          <PixelText variant="h2">HOW A FOG DUEL WORKS</PixelText>
+          <Divider color={color.panelLight} />
+        </Stack>
+
+        <Row gap={space.md} wrap align="stretch">
+          {HOW_IT_WORKS.map((step) => (
+            <PixelPanel key={step.title} flex={1} pad={space.lg} style={{ minWidth: MODE_MIN_WIDTH }}>
+              <Stack gap={space.md}>
+                <IconPlate glyph={step.glyph} bg={step.plate} ink={step.ink} size={34} glyphSize={15} />
+                <PixelText variant="label">{step.title}</PixelText>
+                <PixelText variant="bodySmall">{step.body}</PixelText>
+              </Stack>
+            </PixelPanel>
+          ))}
+        </Row>
+      </Stack>
+
+      {/* ---- modes ---- */}
+      <Stack pad={space.xl} gap={space.lg} style={{ width: '100%', maxWidth: MAX_CONTENT, alignSelf: 'center' }}>
+        <Stack gap={space.sm}>
+          <Row justify="space-between" gap={space.md}>
+            <PixelText variant="h2">GAME MODES</PixelText>
+            <PixelText variant="bodySmall">{MODES.length} IN THE LAB</PixelText>
+          </Row>
+          <Divider color={color.panelLight} />
+        </Stack>
+
+        <Row gap={space.md} wrap align="stretch">
+          {MODES.slice(0, MODE_PREVIEW).map((m) => (
+            // Flex + minWidth rather than a fixed tile width, so the grid
+            // reflows 3-up / 2-up / 1-up and always fills the row.
+            <Box key={m.name} flex={1} style={{ minWidth: MODE_MIN_WIDTH }}>
+              <ModeTile name={m.name} description={m.description} status={m.status} width="100%" onPress={goPlay} />
+            </Box>
+          ))}
+        </Row>
+      </Stack>
+
+      {/* ---- recent reveals ---- */}
+      <Stack pad={space.xl} gap={space.lg} style={{ width: '100%', maxWidth: MAX_CONTENT, alignSelf: 'center' }}>
+        <Stack gap={space.sm}>
+          <PixelText variant="h2">LAST REVEALS</PixelText>
+          <Divider color={color.panelLight} />
+        </Stack>
+
+        <Row gap={space.md} wrap align="stretch">
+          {FEED.slice(0, REVEAL_PREVIEW).map((m) => (
+            <Box key={m.token} flex={1} style={{ minWidth: REVEAL_MIN_WIDTH }}>
+              <MatchCard {...m} onChallenge={goPlay} onCopy={goPlay} onFade={goPlay} />
+            </Box>
+          ))}
+        </Row>
+      </Stack>
+
+      {/* ---- footer ---- */}
+      <Stack bg={color.ink} pad={space.xl} gap={space.lg} align="center">
+        <Wordmark size={16} />
+        <PixelText variant="bodySmall" align="center" color={color.textFaint}>
+          FOG DUEL 1V1 · PRIVATE ROLLUP · SETTLES ON SOLANA
+        </PixelText>
+        <PixelButton tone="gold" label="PLAY FREE" size={12} padY={16} onPress={goPlay} />
+      </Stack>
+    </ScrollView>
   );
 }
