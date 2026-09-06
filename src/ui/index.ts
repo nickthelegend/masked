@@ -14,3 +14,5 @@ export { default as IconPlate, type IconPlateProps, type GlyphName, GLYPH } from
 export { default as Badge, type BadgeProps, type BadgeTone } from './Badge';
 export { default as ProgressBar, type ProgressBarProps } from './ProgressBar';
 export { default as Divider, type DividerProps } from './Divider';
+export { default as ScanlineOverlay, type ScanlineOverlayProps } from './ScanlineOverlay';
+export { default as FogOverlay, type FogOverlayProps } from './FogOverlay';
