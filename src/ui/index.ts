@@ -8,3 +8,5 @@ export { default as Box, type BoxProps } from './Box';
 export { default as Row, type RowProps } from './Row';
 export { default as Stack, type StackProps } from './Stack';
 export { default as PixelText, type PixelTextProps, MIN_FONT_SIZE } from './PixelText';
+export { default as PixelPanel, type PixelPanelProps } from './PixelPanel';
+export { default as PixelButton, type PixelButtonProps, type ButtonTone } from './PixelButton';
