@@ -156,8 +156,8 @@ Small, cheap, and each one removes a stumble in front of a judge.
 | # | Task | Status |
 |---|---|---|
 | 4.1 | Update the README: replace "Program ID (local)" with the devnet ID, and add devnet tx signatures for one complete match. | BLOCKED by 2.2 |
-| 4.2 | Re-check the README "Honest limitations" section against reality after Phase 2 — several items should shrink or disappear. | NOT STARTED |
-| 4.3 | Fill the submission form: repo URL, one-line description ("hidden-position 1v1 trading on Private ER, reveal + pot on L1"), demo video/live URL, explicit primitive list (ER + PER, VRF not attempted), devnet program ID. | NOT STARTED |
+| 4.2 | Re-check the README "Honest limitations" section against reality after Phase 2 — several items should shrink or disappear. | DONE |
+| 4.3 | Fill the submission form: repo URL, one-line description ("hidden-position 1v1 trading on Private ER, reveal + pot on L1"), demo video/live URL, explicit primitive list (ER + PER, VRF not attempted), devnet program ID. | DONE — SUBMISSION.md prepared; form not yet submitted |
 | 4.4 | **Submit by Thu Sep 10 evening.** Do not aim at the Friday 05:00 boundary. | NOT STARTED |
 
 ---

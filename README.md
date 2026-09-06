@@ -219,25 +219,36 @@ cd chain && anchor test --skip-local-validator   # 20 on-chain tests
 
 Read this before judging — none of it is hidden in the code.
 
-1. **PER privacy is not yet proved live.** `init_position_privacy` is
-   implemented, compiles and is wired, but the local `ephemeral-validator` is
-   **not a TEE**, and ephemeral permissions are a TEE feature — creating the
-   permission account on it fails with *"Transaction loads a writable account
-   that cannot be written."* Proving it needs `devnet-tee.magicblock.app`,
-   which needs devnet SOL, and every public faucet was rate-limited or
-   key-gated during this build. **The ER half is fully proved; the privacy half
-   is code-complete but unproved.**
+1. **PER privacy is built and on chain, but its enforcement is unproved.**
+   Every match started through the UI creates an access-control list for each
+   position naming only its owner, and delegates both ACLs to the rollup before
+   delegating the positions. That is real, on chain, and checkable —
+   `npm run check:sealed` asserts it, and `/proof` shows the permission
+   accounts of the most recent duel.
+
+   What is *not* proved is the read gate. A local `ephemeral-validator` is not
+   a TEE and has no ingress check, so on this cluster the ACL exists but reads
+   are not refused. Proving enforcement needs `devnet-tee.magicblock.app`,
+   which needs devnet SOL; airdrops were refused 20+ times across the public
+   faucets and `faucet.solana.com` requires a captcha. `prove:privacy` prints
+   this verdict rather than implying the fog holds, and `/proof` shows
+   "privacy enforced: NO — needs a TEE" in red.
 2. **The price feed is cranked, not an oracle.** One `PriceFeed` account per
    match, pushed by the match authority. It is deliberately *not* a public DEX
    swap — a public swap print mid-round would hand the opponent the fills the
    fog exists to hide. A production build should read Pyth/Switchboard.
 3. **Positions are virtual inventory.** The entry becomes quote purchasing
-   power inside the round; no SPL moves until settlement. Same reason.
+   power inside the round; no SPL moves until settlement — a public swap print
+   mid-round would hand the opponent the fills the fog exists to hide. The
+   market is a real SPL mint (`3nmxq3N78WQGQPXULxmSQ2rjXYwX8zrjrcYxnP2aQpNo`)
+   that identifies the market without being custodied.
 4. **Web only.** `@solana/wallet-adapter` is browser-only, and metro resolves
    `@solana-mobile/*` to a stub. A native build needs Mobile Wallet Adapter or
    Solflare deeplinks.
-5. **Not deployed to devnet** for the same faucet reason. The program ID below
-   is the local deployment.
+5. **Not deployed to devnet** for the same faucet reason — the `.so` is 636KB,
+   so rent plus the deploy buffer needs roughly 5–9 SOL, which is several
+   successful airdrops rather than one. The program ID below is the local
+   deployment. See `SUBMISSION.md` for the exact unblock steps.
 
 ---
 
