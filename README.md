@@ -71,11 +71,62 @@ ANCHOR_PROVIDER_URL=http://127.0.0.1:8999 ANCHOR_WALLET=$HOME/.config/solana/id.
 cd .. && npm run verify:client
 ```
 
-### 4. App
+### 4. Seed the chain and run the app
 
 ```bash
-npm run web     #  /  landing   /play  duel   /gallery  components
+npm run seed -- 5      # plays 5 real duels so the feed and board have data
+npm run open -- 3      # opens 3 unjoined matches so the book is not empty
+npm run web
 ```
+
+| Route | What it is |
+|---|---|
+| `/` | Landing page |
+| `/play` | The duel |
+| `/proof` | **Live on-chain evidence — start here if you are judging** |
+| `/health` | Dependency health |
+| `/gallery` | Every UI component in every state |
+
+---
+
+## Demo script (3 minutes)
+
+The exact click path, in the order that makes the argument.
+
+**1. `/proof` — establish that this is real (45s)**
+   - CLUSTER panel: which endpoints, which validator, and whether privacy is
+     actually enforced here. It says NO on a local validator, in red.
+   - MEASURED LATENCY: real medians, not a slide.
+   - RECENT PROGRAM TRANSACTIONS: click any signature — it opens an explorer.
+     `DELEGATE POSITION TO ER` and `PROCESS UNDELEGATION` are right there.
+
+**2. Terminal — the privacy proof (60s)**
+
+```bash
+npm run prove:privacy
+```
+
+   Walks a real match and prints, at each stage, exactly what each party can
+   read. Watch the MID-ROUND VISIBILITY block and the VERDICT under it. On a
+   TEE cluster the opponent read is refused; on local it says so plainly
+   rather than pretending.
+
+**3. `/play` — play one (60s)**
+   - OPEN BOOK shows real unjoined matches from other wallets. JOIN one.
+   - LONG. The orb turns green, the PnL odometer rolls, the clock pulses under
+     10 seconds.
+   - The opponent panel shows a fill count and nothing else, all round.
+   - At 0:00 the curtain tears: TAPE UNSEALED, both PnLs roll up, the tape
+     draws in.
+
+**4. `/play` → RANK (15s)**
+   - The leaderboard is on-chain `PlayerStats`, not a client-side sum. Wins,
+     lamports taken, and a best-streak that never decreases.
+
+**5. Close on the one line**
+   Every other 1v1 trading product on Solana is public during the fight. This
+   one is private during the fight and public after — and `/proof` shows you
+   exactly how much of that is enforced by the rollup versus by the client.
 
 ---
 
@@ -114,6 +165,17 @@ delegated.**
 The client never fetches the opponent's `Position` during a live round. On a
 TEE the read is refused at ingress; on a non-TEE cluster fetching it would leak
 exactly what the mode exists to hide.
+
+---
+
+## Verification you can run
+
+```bash
+npm run check          # typecheck + 5 assertion suites (tokens, series, fog, errors, preflight)
+npm run verify:client  # drives a full match through the app's own client
+npm run prove:privacy  # the privacy proof, stage by stage
+cd chain && anchor test --skip-local-validator   # 20 on-chain tests
+```
 
 ---
 
