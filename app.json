@@ -6,9 +6,20 @@
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#111a44",
-    "assetBundlePatterns": ["**/*"],
-    "web": { "bundler": "metro" },
-    "ios": { "supportsTablet": true },
-    "android": {}
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {},
+    "plugins": [
+      "expo-router"
+    ],
+    "scheme": "masked"
   }
 }

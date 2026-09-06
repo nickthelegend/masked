@@ -22,9 +22,8 @@
     "forceConsistentCasingInFileNames": true
   },
   "include": [
+    "app/**/*",
     "src/**/*",
-    "App.tsx",
-    "index.js",
     "scripts/**/*"
   ],
   "exclude": [
