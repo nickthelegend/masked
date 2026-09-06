@@ -54,10 +54,30 @@ export interface PumpMarket {
 }
 
 /**
- * Bonding-curve price: SOL reserves over token reserves, each in whole units.
+ * Spot price in SOL per token, from the market cap pump.fun publishes.
  *
- * This is the curve's spot price, which is what pump.fun itself quotes — not a
- * number we invented.
+ * The obvious route — SOL reserves over token reserves — is right only while a
+ * coin is still on its bonding curve. Once it graduates to a pool, `complete`
+ * flips and the virtual reserves freeze at the graduation constants, so every
+ * graduated coin reports the identical price (2.796e-8 SOL) forever. Those are
+ * exactly the coins anyone has heard of, so a list priced that way is a list of
+ * the same wrong number repeated.
+ *
+ * Market cap over supply is live in both phases, and while a coin *is* on its
+ * curve it agrees with the reserve ratio to the last digit — checked against
+ * the live API, not assumed. It is also the number pump.fun's own UI shows.
+ */
+export function priceFromMarketCap(marketCapSol: number, totalSupply: number, decimals: number): number {
+  const supply = totalSupply / 10 ** decimals;
+  return supply > 0 ? marketCapSol / supply : 0;
+}
+
+/**
+ * The bonding-curve spot price, for a coin still on its curve.
+ *
+ * Kept because it is the definitional price and `check:pumpfun` asserts the
+ * two agree — the day they stop agreeing, something has changed upstream and
+ * we want the check to say so.
  */
 export function priceFromReserves(virtualSolReserves: number, virtualTokenReserves: number): number {
   if (!virtualTokenReserves) return 0;
@@ -69,11 +89,13 @@ export function priceFromReserves(virtualSolReserves: number, virtualTokenReserv
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function toMarket(c: any): PumpMarket | null {
   if (!c?.mint || !c?.symbol) return null;
-  const priceSol = priceFromReserves(Number(c.virtual_sol_reserves), Number(c.virtual_token_reserves));
-  const supply = Number(c.total_supply) / 10 ** TOKEN_DECIMALS;
+  const decimals = Number(c.base_decimals ?? TOKEN_DECIMALS);
+  const supplyRaw = Number(c.total_supply);
+  const priceSol = priceFromMarketCap(Number(c.market_cap), supplyRaw, decimals);
+  const supply = supplyRaw / 10 ** decimals;
   const usdMarketCap = Number(c.usd_market_cap) || 0;
-  // Derive USD price from the same reserves the cap is built on, so the two
-  // numbers cannot disagree on screen.
+  // The USD price comes off the same cap the SOL price does, so the two
+  // numbers on screen cannot disagree with each other.
   const priceUsd = supply > 0 && usdMarketCap > 0 ? usdMarketCap / supply : 0;
 
   return {
@@ -108,7 +130,9 @@ export async function fetchTopMarkets(limit = 12, signal?: AbortSignal): Promise
   const body = await res.json();
   if (!Array.isArray(body)) throw new PumpFunError('pump.fun returned an unexpected shape');
 
-  const markets = body.map(toMarket).filter((m): m is PumpMarket => m !== null && m.priceSol > 0);
+  const markets = body
+    .map(toMarket)
+    .filter((m): m is PumpMarket => m !== null && m.priceSol > 0 && m.usdMarketCap > 0);
   if (markets.length === 0) throw new PumpFunError('pump.fun returned no usable markets');
   return markets;
 }

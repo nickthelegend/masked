@@ -10,6 +10,8 @@ import { assert } from "chai";
 
 const PRICE_SCALE = 1_000_000;
 const BASE_SCALE = 1_000_000;
+/** px is lamports per token x PRICE_SCALE — see src/chain/units.ts. */
+const px = (solPerToken: number) => Math.round(solPerToken * LAMPORTS_PER_SOL * PRICE_SCALE);
 
 describe("fogduel", () => {
   const provider = anchor.AnchorProvider.env();
@@ -26,7 +28,7 @@ describe("fogduel", () => {
 
   const ENTRY = 0.1 * LAMPORTS_PER_SOL;
   const DURATION = 10; // seconds — short so tests do not crawl
-  const START_PX = 100 * PRICE_SCALE;
+  const START_PX = px(0.1); // 0.1 SOL a token
 
   let treasuryPda: PublicKey;
 
@@ -52,10 +54,17 @@ describe("fogduel", () => {
     return { matchPda, vault, feed, posA, posB, tape };
   };
 
-  const createMatch = async (matchId: number, duration = DURATION) => {
+  // These suites run against a posted oracle (`Major`), because every
+  // assertion below is about lamports and PnL, and a Major's mark is the price
+  // this test pushes rather than wherever the private book happens to sit.
+  // The meme path — where the book is both venue and mark — has its own suite.
+  const createMatch = async (matchId: number, duration = DURATION, market: any = { major: {} }) => {
     const p = pdas(matchId);
     await program.methods
-      .createMatch(new BN(matchId), PublicKey.default, new BN(duration), new BN(ENTRY), new BN(START_PX))
+      .createMatch(
+        new BN(matchId), PublicKey.default, new BN(duration), new BN(ENTRY),
+        new BN(START_PX), market, "TEST", "Test Market",
+      )
       .accounts({
         creator: creator.publicKey,
         matchAccount: p.matchPda,
@@ -162,27 +171,62 @@ describe("fogduel", () => {
     }
   });
 
-  it("applies a buy fill and moves quote into base", async () => {
+  // A buy spends quote and receives whatever the private book gives back. The
+  // fill never touches a public venue, so there is no quote to check it
+  // against — the curve is the venue.
+  it("gives each player their own book, seeded at the snapshot mid", async () => {
     const p = pdas(RUN + 1);
-    const qty = 0.5 * BASE_SCALE; // half the quote balance at px=100
-    await program.methods.applyFill({ buy: {} }, new BN(qty))
+    for (const pos of [p.posA, p.posB]) {
+      const { book } = await program.account.position.fetch(pos);
+      assert.equal(book.seedPx.toNumber(), START_PX);
+      // Depth is a multiple of the entry, so a full-size fill costs impact
+      // rather than emptying the curve.
+      assert.equal(book.virtualQuote.toNumber(), ENTRY * 64);
+      const mid =
+        (book.virtualQuote.toNumber() * BASE_SCALE * PRICE_SCALE) / book.virtualBase.toNumber();
+      assert.closeTo(mid, START_PX, START_PX / 1000, "book opens on the snapshot mid");
+    }
+  });
+
+  it("applies a buy fill through the book, paying impact", async () => {
+    const p = pdas(RUN + 1);
+    const spend = 0.5 * ENTRY;
+    const before = (await program.account.position.fetch(p.posA)).book;
+
+    await program.methods.applyFill({ buy: {} }, new BN(spend))
       .accounts({
         player: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posA,
       }).rpc();
 
     const a = await program.account.position.fetch(p.posA);
-    assert.equal(a.baseQty.toNumber(), qty);
-    assert.equal(a.avgPx.toNumber(), START_PX);
     assert.equal(a.fillCount, 1);
-    const spent = (qty * START_PX) / BASE_SCALE;
-    assert.equal(a.quoteBalance.toNumber(), ENTRY - spent);
+    assert.equal(a.quoteBalance.toNumber(), ENTRY - spend, "quote spent is exactly what was asked");
+    assert.isAbove(a.baseQty.toNumber(), 0, "base received");
+
+    // x*y=k: the average fill is worse than the mid it started from. At a
+    // depth of 64x the entry, a half-size buy should cost well under 1%.
+    assert.isAbove(a.avgPx.toNumber(), START_PX, "buyer paid impact");
+    assert.isBelow(a.avgPx.toNumber(), START_PX * 1.01, "but impact is small at this depth");
+
+    // The buy moved this player's own book, and only theirs.
+    const after = (await program.account.position.fetch(p.posA)).book;
+    assert.isAbove(after.virtualQuote.toNumber(), before.virtualQuote.toNumber());
+    assert.isBelow(after.virtualBase.toNumber(), before.virtualBase.toNumber());
+
+    const theirs = (await program.account.position.fetch(p.posB)).book;
+    assert.equal(
+      theirs.virtualQuote.toNumber(), ENTRY * 64,
+      "the opponent's book is untouched — one shared curve would leak the fill",
+    );
   });
 
   it("rejects a buy that overdraws the quote balance", async () => {
     const p = pdas(RUN + 1);
     try {
-      await program.methods.applyFill({ buy: {} }, new BN(1000 * BASE_SCALE))
-        .accounts({ player: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posA })
+      await program.methods.applyFill({ buy: {} }, new BN(ENTRY * 10))
+        .accounts({
+          player: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posA,
+        })
         .rpc();
       assert.fail("overdraw should have been rejected");
     } catch (e: any) {
@@ -190,22 +234,35 @@ describe("fogduel", () => {
     }
   });
 
-  it("realizes PnL on a sell after the price moves up", async () => {
+  // On a major the book is re-pegged to the oracle before each fill, so a
+  // posted price move is what the player actually trades against. Without the
+  // re-peg a player could buy at the stale seed mid and settle against a moved
+  // oracle for free.
+  it("realizes PnL on a sell after the oracle moves up", async () => {
     const p = pdas(RUN + 1);
-    await program.methods.pushPrice(new BN(110 * PRICE_SCALE))
+    await program.methods.pushPrice(new BN(px(0.11)))
       .accounts({ authority: creator.publicKey, priceFeed: p.feed }).rpc();
 
     const before = await program.account.position.fetch(p.posA);
     const qty = before.baseQty.toNumber();
+    const avgPx = before.avgPx.toNumber();
+
     await program.methods.applyFill({ sell: {} }, new BN(qty))
-      .accounts({ player: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posA })
+      .accounts({
+        player: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posA,
+      })
       .rpc();
 
     const after = await program.account.position.fetch(p.posA);
     assert.equal(after.baseQty.toNumber(), 0);
+    assert.equal(after.avgPx.toNumber(), 0, "flat, so no average entry left");
     assert.isAbove(after.realized.toNumber(), 0, "a 10% up-move on a long realizes a profit");
-    // Bought at 100, sold at 110: realized = qty * (110 - 100) = qty * 10
-    assert.equal(after.realized.toNumber(), qty * 10);
+
+    // The exit is the re-pegged mark minus this sell's own impact, so it lands
+    // under 0.11 but above the 0.1-ish entry.
+    const exitPx = after.fills[after.fills.length - 1].px.toNumber();
+    assert.isAbove(exitPx, avgPx, "sold above the average entry");
+    assert.isBelow(exitPx, px(0.11), "the sell paid its own impact");
   });
 
   it("refuses to settle before the clock expires", async () => {
@@ -290,12 +347,13 @@ describe("fogduel", () => {
     const p = await createMatch(RUN + 3);
     await joinMatch(p);
 
-    const qty = 0.5 * BASE_SCALE;
-    await program.methods.applyFill({ buy: {} }, new BN(qty))
-      .accounts({ player: joiner.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posB })
+    await program.methods.applyFill({ buy: {} }, new BN(0.5 * ENTRY))
+      .accounts({
+        player: joiner.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posB,
+      })
       .signers([joiner]).rpc();
 
-    await program.methods.pushPrice(new BN(120 * PRICE_SCALE))
+    await program.methods.pushPrice(new BN(px(0.12)))
       .accounts({ authority: creator.publicKey, priceFeed: p.feed }).rpc();
 
     await new Promise((r) => setTimeout(r, (DURATION + 2) * 1000));

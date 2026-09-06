@@ -55,6 +55,7 @@ pub mod fogduel {
     use super::*;
 
     /// Open a match and escrow the creator's entry.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_match(
         ctx: Context<CreateMatch>,
         match_id: u64,
@@ -62,6 +63,9 @@ pub mod fogduel {
         duration: i64,
         entry: u64,
         start_px: u64,
+        market_type: MarketType,
+        symbol: String,
+        name: String,
     ) -> Result<()> {
         require!(entry > 0, FogError::InvalidEntry);
         require!(
@@ -83,6 +87,9 @@ pub mod fogduel {
         m.winner = None;
         m.pnl_a_bps = 0;
         m.pnl_b_bps = 0;
+        m.market_type = market_type;
+        m.symbol = pad::<SYMBOL_LEN>(&symbol);
+        m.name = pad::<NAME_LEN>(&name);
         m.bump = ctx.bumps.match_account;
 
         let vault = &mut ctx.accounts.vault;
@@ -157,6 +164,12 @@ pub mod fogduel {
         pa.fill_count = 0;
         pa.fills = Vec::new();
         pa.bump = ctx.bumps.position_a;
+        // Each side gets its own book, seeded identically from the snapshot mid
+        // taken at create time. Identical, but separate: one shared curve would
+        // publish each player's flow to the other through the mark.
+        pa.book
+            .seed(entry, ctx.accounts.price_feed.px)
+            .ok_or(FogError::InvalidPrice)?;
 
         let pb = &mut ctx.accounts.position_b;
         pb.owner = ctx.accounts.joiner.key();
@@ -169,6 +182,9 @@ pub mod fogduel {
         pb.fill_count = 0;
         pb.fills = Vec::new();
         pb.bump = ctx.bumps.position_b;
+        pb.book
+            .seed(entry, ctx.accounts.price_feed.px)
+            .ok_or(FogError::InvalidPrice)?;
 
         // Pre-fund for ephemeral-permission rent on the ER. See the constant.
         for target in [pa.to_account_info(), pb.to_account_info()] {
@@ -241,39 +257,59 @@ pub mod fogduel {
         let now = Clock::get()?.unix_timestamp;
         require!(now < m.start_ts + m.duration, FogError::MatchExpired);
 
-        let px = ctx.accounts.price_feed.px;
-        require!(px > 0, FogError::InvalidPrice);
+        let mark = ctx.accounts.price_feed.px;
+        require!(mark > 0, FogError::InvalidPrice);
 
         let pos = &mut ctx.accounts.position;
-        let notional = ((qty as i128) * (px as i128) / BASE_SCALE) as i64;
+        require!(pos.book.is_seeded(), FogError::InvalidPrice);
 
-        match side {
+        // Re-peg this player's book to the posted mark before the fill, so
+        // execution is the mark plus this fill's own impact. Without it a
+        // player could buy at a stale mid and settle against a mark that has
+        // since moved — a free roll with no trading in it.
+        pos.book
+            .repeg(ctx.accounts.match_account.entry, mark)
+            .ok_or(FogError::InvalidPrice)?;
+
+        // Every fill goes through that private book. Nothing is routed to a
+        // public venue: a swap print would leak the wallet, the mint and the
+        // size, which is the whole thing the fog protects.
+        let (filled_qty, notional, px) = match side {
             Side::Buy => {
-                require!(pos.quote_balance >= notional, FogError::InsufficientQuote);
-                // Volume-weighted average entry.
+                // `qty` is the quote the player is spending.
+                let quote_in = qty;
+                require!(pos.quote_balance >= quote_in as i64, FogError::InsufficientQuote);
+                let base_out = pos.book.buy(quote_in).ok_or(FogError::MathOverflow)?;
+                require!(base_out > 0, FogError::ZeroQuantity);
+
+                let exec_px = (((quote_in as i128) * VALUE_DIV) / (base_out as i128)) as u64;
                 let prev_notional = (pos.base_qty as i128) * (pos.avg_px as i128);
-                let add_notional = (qty as i128) * (px as i128);
-                let new_qty = (pos.base_qty as i128) + (qty as i128);
-                pos.avg_px = if new_qty == 0 {
-                    0
-                } else {
-                    ((prev_notional + add_notional) / new_qty) as u64
-                };
-                pos.quote_balance -= notional;
+                let add_notional = (base_out as i128) * (exec_px as i128);
+                let new_qty = (pos.base_qty as i128) + (base_out as i128);
+                pos.avg_px = if new_qty == 0 { 0 } else { ((prev_notional + add_notional) / new_qty) as u64 };
+                pos.quote_balance -= quote_in as i64;
                 pos.base_qty = new_qty as i64;
+                (base_out, quote_in as i64, exec_px)
             }
             Side::Sell | Side::Settle => {
+                // `qty` is the base the player is selling.
                 require!(pos.base_qty >= qty as i64, FogError::InsufficientBase);
-                // Realize against the average entry.
-                let cost = ((qty as i128) * (pos.avg_px as i128) / BASE_SCALE) as i64;
-                pos.realized += notional - cost;
-                pos.quote_balance += notional;
+                let quote_out = pos.book.sell(qty).ok_or(FogError::MathOverflow)?;
+                require!(quote_out > 0, FogError::ZeroQuantity);
+
+                let exec_px = (((quote_out as i128) * VALUE_DIV) / (qty as i128)) as u64;
+                let cost = ((qty as i128) * (pos.avg_px as i128) / VALUE_DIV) as i64;
+                pos.realized += (quote_out as i64) - cost;
+                pos.quote_balance += quote_out as i64;
                 pos.base_qty -= qty as i64;
                 if pos.base_qty == 0 {
                     pos.avg_px = 0;
                 }
+                (qty, quote_out as i64, exec_px)
             }
-        }
+        };
+        let _ = notional;
+        let qty = filled_qty;
 
         pos.last_px = px;
         pos.push_fill(Fill { side, qty, px, ts: now });
@@ -301,29 +337,45 @@ pub mod fogduel {
             FogError::MatchNotSettling
         );
 
-        let mark = ctx.accounts.price_feed.px;
-        require!(mark > 0, FogError::InvalidPrice);
         let now = Clock::get()?.unix_timestamp;
         let start_quote = ctx.accounts.match_account.entry as i64;
+
+        // The final mark is the posted price, for every market type. What
+        // differs between a meme and a major is only where that price came
+        // from off-chain — a bonding curve or an oracle — not how the round is
+        // scored.
+        let mark = ctx.accounts.price_feed.px;
+        require!(mark > 0, FogError::InvalidPrice);
 
         // An open position settles into realized PnL at the buzzer, and that
         // shows on the tape as a SETTLE fill. Mirrors the UI's long-standing
         // behaviour so the client needs no special case.
+        //
+        // It closes at what closing would actually fetch on that player's own
+        // book, re-pegged to the final mark: the mid alone would ignore the
+        // impact of getting out, which is real money on a size that took real
+        // money to put on.
         for pos in [
             &mut ctx.accounts.position_a,
             &mut ctx.accounts.position_b,
         ] {
             if pos.base_qty > 0 {
                 let qty = pos.base_qty as u64;
-                let notional = ((qty as i128) * (mark as i128) / BASE_SCALE) as i64;
-                let cost = ((qty as i128) * (pos.avg_px as i128) / BASE_SCALE) as i64;
-                pos.realized += notional - cost;
-                pos.quote_balance += notional;
+                pos.book
+            .repeg(ctx.accounts.match_account.entry, mark)
+            .ok_or(FogError::InvalidPrice)?;
+                let proceeds = pos.book.sell(qty).ok_or(FogError::MathOverflow)? as i64;
+                let px = (((proceeds as i128) * VALUE_DIV) / (qty as i128)) as u64;
+                let cost = ((qty as i128) * (pos.avg_px as i128) / VALUE_DIV) as i64;
+                pos.realized += proceeds - cost;
+                pos.quote_balance += proceeds;
                 pos.base_qty = 0;
                 pos.avg_px = 0;
-                pos.push_fill(Fill { side: Side::Settle, qty, px: mark, ts: now });
+                pos.push_fill(Fill { side: Side::Settle, qty, px, ts: now });
+                pos.last_px = px;
+            } else {
+                pos.last_px = mark;
             }
-            pos.last_px = mark;
         }
 
         let pnl_a = ctx.accounts.position_a.pnl_bps(mark, start_quote);
@@ -675,11 +727,14 @@ pub struct ApplyFill<'info> {
     pub player: Signer<'info>,
 
     #[account(seeds = [b"match", match_account.creator.as_ref(), &match_account.match_id.to_le_bytes()], bump = match_account.bump)]
-    pub match_account: Account<'info, Match>,
+    pub match_account: Box<Account<'info, Match>>,
 
     #[account(seeds = [b"feed", match_account.key().as_ref()], bump = price_feed.bump)]
-    pub price_feed: Account<'info, PriceFeed>,
+    pub price_feed: Box<Account<'info, PriceFeed>>,
 
+    /// The player's position — and, inside it, the player's own private book.
+    /// Delegated to the rollup, so a fill moves that book there and never on a
+    /// public venue.
     #[account(
         mut,
         seeds = [b"position", match_account.key().as_ref(), player.key().as_ref()],
@@ -843,6 +898,8 @@ pub struct CommitAndUndelegatePositions<'info> {
     #[account(mut)]
     pub position_b: Account<'info, Position>,
 }
+
+#[delegate]
 
 
 #[derive(Accounts)]

@@ -22,15 +22,21 @@ import { explainError, withRetry } from '../chain/errors';
 import { checkBalance, checkCluster, checkProgram, checkWallet, firstFailure } from '../chain/preflight';
 import { FOGDUEL_PROGRAM_ID } from '../chain/config';
 import { assertFogIntact } from '../chain/fog';
-import { FogduelClient, BASE_SCALE, PRICE_SCALE, type MatchState, type PositionState } from '../chain/client';
+import { FogduelClient, pnlBps, type MatchState, type PositionState } from '../chain/client';
+import { formatUnitPrice, pxFromSolPerToken } from '../chain/units';
 import { ACTIVE_CLUSTER } from '../chain/config';
 import { DEMO_MINT, marketLabel } from '../chain/market';
 import { OPPONENT_PENDING, RAKE, ROUND_SECONDS } from './data';
 
 export type DuelPhase = 'lobby' | 'searching' | 'live' | 'reveal';
 
-/** Default base units per LONG press — a meaningful slice of the quote balance. */
-const DEFAULT_FILL_QTY = 0.4;
+/**
+ * Fraction of remaining quote spent per LONG press.
+ *
+ * The program's buy side consumes quote, not base — you say how much you are
+ * spending and the private book tells you what you got.
+ */
+const DEFAULT_FILL_FRACTION = 0.4;
 /** Poll cadence for on-chain state during a live round. */
 const POLL_MS = 1000;
 
@@ -98,7 +104,7 @@ export function useDuel(): Duel {
 
   const [phase, setPhase] = useState<DuelPhase>('lobby');
   const [stake, setStake] = useState(0.1); // SOL
-  const [fillSize, setFillSize] = useState(DEFAULT_FILL_QTY);
+  const [fillSize, setFillSize] = useState(DEFAULT_FILL_FRACTION);
   const [balance, setBalance] = useState(0);
   const [busy, setBusy] = useState(false);
   // Read back from chain after sealing — never a local optimistic flag.
@@ -163,8 +169,9 @@ export function useDuel(): Duel {
         }
         if (mine) {
           setMyPosition(mine);
-          const eq = mine.quoteBalance + (mine.baseQty * px * PRICE_SCALE) / BASE_SCALE / PRICE_SCALE;
-          const pnl = m ? ((eq - m.entry) * 100) / m.entry : 0;
+          // Straight through the same helper settlement uses, so the number
+          // on screen cannot drift from the number that decides the pot.
+          const pnl = m ? pnlBps(mine, px, m.entry) / 100 : 0;
           setEquity((e) => [...e, pnl].slice(-120));
         }
 
@@ -328,16 +335,19 @@ export function useDuel(): Duel {
   const openLong = useCallback(() => {
     void guard('LONG FILLED', async () => {
       if (!match) return;
-      await client!.applyFill(match.address, wallet.publicKey!, 'buy', fillSize);
+      // Spend a slice of what is left, in quote units.
+      const quote = myPosition?.quoteBalance ?? match.entry;
+      const spend = Math.max(1, Math.floor(quote * fillSize));
+      await client!.applyFill(match.address, wallet.publicKey!, 'buy', spend);
       const mine = await client!.fetchPosition(match.address, wallet.publicKey!, true);
       if (mine) setMyPosition(mine);
     });
-  }, [guard, client, match, wallet.publicKey, fillSize]);
+  }, [guard, client, match, myPosition, wallet.publicKey, fillSize]);
 
   const closeLong = useCallback(() => {
     void guard('POSITION CLOSED', async () => {
       if (!match || !myPosition || myPosition.baseQty <= 0) return;
-      await client!.applyFill(match.address, wallet.publicKey!, 'sell', myPosition.baseQty / BASE_SCALE);
+      await client!.applyFill(match.address, wallet.publicKey!, 'sell', myPosition.baseQty);
       const mine = await client!.fetchPosition(match.address, wallet.publicKey!, true);
       if (mine) setMyPosition(mine);
     });
@@ -403,10 +413,7 @@ export function useDuel(): Duel {
   }, []);
 
   /* ------------------------------- derived ------------------------------- */
-  const myPnl = match && myPosition
-    ? ((myPosition.quoteBalance + (myPosition.baseQty * price * PRICE_SCALE) / BASE_SCALE / PRICE_SCALE - match.entry) * 100) /
-      match.entry
-    : 0;
+  const myPnl = match && myPosition ? pnlBps(myPosition, price, match.entry) / 100 : 0;
 
   const iAmCreator = !!(match && wallet.publicKey && match.creator.equals(wallet.publicKey));
   const opponentPnl = match
@@ -415,7 +422,7 @@ export function useDuel(): Duel {
 
   const fills: Fill[] = (myPosition?.fills ?? []).map((f) => ({
     side: f.side === 'BUY' ? 'LONG' : f.side === 'SELL' ? 'CLOSE' : 'SETTLE',
-    px: (f.px / PRICE_SCALE).toFixed(4),
+    px: formatUnitPrice(f.px),
     t: mmss(Math.max(0, (match?.startTs ?? 0) + (match?.duration ?? 0) - f.ts)),
   })).reverse();
 
@@ -427,11 +434,11 @@ export function useDuel(): Duel {
     series,
     equity,
     price,
-    position: myPosition && myPosition.baseQty > 0 ? { px: myPosition.avgPx / PRICE_SCALE } : null,
+    position: myPosition && myPosition.baseQty > 0 ? { px: myPosition.avgPx } : null,
     myPnl,
     positionLabel:
       myPosition && myPosition.baseQty > 0
-        ? `LONG FROM ${(myPosition.avgPx / PRICE_SCALE).toFixed(4)}`
+        ? `LONG FROM ${formatUnitPrice(myPosition.avgPx)}`
         : 'FLAT',
     fills,
     opponentName: match?.joiner && wallet.publicKey && !match.joiner.equals(wallet.publicKey)

@@ -16,6 +16,7 @@ import { FogduelClient } from '../src/chain/client';
 import { DEMO_MINT } from '../src/chain/market';
 import { CLUSTERS, DELEGATION_PROGRAM_ID } from '../src/chain/config';
 import { positionPda } from '../src/chain/pdas';
+import { pxFromSolPerToken } from '../src/chain/units';
 
 const cluster = process.env.EXPO_PUBLIC_CLUSTER === 'devnet' ? CLUSTERS.devnet : CLUSTERS.local;
 
@@ -49,7 +50,8 @@ async function main() {
   console.log('1. create + join');
   const match = await me.createMatch({
     creator: creator.publicKey, matchId, mint: DEMO_MINT,
-    durationSecs: 60, entryLamports: ENTRY, startPrice: 100,
+    durationSecs: 60, entryLamports: ENTRY, startPx: pxFromSolPerToken(0.1),
+    marketType: 'meme', symbol: 'SEALED', name: 'Seal Check',
   });
   await them.joinMatch(match, joiner.publicKey, creator.publicKey);
 

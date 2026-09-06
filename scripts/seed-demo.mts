@@ -13,6 +13,7 @@ import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { FogduelClient } from '../src/chain/client';
 import { DEMO_MINT } from '../src/chain/market';
 import { CLUSTERS } from '../src/chain/config';
+import { pxFromSolPerToken } from '../src/chain/units';
 
 const COUNT = Number(process.argv[2] ?? 5);
 const cluster = process.env.EXPO_PUBLIC_CLUSTER === 'devnet' ? CLUSTERS.devnet : CLUSTERS.local;
@@ -53,7 +54,8 @@ async function main() {
 
   // Varied stakes and outcomes so the feed does not look copy-pasted.
   const stakes = [0.05, 0.1, 0.25, 0.1, 0.5, 0.05];
-  const moves = [118, 92, 131, 104, 77, 122];
+  // Oracle marks the round settles against, as a fraction of the 0.1 SOL open.
+  const moves = [1.18, 0.92, 1.31, 1.04, 0.77, 1.22];
 
   for (let i = 0; i < COUNT; i += 1) {
     const opponent = players[i % players.length];
@@ -66,7 +68,7 @@ async function main() {
       creator: house.publicKey, matchId, mint: DEMO_MINT,
       // Long enough to absorb four delegation round trips before the first
       // fill — at 10s the clock expired mid-seed.
-      durationSecs: 30, entryLamports: entry, startPrice: 100,
+      durationSecs: 30, entryLamports: entry, startPx: pxFromSolPerToken(0.1),
     });
     await oppClient.joinMatch(match, opponent.publicKey, house.publicKey);
 
@@ -75,10 +77,12 @@ async function main() {
     await houseClient.sealAndDelegateMatch(match, house.publicKey, opponent.publicKey, house.publicKey);
 
     // Both sides trade, with different conviction, so PnL differs.
-    await houseClient.applyFill(match, house.publicKey, 'buy', 0.45);
-    await oppClient.applyFill(match, opponent.publicKey, 'buy', 0.2 + (i % 3) * 0.1);
+    await houseClient.applyFill(match, house.publicKey, 'buy', Math.floor(entry * 0.45));
+    await oppClient.applyFill(match, opponent.publicKey, 'buy', Math.floor(entry * (0.2 + (i % 3) * 0.1)));
 
-    await houseClient.pushPrice(match, house.publicKey, moves[i % moves.length]);
+    await houseClient.pushPrice(
+      match, house.publicKey, pxFromSolPerToken(0.1 * moves[i % moves.length]),
+    );
     await new Promise((r) => setTimeout(r, 31_000));
 
     await houseClient.commitAndUndelegate(match, house.publicKey, house.publicKey, opponent.publicKey);

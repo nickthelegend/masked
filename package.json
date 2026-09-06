@@ -23,7 +23,9 @@
     "truth": "tsx scripts/chain-truth.mts",
     "cancel": "tsx scripts/cancel-open.mts",
     "check:sealed": "tsx scripts/check-sealed.mts",
-    "check:pumpfun": "tsx scripts/check-pumpfun.mts"
+    "check:pumpfun": "tsx scripts/check-pumpfun.mts",
+    "check:markets": "tsx scripts/check-markets.mts",
+    "check:gate": "tsx scripts/check-gate.mts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",

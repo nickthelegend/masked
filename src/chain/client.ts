@@ -30,6 +30,7 @@ export const BASE_SCALE = 1_000_000;
 export const BPS = 10_000;
 
 export type Side = 'buy' | 'sell';
+export type MarketKind = 'meme' | 'major';
 
 export interface FillRecord {
   side: string;
@@ -66,6 +67,16 @@ export interface PlayerRecord {
   lastPlayedTs: number;
 }
 
+/** A player's own private constant-product book, carried inside the position. */
+export interface BookState {
+  /** Traded units x BASE_SCALE. */
+  virtualBase: number;
+  /** Lamports. */
+  virtualQuote: number;
+  /** Lamports per traded unit, at seed time. */
+  seedPx: number;
+}
+
 export interface PositionState {
   owner: PublicKey;
   quoteBalance: number;
@@ -75,6 +86,7 @@ export interface PositionState {
   lastPx: number;
   fillCount: number;
   fills: FillRecord[];
+  book: BookState;
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- Anchor's generated
@@ -125,16 +137,24 @@ export class FogduelClient {
     mint: PublicKey;
     durationSecs: number;
     entryLamports: number;
-    startPrice: number;
+    /** Opening mark, as the program stores it: lamports per traded unit. */
+    startPx: number;
+    marketType?: MarketKind;
+    symbol?: string;
+    name?: string;
   }): Promise<PublicKey> {
     const match = matchPda(args.creator, args.matchId);
+    const kind = args.marketType ?? 'meme';
     await this.l1Program.methods
       .createMatch(
         new BN(args.matchId),
         args.mint,
         new BN(args.durationSecs),
         new BN(args.entryLamports),
-        new BN(Math.round(args.startPrice * PRICE_SCALE))
+        new BN(Math.round(args.startPx)),
+        kind === 'meme' ? { meme: {} } : { major: {} },
+        (args.symbol ?? '').slice(0, 12),
+        (args.name ?? '').slice(0, 32)
       )
       .accounts({
         creator: args.creator,
@@ -252,6 +272,20 @@ export class FogduelClient {
     for (const owner of [creator, joiner]) {
       await this.delegatePosition(match, owner, payer);
     }
+    // Each player's book travels inside their Position, so delegating the
+    // positions delegates the books — and sealing the positions seals them.
+  }
+
+  /**
+   * Mid of a player's own private book, as a `px`.
+   *
+   * Only ever your own: another player's book is inside their sealed Position,
+   * which is the point.
+   */
+  async fetchBookMid(match: PublicKey, owner: PublicKey, fromEr: boolean): Promise<number> {
+    const pos = await this.fetchPosition(match, owner, fromEr);
+    if (!pos || pos.book.virtualBase === 0) return 0;
+    return (pos.book.virtualQuote * BASE_SCALE) / pos.book.virtualBase;
   }
 
   /**
@@ -295,10 +329,17 @@ export class FogduelClient {
     return info?.owner ?? null;
   }
 
-  /** Fills run on the ER, against delegated (and on a TEE, private) state. */
-  async applyFill(match: PublicKey, player: PublicKey, side: Side, qty: number): Promise<string> {
+  /**
+   * A fill on the private book, on the rollup.
+   *
+   * Units differ by side and are deliberately raw, because the program's two
+   * sides consume different things:
+   *   buy  — `amount` is quote spent, in the same units as the entry (lamports)
+   *   sell — `amount` is base sold, scaled by BASE_SCALE
+   */
+  async applyFill(match: PublicKey, player: PublicKey, side: Side, amount: number): Promise<string> {
     return this.erProgram.methods
-      .applyFill(sideArg(side), new BN(Math.round(qty * BASE_SCALE)))
+      .applyFill(sideArg(side), new BN(Math.round(amount)))
       .accounts({
         player,
         matchAccount: match,
@@ -379,10 +420,11 @@ export class FogduelClient {
       .sort((a: PlayerRecord, b: PlayerRecord) => b.taken - a.taken);
   }
 
-  async pushPrice(match: PublicKey, authority: PublicKey, price: number, onEr = false): Promise<void> {
+  /** Post an oracle mark. `px` is lamports per traded unit — see units.ts. */
+  async pushPrice(match: PublicKey, authority: PublicKey, px: number, onEr = false): Promise<void> {
     const program = onEr ? this.erProgram : this.l1Program;
     await program.methods
-      .pushPrice(new BN(Math.round(price * PRICE_SCALE)))
+      .pushPrice(new BN(Math.round(px)))
       .accounts({ authority, priceFeed: feedPda(match) })
       .rpc();
   }
@@ -453,13 +495,19 @@ export class FogduelClient {
         px: f.px.toNumber(),
         ts: f.ts.toNumber(),
       })),
+      book: {
+        virtualBase: raw.book.virtualBase.toNumber(),
+        virtualQuote: raw.book.virtualQuote.toNumber(),
+        seedPx: raw.book.seedPx.toNumber(),
+      },
     };
   }
 
+  /** The posted oracle mark as a `px`: lamports per traded unit. */
   async fetchPrice(match: PublicKey, fromEr: boolean): Promise<number> {
     const program = fromEr ? this.erProgram : this.l1Program;
     const raw = await program.account.priceFeed.fetchNullable(feedPda(match));
-    return raw ? raw.px.toNumber() / PRICE_SCALE : 0;
+    return raw ? raw.px.toNumber() : 0;
   }
 
   async fetchTape(match: PublicKey) {
@@ -479,9 +527,17 @@ export class FogduelClient {
   }
 }
 
-/** PnL in basis points against the starting quote balance. */
-export const pnlBps = (position: PositionState, markPrice: number, entry: number): number => {
+/**
+ * PnL in basis points against the starting quote balance.
+ *
+ * `px` is lamports per traded unit and `baseQty` is units x BASE_SCALE, so
+ * their product over BASE_SCALE is lamports — the same currency as the quote
+ * balance and the entry. Mirrors `Position::pnl_bps` on-chain exactly; a
+ * client that computed this differently would show a winner the chain
+ * disagrees with.
+ */
+export const pnlBps = (position: PositionState, px: number, entry: number): number => {
   if (entry === 0) return 0;
-  const equity = position.quoteBalance + (position.baseQty * markPrice * PRICE_SCALE) / BASE_SCALE / PRICE_SCALE;
+  const equity = position.quoteBalance + (position.baseQty * px) / BASE_SCALE;
   return Math.trunc(((equity - entry) * BPS) / entry);
 };

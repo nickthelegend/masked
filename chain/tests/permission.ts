@@ -30,7 +30,12 @@ describe("fogduel · permission ACL", () => {
   const creator = provider.wallet as anchor.Wallet;
   const joiner = Keypair.generate();
 
+  // :7799 is the rollup validator's own port — it answers anyone, by design.
+  // :6699 is the query-filtering-service, the public front door, which reads
+  // the permission program to decide what a caller may see. A privacy claim
+  // is only worth anything against the second one.
   const erConnection = new Connection("http://127.0.0.1:7799", "confirmed");
+  const publicConnection = new Connection("http://127.0.0.1:6699", "confirmed");
   const erProvider = new anchor.AnchorProvider(erConnection, creator, { commitment: "confirmed" });
   const erProgram = new Program<Fogduel>(program.idl as Fogduel, erProvider);
 
@@ -54,7 +59,10 @@ describe("fogduel · permission ACL", () => {
     [posB] = PublicKey.findProgramAddressSync(
       [Buffer.from("position"), matchPda.toBuffer(), joiner.publicKey.toBuffer()], program.programId);
 
-    await program.methods.createMatch(new BN(RUN), PublicKey.default, new BN(60), new BN(ENTRY), new BN(100 * PRICE_SCALE))
+    await program.methods.createMatch(
+      new BN(RUN), PublicKey.default, new BN(60), new BN(ENTRY),
+      new BN(100 * PRICE_SCALE), { meme: {} }, "PERM", "Permission Market",
+    )
       .accounts({ creator: creator.publicKey, matchAccount: matchPda, vault, priceFeed: feed, systemProgram: SystemProgram.programId })
       .rpc();
     await program.methods.joinMatch()
@@ -95,28 +103,55 @@ describe("fogduel · permission ACL", () => {
     }
   });
 
-  it("delegates the positions themselves", async () => {
+  it("delegates the positions, and with them the private books", async () => {
     for (const owner of [creator.publicKey, joiner.publicKey]) {
       await program.methods.delegatePositionToEr(owner, LOCAL_ER_VALIDATOR, 1_000)
         .accounts({ payer: creator.publicKey, matchAccount: matchPda }).rpc();
     }
   });
 
-  it("REPORT — what the ER exposes once permissions are delegated", async () => {
-    await erProgram.methods.applyFill({ buy: {} }, new BN(0.4 * 1_000_000))
-      .accounts({ player: creator.publicKey, matchAccount: matchPda, priceFeed: feed, position: posA })
+  it("fills on the ER, moving the delegated private book", async () => {
+    await erProgram.methods.applyFill({ buy: {} }, new BN(0.4 * ENTRY))
+      .accounts({
+        player: creator.publicKey, matchAccount: matchPda, priceFeed: feed,
+        position: posA,
+      })
       .rpc();
 
-    const mine = await erConnection.getAccountInfo(posA);
-    const theirs = await erConnection.getAccountInfo(posB);
+    const mine = await erProgram.account.position.fetch(posA);
+    assert.isAbove(mine.baseQty.toNumber(), 0, "the fill landed on the rollup");
+  });
+
+  it("REPORT — what each endpoint exposes once permissions are delegated", async () => {
+    const read = async (c: Connection, k: PublicKey) => {
+      try {
+        return await c.getAccountInfo(k);
+      } catch (e: any) {
+        return { refused: e?.message ?? String(e) } as const;
+      }
+    };
+    const describe = (r: Awaited<ReturnType<typeof read>>) =>
+      r === null ? "absent"
+        : "refused" in (r as any) ? `REFUSED — ${(r as any).refused}`
+        : `readable (${(r as any).data.length} bytes)`;
+
+    const rows = [
+      ["validator :7799  own position     ", await read(erConnection, posA)],
+      ["validator :7799  opponent position", await read(erConnection, posB)],
+      ["public    :6699  own position     ", await read(publicConnection, posA)],
+      ["public    :6699  opponent position", await read(publicConnection, posB)],
+      ["public    :6699  price feed       ", await read(publicConnection, feed)],
+    ] as const;
+
+    console.log("\n        --- ER visibility ---");
+    for (const [label, r] of rows) console.log(`        ${label}: ${describe(r)}`);
+
+    // Ground truth, recorded rather than hoped for. The assertion that matters
+    // — that :6699 refuses the opponent's position — belongs to the privacy
+    // suite, which sets up the permission the way the product does.
     const permA = await erConnection.getAccountInfo(permissionPdaFromAccount(posA));
-
-    console.log("\n        --- local ER visibility ---");
-    console.log("        own position readable   :", mine ? `yes (${mine.data.length} bytes)` : "no");
-    console.log("        opponent position readable:", theirs ? `yes (${theirs.data.length} bytes)` : "NO — refused");
-    console.log("        permission acct on ER    :", permA ? `present, owner ${permA.owner.toBase58().slice(0,8)}…` : "absent");
-
-    // Record the ground truth rather than asserting a hoped-for outcome.
-    assert.ok(mine, "own position is readable");
+    console.log("        permission acct on ER      :",
+      permA ? `present, owner ${permA.owner.toBase58().slice(0, 8)}…` : "absent");
+    assert.ok(rows[0][1], "own position is readable from the validator");
   });
 });

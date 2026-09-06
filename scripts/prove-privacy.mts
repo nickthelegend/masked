@@ -18,6 +18,7 @@ import { FogduelClient } from '../src/chain/client';
 import { DEMO_MINT } from '../src/chain/market';
 import { CLUSTERS, DELEGATION_PROGRAM_ID } from '../src/chain/config';
 import { positionPda } from '../src/chain/pdas';
+import { pxFromSolPerToken } from '../src/chain/units';
 
 const cluster = process.env.EXPO_PUBLIC_CLUSTER === 'devnet' ? CLUSTERS.devnet : CLUSTERS.local;
 
@@ -61,7 +62,8 @@ async function main() {
   line('[1] opening a match and staking both sides');
   const match = await me.createMatch({
     creator: creator.publicKey, matchId, mint: DEMO_MINT,
-    durationSecs: 15, entryLamports: ENTRY, startPrice: 100,
+    durationSecs: 15, entryLamports: ENTRY, startPx: pxFromSolPerToken(0.1),
+    marketType: 'meme', symbol: 'PROOF', name: 'Privacy Proof',
   });
   await them.joinMatch(match, opponent.publicKey, creator.publicKey);
   const m = (await me.fetchMatch(match))!;
@@ -102,8 +104,8 @@ async function main() {
   line();
 
   line('[4] trading — a fill lands on the rollup');
-  await me.applyFill(match, creator.publicKey, 'buy', 0.4);
-  await them.applyFill(match, opponent.publicKey, 'buy', 0.25);
+  await me.applyFill(match, creator.publicKey, 'buy', Math.floor(ENTRY * 0.4));
+  await them.applyFill(match, opponent.publicKey, 'buy', Math.floor(ENTRY * 0.25));
   line('    both sides have open positions');
   line();
 
@@ -157,7 +159,7 @@ async function main() {
   line('[5] the market moves, then the buzzer');
   // Move the mark so the settlement produces a real result rather than a
   // flat 0.00% on both sides.
-  await me.pushPrice(match, creator.publicKey, 121.5);
+  await me.pushPrice(match, creator.publicKey, pxFromSolPerToken(0.1215));
   line('    mark 100.00 -> 121.50');
   await new Promise((r) => setTimeout(r, 16_000));
   await me.commitAndUndelegate(match, creator.publicKey, creator.publicKey, opponent.publicKey);

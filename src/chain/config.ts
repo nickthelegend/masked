@@ -24,11 +24,26 @@ export interface ClusterConfig {
   name: ClusterName;
   /** Base layer RPC. */
   l1: string;
-  /** Ephemeral rollup RPC. */
+  /**
+   * The rollup's public front door, and the only ER endpoint the app talks to.
+   *
+   * Locally this is the query-filtering-service, which reads ACLseo… to decide
+   * what a caller may see. On devnet it is the TEE's own ingress. Either way,
+   * a privacy claim is a claim about *this* URL.
+   */
   er: string;
+  /**
+   * The rollup validator's own RPC, which answers anybody — no permission
+   * check, because it is the validator, not the door.
+   *
+   * Only the proof script uses it, precisely to show the difference between
+   * the two. Nothing in the product may read from here: doing so would make
+   * "the opponent's position is unreadable" false while appearing to work.
+   */
+  erRaw?: string;
   /** Validator identity to delegate to. */
   validator: PublicKey;
-  /** True when `er` is a TEE, i.e. when privacy is actually enforced. */
+  /** True when `er` is a TEE, i.e. when privacy is enforced by hardware. */
   tee: boolean;
 }
 
@@ -36,10 +51,14 @@ export const CLUSTERS: Record<ClusterName, ClusterConfig> = {
   local: {
     name: 'local',
     l1: 'http://127.0.0.1:8999',
-    er: 'http://127.0.0.1:7799',
+    // The query-filtering-service. See scripts/localnet.sh.
+    er: 'http://127.0.0.1:6699',
+    erRaw: 'http://127.0.0.1:7799',
     validator: VALIDATORS.local,
-    // The local ephemeral-validator is NOT a TEE. Delegation and speed work;
-    // ephemeral permissions do not. Privacy needs the devnet TEE.
+    // The local ephemeral-validator is not a TEE: the permission gate in front
+    // of it is a process we run, not hardware anyone can attest. It enforces
+    // the ACL — proven in scripts/prove-privacy.mts — but a judge has only our
+    // word that the process is the one we say it is. That is what the TEE adds.
     tee: false,
   },
   devnet: {

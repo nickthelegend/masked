@@ -81,6 +81,11 @@ export const FOGDUEL_IDL = {
         },
         {
           "name": "position",
+          "docs": [
+            "The player's position — and, inside it, the player's own private book.",
+            "Delegated to the rollup, so a fill moves that book there and never on a",
+            "public venue."
+          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -357,6 +362,22 @@ export const FOGDUEL_IDL = {
         {
           "name": "start_px",
           "type": "u64"
+        },
+        {
+          "name": "market_type",
+          "type": {
+            "defined": {
+              "name": "MarketType"
+            }
+          }
+        },
+        {
+          "name": "symbol",
+          "type": "string"
+        },
+        {
+          "name": "name",
+          "type": "string"
         }
       ]
     },
@@ -454,6 +475,14 @@ export const FOGDUEL_IDL = {
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "owner_program",
+          "address": "3K3v1bp6uUGVdzRfZmkwZGK82BHgCJxAroXJ3ZRs1Rj1"
+        },
+        {
+          "name": "delegation_program",
+          "address": "DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh"
         }
       ],
       "args": [
@@ -1794,6 +1823,51 @@ export const FOGDUEL_IDL = {
   ],
   "types": [
     {
+      "name": "Book",
+      "docs": [
+        "A constant-product book, private to one player.",
+        "",
+        "Seeded at join from a snapshot of the real market mid, re-pegged to the",
+        "posted price before every fill, and never touched by anything public.",
+        "",
+        "One book per player, and it lives *inside* the Position — which is the",
+        "account the permission program seals. A single book shared by both sides",
+        "would leak: your fill moves the mid, and an opponent watching the mid reads",
+        "your flow straight off it. Hiding the Position while publishing a mark that",
+        "every fill moves is not privacy, it is a slower way to tell them.",
+        "",
+        "Because each side trades its own curve, impact is purely the cost of your",
+        "own size. Neither player can push the other's execution around, and the",
+        "price signal both are trading comes from the posted mark."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "virtual_base",
+            "docs": [
+              "Virtual base reserves, in whole tokens x BASE_SCALE."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "virtual_quote",
+            "docs": [
+              "Virtual quote reserves, in lamports."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "seed_px",
+            "docs": [
+              "Mid the round opened on. Kept for the tape; never re-pegged away."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "Fill",
       "type": {
         "kind": "struct",
@@ -1816,13 +1890,36 @@ export const FOGDUEL_IDL = {
           {
             "name": "px",
             "docs": [
-              "Execution price, scaled by PRICE_SCALE."
+              "Execution price: lamports per token, scaled by PRICE_SCALE."
             ],
             "type": "u64"
           },
           {
             "name": "ts",
             "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MarketType",
+      "docs": [
+        "Which kind of market a duel is fought over.",
+        "",
+        "Meme markets are priced by an internal constant-product AMM seeded from a",
+        "snapshot of the token's real bonding-curve mid. Major markets are priced",
+        "from a posted oracle mark. Neither routes the battle fill through a public",
+        "venue — a public swap print would leak wallet, mint and size, which is",
+        "exactly what the fog exists to prevent."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Meme"
+          },
+          {
+            "name": "Major"
           }
         ]
       }
@@ -1897,6 +1994,41 @@ export const FOGDUEL_IDL = {
           {
             "name": "pnl_b_bps",
             "type": "i64"
+          },
+          {
+            "name": "market_type",
+            "docs": [
+              "Meme or Major. Decides how the mark is produced at settlement."
+            ],
+            "type": {
+              "defined": {
+                "name": "MarketType"
+              }
+            }
+          },
+          {
+            "name": "symbol",
+            "docs": [
+              "Ticker, zero-padded. Display only; the mint is the identity."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                12
+              ]
+            }
+          },
+          {
+            "name": "name",
+            "docs": [
+              "Token name, zero-padded."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           },
           {
             "name": "bump",
@@ -2012,7 +2144,7 @@ export const FOGDUEL_IDL = {
           {
             "name": "quote_balance",
             "docs": [
-              "Virtual quote currency, seeded from the entry. Scaled by PRICE_SCALE."
+              "Virtual quote currency, seeded from the entry. Lamports."
             ],
             "type": "i64"
           },
@@ -2027,14 +2159,14 @@ export const FOGDUEL_IDL = {
           {
             "name": "avg_px",
             "docs": [
-              "Volume-weighted average entry price, scaled by PRICE_SCALE."
+              "Volume-weighted average entry price, in the same scale as `px`."
             ],
             "type": "u64"
           },
           {
             "name": "realized",
             "docs": [
-              "Realized PnL in quote units, scaled by PRICE_SCALE."
+              "Realized PnL in quote units. Lamports."
             ],
             "type": "i64"
           },
@@ -2053,6 +2185,18 @@ export const FOGDUEL_IDL = {
                 "defined": {
                   "name": "Fill"
                 }
+              }
+            }
+          },
+          {
+            "name": "book",
+            "docs": [
+              "This player's own private book. Inside the Position, so the permission",
+              "that seals the position seals the book with it."
+            ],
+            "type": {
+              "defined": {
+                "name": "Book"
               }
             }
           },

@@ -12,6 +12,7 @@ import { positionPda } from '../src/chain/pdas';
 import { FogduelClient } from '../src/chain/client';
 import { DEMO_MINT } from '../src/chain/market';
 import { CLUSTERS } from '../src/chain/config';
+import { pxFromSolPerToken } from '../src/chain/units';
 
 async function main() {
 
@@ -42,7 +43,8 @@ async function main() {
   console.log('1. create_match');
   const match = await client.createMatch({
     creator: creator.publicKey, matchId, mint: DEMO_MINT,
-    durationSecs: 12, entryLamports: ENTRY, startPrice: 100,
+    durationSecs: 12, entryLamports: ENTRY, startPx: pxFromSolPerToken(0.1),
+    marketType: 'meme', symbol: 'VERIFY', name: 'Client Verification',
   });
   let m = (await client.fetchMatch(match))!;
   assert.equal(m.status, 'open');
@@ -69,7 +71,7 @@ async function main() {
   console.log('   sealed (2/2 ACLs on chain) and delegated');
 
   console.log('5. apply_fill on the ER');
-  await client.applyFill(match, creator.publicKey, 'buy', 0.4);
+  await client.applyFill(match, creator.publicKey, 'buy', Math.floor(ENTRY * 0.4));
   const pos = (await client.fetchPosition(match, creator.publicKey, true))!;
   assert.equal(pos.baseQty, 0.4 * 1_000_000);
   assert.equal(pos.fillCount, 1);
@@ -77,7 +79,7 @@ async function main() {
   console.log('   filled on ER — baseQty:', pos.baseQty, 'fills:', pos.fillCount);
 
   console.log('6. price moves, commit + undelegate');
-  await client.pushPrice(match, creator.publicKey, 118);
+  await client.pushPrice(match, creator.publicKey, pxFromSolPerToken(0.118));
   await new Promise((r) => setTimeout(r, 13_000));
   await client.commitAndUndelegate(match, creator.publicKey, creator.publicKey, joiner.publicKey);
 

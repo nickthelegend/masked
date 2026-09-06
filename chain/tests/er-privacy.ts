@@ -78,7 +78,10 @@ describe("fogduel · ephemeral rollup + privacy", () => {
 
     p = pdas(RUN);
     await program.methods
-      .createMatch(new BN(RUN), PublicKey.default, new BN(DURATION), new BN(ENTRY), new BN(START_PX))
+      .createMatch(
+        new BN(RUN), PublicKey.default, new BN(DURATION), new BN(ENTRY),
+        new BN(START_PX), { meme: {} }, "ERTEST", "ER Privacy Market",
+      )
       .accounts({ creator: creator.publicKey, matchAccount: p.matchPda, vault: p.vault, priceFeed: p.feed, systemProgram: SystemProgram.programId })
       .rpc();
     await program.methods.joinMatch()
@@ -95,8 +98,10 @@ describe("fogduel · ephemeral rollup + privacy", () => {
         .rpc();
     }
 
-    // On L1 the account is now owned by the delegation program. That is what
+    // On L1 the accounts are now owned by the delegation program. That is what
     // "delegated" means on-chain, and it is the first thing a judge checks.
+    // Each player's private book travels inside their position, so this
+    // delegates the books too.
     for (const pos of [p.posA, p.posB]) {
       const info = await provider.connection.getAccountInfo(pos);
       assert.ok(info, "position still exists on L1");
@@ -106,23 +111,35 @@ describe("fogduel · ephemeral rollup + privacy", () => {
   });
 
   it("PHASE 2 — the delegated position is writable on the ER", async () => {
-    const qty = 0.4 * BASE_SCALE;
+    const bookBefore = (await erProgram.account.position.fetch(p.posA)).book;
     const sig = await erProgram.methods
-      .applyFill({ buy: {} }, new BN(qty))
-      .accounts({ player: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posA })
+      .applyFill({ buy: {} }, new BN(0.4 * ENTRY))
+      .accounts({
+        player: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posA,
+      })
       .rpc();
     assert.ok(sig, "fill landed on the ER");
 
     const onEr = await erProgram.account.position.fetch(p.posA);
-    assert.equal(onEr.baseQty.toNumber(), qty, "ER state advanced");
+    assert.isAbove(onEr.baseQty.toNumber(), 0, "ER state advanced");
     assert.equal(onEr.fillCount, 1);
+
+    // The fill went through this player's own private book, on the rollup —
+    // not to a public venue, and not to a curve the opponent can watch.
+    const bookAfter = (await erProgram.account.position.fetch(p.posA)).book;
+    assert.isAbove(
+      bookAfter.virtualQuote.toNumber(), bookBefore.virtualQuote.toNumber(),
+      "the buy moved the player's own curve on the ER",
+    );
   });
 
   it("PHASE 2 — the same write is REJECTED on L1 while delegated", async () => {
     try {
       await program.methods
-        .applyFill({ buy: {} }, new BN(0.1 * BASE_SCALE))
-        .accounts({ player: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posA })
+        .applyFill({ buy: {} }, new BN(0.1 * ENTRY))
+        .accounts({
+          player: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posA,
+        })
         .rpc();
       assert.fail("L1 write to a delegated account must fail");
     } catch (e: any) {
