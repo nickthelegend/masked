@@ -19,9 +19,13 @@ use ephemeral_rollups_sdk::anchor::{commit, delegate, ephemeral};
 use ephemeral_rollups_sdk::consts::{EPHEMERAL_VAULT_ID, PERMISSION_PROGRAM_ID};
 use ephemeral_rollups_sdk::cpi::DelegateConfig;
 use ephemeral_rollups_sdk::ephem::commit_and_undelegate_accounts;
-use ephemeral_rollups_sdk::access_control::instructions::CreateEphemeralPermissionCpi;
+use ephemeral_rollups_sdk::access_control::instructions::{
+    CreateEphemeralPermissionCpi, CreatePermissionCpi, CreatePermissionCpiAccounts,
+    CreatePermissionInstructionArgs, DelegatePermissionCpi, DelegatePermissionCpiAccounts,
+};
 use ephemeral_rollups_sdk::access_control::structs::{
-    EphemeralMembersArgs, Member, AUTHORITY_FLAG, TX_BALANCES_FLAG, TX_LOGS_FLAG, TX_MESSAGE_FLAG,
+    EphemeralMembersArgs, Member, MembersArgs, AUTHORITY_FLAG, TX_BALANCES_FLAG, TX_LOGS_FLAG,
+    TX_MESSAGE_FLAG,
 };
 
 pub mod errors;
@@ -465,6 +469,74 @@ pub mod fogduel {
         Ok(())
     }
 
+    /// Create the L1 access-control list for a position, on the base layer.
+    ///
+    /// The ephemeral (TEE) permission path has to run on the ER and needs a
+    /// delegated payer; this one runs on L1 where the wallet can pay normally.
+    /// The member set is the same either way: the owner, and nobody else.
+    ///
+    /// The position PDA has to sign for its own permission, which is why this
+    /// is a program CPI rather than a client instruction.
+    pub fn create_position_permission(ctx: Context<CreatePositionPermission>, owner: Pubkey) -> Result<()> {
+        let match_key = ctx.accounts.match_account.key();
+        let bump = ctx.accounts.position.bump;
+        let seeds: &[&[u8]] = &[b"position", match_key.as_ref(), owner.as_ref(), &[bump]];
+
+        CreatePermissionCpi::new(
+            &ctx.accounts.permission_program.to_account_info(),
+            CreatePermissionCpiAccounts {
+                permissioned_account: &ctx.accounts.position.to_account_info(),
+                permission: &ctx.accounts.permission.to_account_info(),
+                payer: &ctx.accounts.payer.to_account_info(),
+                system_program: &ctx.accounts.system_program.to_account_info(),
+            },
+            CreatePermissionInstructionArgs {
+                args: MembersArgs {
+                    members: Some(vec![Member {
+                        flags: AUTHORITY_FLAG | TX_LOGS_FLAG | TX_MESSAGE_FLAG | TX_BALANCES_FLAG,
+                        pubkey: owner,
+                    }]),
+                },
+            },
+        )
+        .invoke_signed(&[seeds])?;
+
+        msg!("permission created for position owner={}", owner);
+        Ok(())
+    }
+
+    /// Delegate a position's permission to the same validator the position
+    /// itself is delegated to, so the rollup can enforce the ACL.
+    pub fn delegate_position_permission(
+        ctx: Context<DelegatePositionPermission>,
+        owner: Pubkey,
+    ) -> Result<()> {
+        let match_key = ctx.accounts.match_account.key();
+        let bump = ctx.accounts.position.bump;
+        let seeds: &[&[u8]] = &[b"position", match_key.as_ref(), owner.as_ref(), &[bump]];
+
+        DelegatePermissionCpi::new(
+            &ctx.accounts.permission_program.to_account_info(),
+            DelegatePermissionCpiAccounts {
+                payer: &ctx.accounts.payer.to_account_info(),
+                authority: (&ctx.accounts.position.to_account_info(), true),
+                permissioned_account: (&ctx.accounts.position.to_account_info(), true),
+                permission: &ctx.accounts.permission.to_account_info(),
+                system_program: &ctx.accounts.system_program.to_account_info(),
+                owner_program: &ctx.accounts.permission_program.to_account_info(),
+                delegation_buffer: &ctx.accounts.delegation_buffer.to_account_info(),
+                delegation_record: &ctx.accounts.delegation_record.to_account_info(),
+                delegation_metadata: &ctx.accounts.delegation_metadata.to_account_info(),
+                delegation_program: &ctx.accounts.delegation_program.to_account_info(),
+                validator: Some(&ctx.accounts.validator.to_account_info()),
+            },
+        )
+        .invoke_signed(&[seeds])?;
+
+        msg!("permission delegated for position owner={}", owner);
+        Ok(())
+    }
+
     /// Commit both positions back to L1 and release the delegation.
     ///
     /// Called on the ER once the clock expires. After this lands the positions
@@ -732,4 +804,69 @@ pub struct CommitAndUndelegatePositions<'info> {
 
     #[account(mut)]
     pub position_b: Account<'info, Position>,
+}
+
+
+#[derive(Accounts)]
+#[instruction(owner: Pubkey)]
+pub struct CreatePositionPermission<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    #[account(seeds = [b"match", match_account.creator.as_ref(), &match_account.match_id.to_le_bytes()], bump = match_account.bump)]
+    pub match_account: Account<'info, Match>,
+
+    #[account(seeds = [b"position", match_account.key().as_ref(), owner.as_ref()], bump = position.bump)]
+    pub position: Account<'info, Position>,
+
+    /// CHECK: derived and validated by the permission program.
+    #[account(mut)]
+    pub permission: UncheckedAccount<'info>,
+
+    /// CHECK: fixed address from the SDK.
+    #[account(address = PERMISSION_PROGRAM_ID)]
+    pub permission_program: UncheckedAccount<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(owner: Pubkey)]
+pub struct DelegatePositionPermission<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    #[account(seeds = [b"match", match_account.creator.as_ref(), &match_account.match_id.to_le_bytes()], bump = match_account.bump)]
+    pub match_account: Account<'info, Match>,
+
+    #[account(seeds = [b"position", match_account.key().as_ref(), owner.as_ref()], bump = position.bump)]
+    pub position: Account<'info, Position>,
+
+    /// CHECK: derived and validated by the permission program.
+    #[account(mut)]
+    pub permission: UncheckedAccount<'info>,
+
+    /// CHECK: delegation buffer for the permission account.
+    #[account(mut)]
+    pub delegation_buffer: UncheckedAccount<'info>,
+
+    /// CHECK: delegation record for the permission account.
+    #[account(mut)]
+    pub delegation_record: UncheckedAccount<'info>,
+
+    /// CHECK: delegation metadata for the permission account.
+    #[account(mut)]
+    pub delegation_metadata: UncheckedAccount<'info>,
+
+    /// CHECK: the ER validator identity to delegate to.
+    pub validator: UncheckedAccount<'info>,
+
+    /// CHECK: fixed address from the SDK.
+    #[account(address = PERMISSION_PROGRAM_ID)]
+    pub permission_program: UncheckedAccount<'info>,
+
+    /// CHECK: fixed address from the SDK.
+    pub delegation_program: Program<'info, ephemeral_rollups_sdk::anchor::DelegationProgram>,
+
+    pub system_program: Program<'info, System>,
 }
