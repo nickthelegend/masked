@@ -32,9 +32,23 @@ const actionFrom = (logs: string[] | null | undefined): string => {
   return 'transaction';
 };
 
-export function useTxFeed(limit = 12, pollMs = 6000) {
+export interface TxFeedResult {
+  entries: TxEntry[];
+  loaded: boolean;
+  /**
+   * True when the validator has pruned the slots our transactions were in.
+   * An empty feed then means "the history is gone", not "nothing happened" —
+   * a distinction worth drawing, because the fixes are completely different.
+   */
+  ledgerPruned: boolean;
+  firstAvailableBlock: number | null;
+}
+
+export function useTxFeed(limit = 12, pollMs = 6000): TxFeedResult {
   const [entries, setEntries] = useState<TxEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [ledgerPruned, setPruned] = useState(false);
+  const [firstBlock, setFirstBlock] = useState<number | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -44,6 +58,20 @@ export function useTxFeed(limit = 12, pollMs = 6000) {
         const conn = new Connection(ACTIVE_CLUSTER.l1, 'confirmed');
         const sigs = await conn.getSignaturesForAddress(FOGDUEL_PROGRAM_ID, { limit });
         if (!alive) return;
+
+        // A local validator prunes its ledger. When the feed is empty, find out
+        // whether that is because nothing happened or because the slots that
+        // held it are gone.
+        if (sigs.length === 0) {
+          const first = await conn.getFirstAvailableBlock().catch(() => 0);
+          if (!alive) return;
+          setFirstBlock(first);
+          setPruned(first > 1);
+          setEntries([]);
+          setLoaded(true);
+          return;
+        }
+        setPruned(false);
 
         // Fetch logs in one batch so the action labels are real rather than
         // guessed from ordering.
@@ -76,7 +104,7 @@ export function useTxFeed(limit = 12, pollMs = 6000) {
     };
   }, [limit, pollMs]);
 
-  return { entries, loaded };
+  return { entries, loaded, ledgerPruned, firstAvailableBlock: firstBlock };
 }
 
 /**

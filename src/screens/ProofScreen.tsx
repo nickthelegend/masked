@@ -57,7 +57,7 @@ export default function ProofScreen() {
     []
   );
   const { accounts, loaded } = useDelegationStatus(client, watch, 4000);
-  const { entries, loaded: txLoaded } = useTxFeed(10);
+  const { entries, loaded: txLoaded, ledgerPruned, firstAvailableBlock } = useTxFeed(10);
 
   return (
     <ScrollView
@@ -136,7 +136,11 @@ export default function ProofScreen() {
         items={entries.map((e) => ({ ...e, url: explorerUrl(e.signature) }))}
         loaded={txLoaded}
         title="RECENT PROGRAM TRANSACTIONS"
-        emptyLabel="NOTHING YET — RUN npm run seed"
+        emptyLabel={
+          ledgerPruned
+            ? `LEDGER PRUNED — HISTORY BEFORE SLOT ${firstAvailableBlock} IS GONE. RESTART THE VALIDATOR WITH A LARGER --limit-ledger-size.`
+            : 'NOTHING YET — RUN npm run seed'
+        }
       />
 
       <Stack gap={space.sm}>

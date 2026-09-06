@@ -41,8 +41,12 @@ validator will not work — the ER exits on startup without them.
 cd chain && npm install
 
 # base layer
+# --limit-ledger-size matters: at the default the validator prunes old slots
+# and getSignaturesForAddress goes empty, which silently blanks the /proof
+# transaction feed even though the matches really happened.
 npx mb-test-validator --reset --ledger /tmp/fd-ledger \
-  --rpc-port 8999 --faucet-port 9901 --gossip-port 8110 --dynamic-port-range 8111-8220
+  --rpc-port 8999 --faucet-port 9901 --gossip-port 8110 --dynamic-port-range 8111-8220 \
+  --limit-ledger-size 500000000
 
 # ephemeral rollup (separate shell)
 npx ephemeral-validator --remotes http://127.0.0.1:8999 \
