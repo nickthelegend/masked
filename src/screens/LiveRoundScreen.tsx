@@ -1,4 +1,5 @@
 import {
+  Badge,
   Box,
   FillTape,
   PixelButton,
@@ -30,6 +31,8 @@ export interface LiveRoundScreenProps {
   onLong: () => void;
   onClose: () => void;
   onSkip: () => void;
+  busy?: boolean;
+  error?: string | null;
 }
 
 /**
@@ -49,6 +52,8 @@ export default function LiveRoundScreen({
   onLong,
   onClose,
   onSkip,
+  busy = false,
+  error = null,
 }: LiveRoundScreenProps) {
   return (
     <Stack pad={space.md} gap={space.md}>
@@ -85,14 +90,18 @@ export default function LiveRoundScreen({
       </Row>
 
       <Row gap={space.sm}>
-        <PixelButton flex={1} tone="primary" label="LONG" padY={16} onPress={onLong} />
-        <PixelButton flex={1} tone="danger" label="CLOSE" padY={16} onPress={onClose} />
+        <PixelButton flex={1} tone="primary" label="LONG" padY={16} loading={busy} onPress={onLong} />
+        <PixelButton flex={1} tone="danger" label="CLOSE" padY={16} loading={busy} onPress={onClose} />
       </Row>
+
+      {error ? <Badge label={error.slice(0, 48).toUpperCase()} tone="loss" variant="bodySmall" /> : null}
 
       <FillTape fills={fills} note="HIDDEN UNTIL REVEAL" />
 
       <Box>
-        <PixelButton tone="quiet" bg={color.panelLight} label="SKIP TO REVEAL (DEMO)" size={8} padY={space.sm} onPress={onSkip} />
+        {/* Settles early on purpose. Permissionless on-chain once the clock
+            expires; this just triggers it now so a demo need not wait. */}
+        <PixelButton tone="quiet" bg={color.panelLight} label="SETTLE NOW" size={8} padY={space.sm} loading={busy} onPress={onSkip} />
       </Box>
     </Stack>
   );

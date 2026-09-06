@@ -5,7 +5,7 @@
  * Run against the local MagicBlock stack:
  *   node --no-warnings=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-client.mjs
  */
-import { Keypair, LAMPORTS_PER_SOL, PublicKey } from '@solana/web3.js';
+import { Keypair, LAMPORTS_PER_SOL, PublicKey, type Transaction } from '@solana/web3.js';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { positionPda } from '../src/chain/pdas';
@@ -15,19 +15,19 @@ import { CLUSTERS } from '../src/chain/config';
 async function main() {
 
 
-  const load = (p) => Keypair.fromSecretKey(new Uint8Array(JSON.parse(readFileSync(p, 'utf8'))));
-  const wrap = (kp) => ({
+  const load = (p: string) => Keypair.fromSecretKey(new Uint8Array(JSON.parse(readFileSync(p, 'utf8'))));
+  const wrap = (kp: Keypair) => ({
     publicKey: kp.publicKey,
     payer: kp,
-    signTransaction: async (tx) => { tx.partialSign(kp); return tx; },
-    signAllTransactions: async (txs) => { txs.forEach((t) => t.partialSign(kp)); return txs; },
+    signTransaction: async (tx: Transaction) => { tx.partialSign(kp); return tx; },
+    signAllTransactions: async (txs: Transaction[]) => { txs.forEach((t) => t.partialSign(kp)); return txs; },
   });
 
   const creator = load(`${process.env.HOME}/.config/solana/id.json`);
   const joiner = load('.keys/player-b.json');
 
-  const client = new FogduelClient(wrap(creator), CLUSTERS.local);
-  const joinerClient = new FogduelClient(wrap(joiner), CLUSTERS.local);
+  const client = new FogduelClient(wrap(creator) as never, CLUSTERS.local);
+  const joinerClient = new FogduelClient(wrap(joiner) as never, CLUSTERS.local);
 
   // Fund the joiner from the faucet.
   const sig = await client.l1.requestAirdrop(joiner.publicKey, 3 * LAMPORTS_PER_SOL);
@@ -43,19 +43,19 @@ async function main() {
     creator: creator.publicKey, matchId, mint: PublicKey.default,
     durationSecs: 12, entryLamports: ENTRY, startPrice: 100,
   });
-  let m = await client.fetchMatch(match);
+  let m = (await client.fetchMatch(match))!;
   assert.equal(m.status, 'open');
   assert.equal(m.entry, ENTRY);
   console.log('   open, entry escrowed:', m.entry / LAMPORTS_PER_SOL, 'SOL');
 
   console.log('2. fetch_open_matches');
   const open = await client.fetchOpenMatches();
-  assert.ok(open.some((x) => x.address.equals(match)), 'new match appears in the open list');
+  assert.ok(open.some((x: { address: PublicKey }) => x.address.equals(match)), 'new match appears in the open list');
   console.log('   open matches visible:', open.length);
 
   console.log('3. join_match');
   await joinerClient.joinMatch(match, joiner.publicKey, creator.publicKey);
-  m = await client.fetchMatch(match);
+  m = (await client.fetchMatch(match))!;
   assert.equal(m.status, 'live');
   assert.equal(m.pot, ENTRY * 2);
   console.log('   live, pot:', m.pot / LAMPORTS_PER_SOL, 'SOL');
@@ -67,7 +67,7 @@ async function main() {
 
   console.log('5. apply_fill on the ER');
   await client.applyFill(match, creator.publicKey, 'buy', 0.4);
-  const pos = await client.fetchPosition(match, creator.publicKey, true);
+  const pos = (await client.fetchPosition(match, creator.publicKey, true))!;
   assert.equal(pos.baseQty, 0.4 * 1_000_000);
   assert.equal(pos.fillCount, 1);
   assert.equal(pos.fills[0].side, 'BUY');
@@ -81,12 +81,12 @@ async function main() {
   let owner = '';
   for (let i = 0; i < 40; i++) {
     const info = await client.l1.getAccountInfo(positionPda(match, creator.publicKey));
-    owner = info.owner.toBase58();
+    owner = info!.owner.toBase58();
     if (owner === client.programId.toBase58()) break;
     await new Promise((r) => setTimeout(r, 1000));
   }
   assert.equal(owner, client.programId.toBase58(), 'undelegated back to the program');
-  const committed = await client.fetchPosition(match, creator.publicKey, false);
+  const committed = (await client.fetchPosition(match, creator.publicKey, false))!;
   assert.equal(committed.fillCount, 1, 'the ER fill survived the commit to L1');
   console.log('   committed back — fill count on L1:', committed.fillCount);
 
@@ -94,13 +94,13 @@ async function main() {
   const before = await client.balance(creator.publicKey);
   await client.requestSettle(match, creator.publicKey);
   await client.settleMatch(match, creator.publicKey, creator.publicKey, joiner.publicKey);
-  m = await client.fetchMatch(match);
+  m = (await client.fetchMatch(match))!;
   assert.equal(m.status, 'settled');
   assert.ok(m.winner, 'a winner was recorded');
-  const tape = await client.fetchTape(match);
+  const tape = (await client.fetchTape(match)) as any;
   assert.ok(tape, 'public tape written');
   const after = await client.balance(creator.publicKey);
-  console.log('   settled. winner:', m.winner.toBase58().slice(0, 8) + '…',
+  console.log('   settled. winner:', m.winner!.toBase58().slice(0, 8) + '…',
               'pnlA(bps):', m.pnlABps, 'pnlB(bps):', m.pnlBBps);
   console.log('   rake taken:', tape.rake.toNumber() / LAMPORTS_PER_SOL, 'SOL',
               '| payout:', tape.potPaid.toNumber() / LAMPORTS_PER_SOL, 'SOL');

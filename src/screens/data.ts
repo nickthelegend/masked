@@ -132,12 +132,11 @@ export interface LandingStat {
   label: string;
 }
 
-/** Demo figures, in the same spirit as the fake feed and board above. */
-export const LANDING_STATS: LandingStat[] = [
-  { value: '38', label: 'LIVE FOGS' },
-  { value: '$12.4K', label: 'PAID OUT 24H' },
-  { value: '1204', label: 'DUELS TODAY' },
-];
+/**
+ * Labels only. The values are read from chain at render time — these were
+ * previously invented figures presented as platform metrics.
+ */
+export const LANDING_STAT_LABELS = ['OPEN FOGS', 'PAID OUT', 'DUELS SETTLED'] as const;
 
 export interface HowStep {
   glyph: string;

@@ -32,7 +32,8 @@ import {
 } from '../ui';
 import AppHeader from './AppHeader';
 import DuelLobbyScreen from './DuelLobbyScreen';
-import { FEED, HOW_IT_WORKS, LANDING_STATS, MODES, RAKE, TICKER_ITEMS } from './data';
+import { FEED, HOW_IT_WORKS, LANDING_STAT_LABELS, MODES, RAKE, TICKER_ITEMS } from './data';
+import { useChainStats } from '../chain/useChainStats';
 
 /** Above this width the hero splits into copy + device columns. */
 const WIDE = 900;
@@ -48,6 +49,7 @@ export default function LandingScreen() {
   const { width } = useWindowDimensions();
   const wide = width >= WIDE;
   const [stake, setStake] = useState(5);
+  const stats = useChainStats();
 
   // "HOW IT WORKS" scrolls to the explainer rather than dumping you into a
   // duel — the label has to mean what it says.
@@ -87,9 +89,10 @@ export default function LandingScreen() {
       <Divider color={color.panelLight} />
 
       <Row gap={space.xl} wrap>
-        {LANDING_STATS.map((s) => (
-          <StatTile key={s.label} value={s.value} label={s.label} align="left" />
-        ))}
+        {/* Read from chain, not invented. Zeros are honest on an empty cluster. */}
+        <StatTile value={stats.loaded ? String(stats.openMatches) : '—'} label={LANDING_STAT_LABELS[0]} align="left" />
+        <StatTile value={stats.loaded ? `${stats.paidOutSol.toFixed(2)}◎` : '—'} label={LANDING_STAT_LABELS[1]} align="left" />
+        <StatTile value={stats.loaded ? String(stats.settled) : '—'} label={LANDING_STAT_LABELS[2]} align="left" />
       </Row>
     </Stack>
     </PixelPanel>
@@ -98,7 +101,9 @@ export default function LandingScreen() {
   const heroDevice = (
     <View style={{ width: '100%', maxWidth: 440 }}>
       <PocketShell screenHeight={HERO_SHELL_HEIGHT}>
-        <AppHeader balance={50} onHome={goPlay} onMenu={goPlay} />
+        {/* Preview shell. Balance is 0 until a wallet connects — it used to
+            display a hardcoded 50. */}
+        <AppHeader balance={0} onHome={goPlay} onMenu={goPlay} />
         <Ticker items={TICKER_ITEMS} />
         <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
           <DuelLobbyScreen

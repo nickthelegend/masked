@@ -1,163 +1,323 @@
 /**
- * The Fog Duel state machine.
+ * The Fog Duel state machine, backed by the on-chain program.
  *
- * stake -> matchmaking -> a 5:00 live round -> reveal. LONG opens a position,
- * CLOSE realizes it, the price walks once a second, and the opponent stays
- * fogged with nothing but a fill count. At 0:00 an open position settles into
- * realized PnL, the two scores are compared, and a win credits
- * `stake * 2 * (1 - RAKE)` and appends a SETTLE fill.
+ * Every number here comes from Solana or the Ephemeral Rollup. The previous
+ * implementation walked the price with Math.random(), incremented the
+ * opponent's fill count on a coin flip, and invented the opponent's final PnL
+ * at settlement; all three are gone.
+ *
+ * The public shape is unchanged, so no screen needed editing.
+ *
+ * stake -> matchmaking -> live round -> reveal. Fills go to the ER, where the
+ * position is delegated (and, on a TEE, private). At the buzzer the positions
+ * commit back to L1, PnL is compared, and the winner takes the pot less rake.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { PublicKey } from '@solana/web3.js';
+import { useWallet } from '@solana/wallet-adapter-react';
+import type { AnchorWallet } from '@solana/wallet-adapter-react';
 import { mmss } from '../ui';
 import type { Fill } from '../ui';
+import { FogduelClient, BASE_SCALE, PRICE_SCALE, type MatchState, type PositionState } from '../chain/client';
+import { ACTIVE_CLUSTER } from '../chain/config';
 import { OPPONENT, RAKE, ROUND_SECONDS } from './data';
 
 export type DuelPhase = 'lobby' | 'searching' | 'live' | 'reveal';
 
-interface Position {
-  px: number;
-}
-
-const START_PRICE = 100;
-const MAX_SAMPLES = 120;
-const MAX_FILLS = 6;
-/** Chance the opponent puts on a fill in any given second. */
-const OPPONENT_FILL_ODDS = 0.22;
+/** Base units bought per LONG press — a meaningful slice of the quote balance. */
+const FILL_QTY = 0.4;
+/** Poll cadence for on-chain state during a live round. */
+const POLL_MS = 1000;
 
 export interface Duel {
   phase: DuelPhase;
   stake: number;
   balance: number;
   secondsLeft: number;
-  /** Price series for the round. */
   series: number[];
-  /** Your equity curve, sampled once a second. */
   equity: number[];
   price: number;
-  position: Position | null;
-  /** Realized + unrealized, in percent. */
+  position: { px: number } | null;
   myPnl: number;
   positionLabel: string;
   fills: Fill[];
   opponentName: string;
   opponentPnl: number;
   opponentFills: number;
-  /** What the winner collects: stake x 2, less the rake. */
   pot: number;
   won: boolean;
+  /* chain-aware additions */
+  connected: boolean;
+  busy: boolean;
+  error: string | null;
+  matchAddress: string | null;
   setStake: (stake: number) => void;
   findMatch: () => void;
   startMatch: () => void;
   openLong: () => void;
   closeLong: () => void;
-  /** Settle now, before the clock runs out (the demo shortcut). */
   settleNow: () => void;
   rematch: () => void;
   backToLobby: () => void;
 }
 
+const bpsToPct = (bps: number) => bps / 100;
+
 export function useDuel(): Duel {
+  const wallet = useWallet();
+  const connected = wallet.connected && !!wallet.publicKey;
+
+  const client = useMemo(() => {
+    if (!wallet.publicKey || !wallet.signTransaction || !wallet.signAllTransactions) return null;
+    const anchorWallet: AnchorWallet = {
+      publicKey: wallet.publicKey,
+      signTransaction: wallet.signTransaction,
+      signAllTransactions: wallet.signAllTransactions,
+    };
+    return new FogduelClient(anchorWallet as never, ACTIVE_CLUSTER);
+  }, [wallet.publicKey, wallet.signTransaction, wallet.signAllTransactions]);
+
   const [phase, setPhase] = useState<DuelPhase>('lobby');
   const [stake, setStake] = useState(5);
-  const [balance, setBalance] = useState(50);
-  const [secondsLeft, setSecondsLeft] = useState(ROUND_SECONDS);
-  const [series, setSeries] = useState<number[]>([START_PRICE]);
+  const [balance, setBalance] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [match, setMatch] = useState<MatchState | null>(null);
+  const [myPosition, setMyPosition] = useState<PositionState | null>(null);
+  const [opponentPosition, setOpponentPosition] = useState<PositionState | null>(null);
+  const [price, setPrice] = useState(0);
+  const [series, setSeries] = useState<number[]>([]);
   const [equity, setEquity] = useState<number[]>([0]);
-  const [position, setPosition] = useState<Position | null>(null);
-  const [realized, setRealized] = useState(0);
-  const [fills, setFills] = useState<Fill[]>([]);
-  const [opponentPnl, setOpponentPnl] = useState(0);
-  const [opponentFills, setOpponentFills] = useState(0);
+  const [secondsLeft, setSecondsLeft] = useState(ROUND_SECONDS);
 
-  const price = series[series.length - 1];
-  const unrealized = position ? ((price - position.px) / position.px) * 100 : 0;
-  const myPnl = realized + unrealized;
-  const pot = stake * 2 * (1 - RAKE);
-
-  // The ticker samples equity without re-subscribing every second, so the
-  // interval is created once per round rather than once per state change.
-  const pnlRef = useRef(myPnl);
-  pnlRef.current = myPnl;
   const settledRef = useRef(false);
 
-  const addFill = useCallback((fill: Fill) => {
-    setFills((f) => [fill, ...f].slice(0, MAX_FILLS));
-  }, []);
+  const entryLamports = stake * 1e9;
+  const pot = stake * 2 * (1 - RAKE);
 
-  /* ---- the round clock ---- */
+  /* ------------------------------- balance ------------------------------- */
   useEffect(() => {
-    if (phase !== 'live') return undefined;
-    const id = setInterval(() => {
-      setSeries((s) => {
-        const last = s[s.length - 1];
-        const next = Number((last * (1 + (Math.random() - 0.49) * 0.012)).toFixed(4));
-        return [...s, next].slice(-MAX_SAMPLES);
-      });
-      setEquity((e) => [...e, pnlRef.current].slice(-MAX_SAMPLES));
-      setOpponentFills((n) => n + (Math.random() < OPPONENT_FILL_ODDS ? 1 : 0));
-      setSecondsLeft((t) => Math.max(0, t - 1));
-    }, 1000);
-    return () => clearInterval(id);
-  }, [phase]);
+    if (!client || !wallet.publicKey) return;
+    let alive = true;
+    const read = async () => {
+      try {
+        const lamports = await client.balance(wallet.publicKey!);
+        if (alive) setBalance(lamports / 1e9);
+      } catch {
+        /* RPC hiccup; the next poll will pick it up */
+      }
+    };
+    read();
+    const id = setInterval(read, 5000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [client, wallet.publicKey]);
 
-  /* ---- settlement ---- */
-  const settle = useCallback(() => {
-    if (settledRef.current) return;
+  /* ------------------------ live round: poll chain ----------------------- */
+  useEffect(() => {
+    if (!client || !match || phase !== 'live' || !wallet.publicKey) return undefined;
+
+    let alive = true;
+    const id = setInterval(async () => {
+      try {
+        const [m, px, mine] = await Promise.all([
+          client.fetchMatch(match.address),
+          client.fetchPrice(match.address, true),
+          client.fetchPosition(match.address, wallet.publicKey!, true),
+        ]);
+        if (!alive) return;
+
+        if (m) {
+          setMatch(m);
+          const elapsed = Math.floor(Date.now() / 1000) - m.startTs;
+          setSecondsLeft(Math.max(0, m.duration - elapsed));
+        }
+        if (px > 0) {
+          setPrice(px);
+          setSeries((s) => [...s, px].slice(-120));
+        }
+        if (mine) {
+          setMyPosition(mine);
+          const eq = mine.quoteBalance + (mine.baseQty * px * PRICE_SCALE) / BASE_SCALE / PRICE_SCALE;
+          const pnl = m ? ((eq - m.entry) * 100) / m.entry : 0;
+          setEquity((e) => [...e, pnl].slice(-120));
+        }
+
+        // The opponent's position is deliberately NOT fetched here. On a TEE
+        // the read would be refused anyway; fetching it on a non-TEE cluster
+        // would leak exactly what the mode exists to hide.
+      } catch {
+        /* transient RPC error — keep polling */
+      }
+    }, POLL_MS);
+
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [client, match, phase, wallet.publicKey]);
+
+  /* ----------------------------- settlement ------------------------------ */
+  const settle = useCallback(async () => {
+    if (!client || !match || !wallet.publicKey || settledRef.current) return;
+    if (!match.joiner) return;
     settledRef.current = true;
+    setBusy(true);
+    try {
+      await client.commitAndUndelegate(match.address, wallet.publicKey, match.creator, match.joiner);
+      await client.requestSettle(match.address, wallet.publicKey);
+      await client.settleMatch(match.address, wallet.publicKey, match.creator, match.joiner);
 
-    const finalPnl = realized + unrealized;
-    const theirs = Number(((Math.random() * 7) - 3).toFixed(2));
+      const [m, mine, theirs] = await Promise.all([
+        client.fetchMatch(match.address),
+        client.fetchPosition(match.address, wallet.publicKey, false),
+        client.fetchPosition(match.address, match.joiner.equals(wallet.publicKey) ? match.creator : match.joiner, false),
+      ]);
+      if (m) setMatch(m);
+      if (mine) setMyPosition(mine);
+      // After settlement the tape is public — reading the opponent is correct.
+      if (theirs) setOpponentPosition(theirs);
+      setPhase('reveal');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'settlement failed');
+      settledRef.current = false;
+    } finally {
+      setBusy(false);
+    }
+  }, [client, match, wallet.publicKey]);
 
-    // An open position is closed at the buzzer, and that shows on the tape.
-    if (position) addFill({ side: 'SETTLE', px: price.toFixed(4), t: mmss(secondsLeft) });
-
-    setRealized(finalPnl);
-    setEquity((e) => [...e, finalPnl]);
-    setPosition(null);
-    setOpponentPnl(theirs);
-    setPhase('reveal');
-    // Ties go to you, as in the original.
-    if (finalPnl >= theirs) setBalance((b) => b + pot);
-  }, [addFill, position, pot, price, realized, secondsLeft, unrealized]);
-
-  // Settling in an effect rather than inside a state updater keeps the credit
-  // idempotent — a re-run of the updater cannot pay the pot twice.
   useEffect(() => {
-    if (phase === 'live' && secondsLeft === 0) settle();
+    if (phase === 'live' && secondsLeft === 0) void settle();
   }, [phase, secondsLeft, settle]);
 
-  /* ---- transitions ---- */
-  const findMatch = useCallback(() => setPhase('searching'), []);
+  /* ----------------------------- transitions ----------------------------- */
+  const guard = useCallback(
+    async (fn: () => Promise<void>) => {
+      if (!client || !wallet.publicKey) {
+        setError('Connect a wallet first.');
+        return;
+      }
+      setBusy(true);
+      setError(null);
+      try {
+        await fn();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'transaction failed');
+      } finally {
+        setBusy(false);
+      }
+    },
+    [client, wallet.publicKey]
+  );
 
+  const findMatch = useCallback(() => {
+    setPhase('searching');
+  }, []);
+
+  /**
+   * Join an existing open match if there is one, otherwise open a new one and
+   * wait. This is the real matchmaking path — no fabricated opponent.
+   */
   const startMatch = useCallback(() => {
-    settledRef.current = false;
-    setPhase('live');
-    setSecondsLeft(ROUND_SECONDS);
-    setSeries([START_PRICE]);
-    setEquity([0]);
-    setPosition(null);
-    setRealized(0);
-    setFills([]);
-    setOpponentPnl(0);
-    setOpponentFills(1 + Math.floor(Math.random() * 3));
-    setBalance((b) => b - stake);
-  }, [stake]);
+    void guard(async () => {
+      const me = wallet.publicKey!;
+      await client!.ensureTreasury(me);
+
+      const open = await client!.fetchOpenMatches();
+      const joinable = open.find((m) => !m.creator.equals(me) && m.entry === entryLamports);
+
+      let target: PublicKey;
+      let creator: PublicKey;
+
+      if (joinable) {
+        await client!.joinMatch(joinable.address, me, joinable.creator);
+        target = joinable.address;
+        creator = joinable.creator;
+      } else {
+        const matchId = Math.floor(Date.now() / 1000);
+        target = await client!.createMatch({
+          creator: me,
+          matchId,
+          mint: PublicKey.default,
+          durationSecs: ROUND_SECONDS,
+          entryLamports,
+          startPrice: 100,
+        });
+        creator = me;
+        // An unjoined match cannot start. Stay in matchmaking until someone
+        // joins; the lobby polls for it.
+        setMatch(await client!.fetchMatch(target));
+        return;
+      }
+
+      const m = await client!.fetchMatch(target);
+      if (!m || !m.joiner) return;
+
+      await client!.delegatePosition(target, creator, me);
+      await client!.delegatePosition(target, m.joiner, me);
+
+      settledRef.current = false;
+      setMatch(m);
+      setSeries([]);
+      setEquity([0]);
+      setSecondsLeft(m.duration);
+      setPrice(await client!.fetchPrice(target, true));
+      setPhase('live');
+    });
+  }, [guard, client, wallet.publicKey, entryLamports]);
 
   const openLong = useCallback(() => {
-    if (position) return;
-    setPosition({ px: price });
-    addFill({ side: 'LONG', px: price.toFixed(4), t: mmss(secondsLeft) });
-  }, [addFill, position, price, secondsLeft]);
+    void guard(async () => {
+      if (!match) return;
+      await client!.applyFill(match.address, wallet.publicKey!, 'buy', FILL_QTY);
+      const mine = await client!.fetchPosition(match.address, wallet.publicKey!, true);
+      if (mine) setMyPosition(mine);
+    });
+  }, [guard, client, match, wallet.publicKey]);
 
   const closeLong = useCallback(() => {
-    if (!position) return;
-    setRealized((r) => r + unrealized);
-    setPosition(null);
-    addFill({ side: 'CLOSE', px: price.toFixed(4), t: mmss(secondsLeft) });
-  }, [addFill, position, price, secondsLeft, unrealized]);
+    void guard(async () => {
+      if (!match || !myPosition || myPosition.baseQty <= 0) return;
+      await client!.applyFill(match.address, wallet.publicKey!, 'sell', myPosition.baseQty / BASE_SCALE);
+      const mine = await client!.fetchPosition(match.address, wallet.publicKey!, true);
+      if (mine) setMyPosition(mine);
+    });
+  }, [guard, client, match, myPosition, wallet.publicKey]);
 
-  const rematch = useCallback(() => setPhase('searching'), []);
-  const backToLobby = useCallback(() => setPhase('lobby'), []);
+  const rematch = useCallback(() => {
+    setMatch(null);
+    setMyPosition(null);
+    setOpponentPosition(null);
+    setSeries([]);
+    setEquity([0]);
+    settledRef.current = false;
+    setPhase('searching');
+  }, []);
+
+  const backToLobby = useCallback(() => {
+    setMatch(null);
+    setPhase('lobby');
+  }, []);
+
+  /* ------------------------------- derived ------------------------------- */
+  const myPnl = match && myPosition
+    ? ((myPosition.quoteBalance + (myPosition.baseQty * price * PRICE_SCALE) / BASE_SCALE / PRICE_SCALE - match.entry) * 100) /
+      match.entry
+    : 0;
+
+  const iAmCreator = !!(match && wallet.publicKey && match.creator.equals(wallet.publicKey));
+  const opponentPnl = match
+    ? bpsToPct(iAmCreator ? match.pnlBBps : match.pnlABps)
+    : 0;
+
+  const fills: Fill[] = (myPosition?.fills ?? []).map((f) => ({
+    side: f.side === 'BUY' ? 'LONG' : f.side === 'SELL' ? 'CLOSE' : 'SETTLE',
+    px: (f.px / PRICE_SCALE).toFixed(4),
+    t: mmss(Math.max(0, (match?.startTs ?? 0) + (match?.duration ?? 0) - f.ts)),
+  })).reverse();
 
   return {
     phase,
@@ -167,21 +327,32 @@ export function useDuel(): Duel {
     series,
     equity,
     price,
-    position,
+    position: myPosition && myPosition.baseQty > 0 ? { px: myPosition.avgPx / PRICE_SCALE } : null,
     myPnl,
-    positionLabel: position ? `LONG FROM ${position.px.toFixed(4)}` : 'FLAT',
+    positionLabel:
+      myPosition && myPosition.baseQty > 0
+        ? `LONG FROM ${(myPosition.avgPx / PRICE_SCALE).toFixed(4)}`
+        : 'FLAT',
     fills,
-    opponentName: OPPONENT,
+    opponentName: match?.joiner && wallet.publicKey && !match.joiner.equals(wallet.publicKey)
+      ? `${match.joiner.toBase58().slice(0, 6)}…`
+      : OPPONENT,
     opponentPnl,
-    opponentFills,
+    // Mid-round this is all the opponent ever exposes: a count, never a size,
+    // side or price. After settlement the committed position is public.
+    opponentFills: opponentPosition?.fillCount ?? 0,
     pot,
-    won: myPnl >= opponentPnl,
+    won: match?.winner ? !!(wallet.publicKey && match.winner.equals(wallet.publicKey)) : false,
+    connected,
+    busy,
+    error,
+    matchAddress: match?.address.toBase58() ?? null,
     setStake,
     findMatch,
     startMatch,
     openLong,
     closeLong,
-    settleNow: settle,
+    settleNow: () => void settle(),
     rematch,
     backToLobby,
   };
