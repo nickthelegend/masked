@@ -20,7 +20,8 @@ export { default as FogOverlay, type FogOverlayProps } from './FogOverlay';
 /* composites */
 export { default as MaskAvatar, type MaskAvatarProps } from './MaskAvatar';
 export { default as StatTile, type StatTileProps } from './StatTile';
-export { default as Orb, type OrbProps, type OrbState } from './Orb';
+export { default as Orb, type OrbProps } from './Orb';
+export { orbStateForPnl, type OrbState } from './orbState';
 export { default as TapeChart, type TapeChartProps } from './TapeChart';
 export { linePath, bounds, walk, toEnd, mulberry32 } from './series';
 export { default as Ticker, type TickerProps } from './Ticker';

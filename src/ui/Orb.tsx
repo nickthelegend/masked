@@ -3,7 +3,10 @@ import { Animated, Easing } from 'react-native';
 import Svg, { Circle, G, Rect } from 'react-native-svg';
 import { color } from './theme';
 
-export type OrbState = 'fog' | 'live' | 'reveal';
+import { orbStateForPnl, type OrbState } from './orbState';
+
+export { orbStateForPnl };
+export type { OrbState };
 
 interface OrbPalette {
   core: string;
@@ -15,7 +18,12 @@ const PALETTE: Record<OrbState, OrbPalette> = {
   fog: { core: '#2d3f7d', ring: '#4f6fd8', spark: color.textDim },
   live: { core: color.cyan, ring: '#0f6f8c', spark: '#bff2ff' },
   reveal: { core: color.yellow, ring: '#a06e00', spark: '#fff3b8' },
+  // Position states: the orb becomes a glanceable read on how you are doing,
+  // so the HUD carries the information even in peripheral vision.
+  up: { core: color.green, ring: color.greenDeep, spark: '#bfffd4' },
+  down: { core: color.red, ring: '#8f1e2b', spark: '#ffc4ca' },
 };
+
 
 const CORONA_ANGLES = [0, 45, 90, 135, 180, 225, 270, 315];
 

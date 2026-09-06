@@ -2,6 +2,8 @@ import {
   Badge,
   Box,
   FillTape,
+  Orb,
+  orbStateForPnl,
   PixelButton,
   PixelPanel,
   PixelText,
@@ -58,9 +60,14 @@ export default function LiveRoundScreen({
   return (
     <Stack pad={space.md} gap={space.md}>
       <Row justify="space-between" bg={color.ink} outline={color.panelLight} pad={space.sm + 2}>
-        <PixelText variant="numeric" size={8} color={color.textDim}>
-          FOG DUEL · {TOKEN}
-        </PixelText>
+        <Row gap={space.sm}>
+          {/* The orb is a glanceable read on your position — green when up,
+              red when down, cyan while flat. */}
+          <Orb size={22} state={orbStateForPnl(myPnl)} />
+          <PixelText variant="numeric" size={8} color={color.textDim}>
+            {TOKEN}
+          </PixelText>
+        </Row>
         <RoundClock seconds={secondsLeft} />
         <PotPill amount={pot} tone={color.green} />
       </Row>

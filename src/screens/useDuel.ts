@@ -19,6 +19,8 @@ import type { AnchorWallet } from '@solana/wallet-adapter-react';
 import { mmss, useToast } from '../ui';
 import type { Fill } from '../ui';
 import { explainError, withRetry } from '../chain/errors';
+import { checkBalance, checkCluster, checkProgram, checkWallet, firstFailure } from '../chain/preflight';
+import { FOGDUEL_PROGRAM_ID } from '../chain/config';
 import { assertFogIntact } from '../chain/fog';
 import { FogduelClient, BASE_SCALE, PRICE_SCALE, type MatchState, type PositionState } from '../chain/client';
 import { ACTIVE_CLUSTER } from '../chain/config';
@@ -241,6 +243,19 @@ export function useDuel(): Duel {
   const startMatch = useCallback(() => {
     void guard('MATCH READY', async () => {
       const me = wallet.publicKey!;
+
+      // Fail fast and legibly rather than sending a doomed transaction and
+      // letting the user decode the on-chain error.
+      const pre = firstFailure(
+        checkWallet(me),
+        checkBalance(await client!.balance(me), entryLamports),
+        await checkCluster(ACTIVE_CLUSTER),
+        await checkProgram(FOGDUEL_PROGRAM_ID, ACTIVE_CLUSTER)
+      );
+      if (!pre.ok) {
+        toast.error(pre.title!, pre.detail);
+        throw new Error(pre.title);
+      }
       await client!.ensureTreasury(me);
 
       const open = await client!.fetchOpenMatches();
