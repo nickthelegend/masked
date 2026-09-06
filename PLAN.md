@@ -145,8 +145,8 @@ Small, cheap, and each one removes a stumble in front of a judge.
 | 3.2 | Every `create_match` call passes `mint: PublicKey.default` while the UI labels the market `$BONK`. Either pass a real devnet mint and label it from the match account, or relabel honestly as a synthetic market. Do not leave a fictional ticker over a null mint. | DONE |
 | 3.3 | Record the privacy proof: split screen, `/proof` and the UI on the left, `prove:privacy` running on the right. 45 seconds. | BLOCKED by 2.6 |
 | 3.4 | Record one full match end to end with two wallets. Under 3 minutes total. | BLOCKED by 2.2 |
-| 3.5 | Rehearse the README's 3-minute demo script end to end once, timed, and fix anything that stalls. | NOT STARTED |
-| 3.6 | Confirm the app is reachable at a URL a judge can open — either a deployed static export (`npx expo export -p web`) or a documented local run. | NOT STARTED |
+| 3.5 | Rehearse the README's 3-minute demo script end to end once, timed, and fix anything that stalls. | DONE |
+| 3.6 | Confirm the app is reachable at a URL a judge can open — either a deployed static export (`npx expo export -p web`) or a documented local run. | DONE |
 | 3.7 | Two-wallet demo needs both funded and both browsers ready before recording. Prepare and check in advance. | BLOCKED by 2.1 |
 
 ---

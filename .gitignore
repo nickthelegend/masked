@@ -9,3 +9,4 @@ web-build/
 chain/target/
 chain/node_modules/
 chain/.anchor/
+dist/

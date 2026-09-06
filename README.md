@@ -75,12 +75,33 @@ ANCHOR_PROVIDER_URL=http://127.0.0.1:8999 ANCHOR_WALLET=$HOME/.config/solana/id.
 cd .. && npm run verify:client
 ```
 
-### 4. Seed the chain and run the app
+### 4. Create the market mint
+
+Duels are fought over a real SPL mint. Create one on your cluster and point the
+app at it:
+
+```bash
+spl-token create-token --url http://127.0.0.1:8999 --decimals 5
+# then either set EXPO_PUBLIC_MINT=<address>, or edit DEMO_MINT in
+# src/chain/market.ts
+```
+
+Positions are virtual inventory — no SPL moves during a round, because a public
+swap print would hand the opponent the fills the fog exists to hide. The mint
+identifies the market; it is not custodied.
+
+### 5. Seed the chain and run the app
 
 ```bash
 npm run seed -- 5      # plays 5 real duels so the feed and board have data
 npm run open -- 3      # opens 3 unjoined matches so the book is not empty
 npm run web
+```
+
+For a production build a judge can open without a dev server:
+
+```bash
+npx expo export -p web && npx serve -s dist
 ```
 
 | Route | What it is |
@@ -101,8 +122,11 @@ The exact click path, in the order that makes the argument.
    - CLUSTER panel: which endpoints, which validator, and whether privacy is
      actually enforced here. It says NO on a local validator, in red.
    - MEASURED LATENCY: real medians, not a slide.
+   - ACCESS CONTROL LISTS: the permission accounts of the most recent duel,
+     read from chain. Sealed and delegated, owned by `DELeGG…`.
    - RECENT PROGRAM TRANSACTIONS: click any signature — it opens an explorer.
      `DELEGATE POSITION TO ER` and `PROCESS UNDELEGATION` are right there.
+   - None of this needs a wallet. It is public account state.
 
 **2. Terminal — the privacy proof (60s)**
 
@@ -117,9 +141,15 @@ npm run prove:privacy
 
 **3. `/play` — play one (60s)**
    - OPEN BOOK shows real unjoined matches from other wallets. JOIN one.
+   - Joining seals the match: two access-control lists are created on chain and
+     delegated before either position is. The opponent panel carries a
+     **SEALED** badge that reflects a real `getAccountInfo`, not a local flag —
+     `SEALED · ACL ON CHAIN` locally, `SEALED · TEE ENFORCED` on a TEE.
    - LONG. The orb turns green, the PnL odometer rolls, the clock pulses under
      10 seconds.
    - The opponent panel shows a fill count and nothing else, all round.
+   - Rounds are 60s by default so this is watchable; set
+     `EXPO_PUBLIC_ROUND_SECONDS=300` for the real five-minute round.
    - At 0:00 the curtain tears: TAPE UNSEALED, both PnLs roll up, the tape
      draws in.
 
@@ -176,8 +206,10 @@ exactly what the mode exists to hide.
 
 ```bash
 npm run check          # typecheck + 5 assertion suites (tokens, series, fog, errors, preflight)
+npm run check:sealed   # proves the UI's own path puts an ACL on chain for both players
 npm run verify:client  # drives a full match through the app's own client
-npm run prove:privacy  # the privacy proof, stage by stage
+npm run prove:privacy  # the privacy proof, stage by stage (~65s)
+npm run truth          # RPC ground truth, to check rendered numbers against
 cd chain && anchor test --skip-local-validator   # 20 on-chain tests
 ```
 
