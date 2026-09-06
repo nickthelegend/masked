@@ -21,3 +21,5 @@ export { default as FogOverlay, type FogOverlayProps } from './FogOverlay';
 export { default as MaskAvatar, type MaskAvatarProps } from './MaskAvatar';
 export { default as StatTile, type StatTileProps } from './StatTile';
 export { default as Orb, type OrbProps, type OrbState } from './Orb';
+export { default as TapeChart, type TapeChartProps } from './TapeChart';
+export { linePath, bounds, walk, toEnd, mulberry32 } from './series';
