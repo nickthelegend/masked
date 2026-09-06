@@ -8,7 +8,7 @@
  * gallery, so every component can be checked on device without a second entry.
  */
 import { useState } from 'react';
-import { View } from 'react-native';
+import { Platform, View } from 'react-native';
 import { useFonts } from 'expo-font';
 import { PressStart2P_400Regular } from '@expo-google-fonts/press-start-2p';
 import { Silkscreen_400Regular } from '@expo-google-fonts/silkscreen';
@@ -19,9 +19,18 @@ import UIGallery from './src/screens/UIGallery';
 
 type Entry = 'app' | 'gallery';
 
+/**
+ * On web, `?gallery` opens the component gallery directly — handy for
+ * screenshotting the library without walking the app first.
+ */
+const initialEntry = (): Entry =>
+  Platform.OS === 'web' && typeof window !== 'undefined' && window.location.search.includes('gallery')
+    ? 'gallery'
+    : 'app';
+
 export default function App() {
   const [ready] = useFonts({ PressStart2P_400Regular, Silkscreen_400Regular });
-  const [entry, setEntry] = useState<Entry>('app');
+  const [entry, setEntry] = useState<Entry>(initialEntry);
 
   if (!ready) return <View style={{ flex: 1, backgroundColor: color.screen }} />;
 

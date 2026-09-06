@@ -8,7 +8,11 @@ export interface FogOverlayProps {
   active?: boolean;
   /** Caption printed on the curtain, e.g. "FOGGED". Omit for a bare curtain. */
   label?: string;
-  /** Opacity of the ink curtain under the drifting lines. */
+  /**
+   * Opacity of the ink curtain under the drifting lines. The default conceals
+   * outright — anything lower and a determined reader can still make out the
+   * numbers underneath, which is the one thing fog must not allow.
+   */
   cover?: number;
   /** Height of one scanline band. */
   band?: number;
@@ -33,7 +37,7 @@ const BANDS = 60;
 export default function FogOverlay({
   active = true,
   label,
-  cover = 0.82,
+  cover = 0.94,
   band = 3,
   duration = 2600,
   animate = true,
@@ -74,7 +78,7 @@ export default function FogOverlay({
       </Animated.View>
       {label ? (
         <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
-          <PixelText variant="label" color={color.textFaint}>
+          <PixelText variant="label" color={color.textDim}>
             {label}
           </PixelText>
         </View>

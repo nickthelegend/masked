@@ -1,14 +1,17 @@
-import { useEffect, useRef } from 'react';
-import { Animated, Easing, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Animated, Easing, View, type LayoutChangeEvent } from 'react-native';
 import PixelText from './PixelText';
 import { border, color } from './theme';
 
 export interface TickerProps {
-  /** Headlines. Joined with a mid-dot separator and looped twice seamlessly. */
+  /** Headlines. Joined with a mid-dot separator and printed twice. */
   items?: string[];
-  /** Milliseconds for one full pass. */
+  /** Milliseconds for one full pass of the strip. */
   duration?: number;
-  /** How far the strip travels, in px. Should exceed one copy's width. */
+  /**
+   * Travel distance in px. Left undefined, the strip measures one copy of the
+   * line and travels exactly that far, which is what makes the loop seamless.
+   */
   distance?: number;
   height?: number;
   /** Set false to hold the marquee still. */
@@ -18,28 +21,33 @@ export interface TickerProps {
 const SEP = '   ·   ';
 
 /**
- * Win marquee across the top of the shell. The line is rendered twice so the
- * loop has no visible seam, and the transform runs on the native driver.
+ * Win marquee across the top of the shell.
+ *
+ * The line is printed twice and the strip travels exactly one copy's width, so
+ * the second copy is under the cursor at the instant the first leaves — no
+ * seam, and no blank stretch when the copy is shorter than the travel.
  */
-export default function Ticker({
-  items = [],
-  duration = 18000,
-  distance = 900,
-  height = 26,
-  animate = true,
-}: TickerProps) {
+export default function Ticker({ items = [], duration = 18000, distance, height = 26, animate = true }: TickerProps) {
   const x = useRef(new Animated.Value(0)).current;
+  const [measured, setMeasured] = useState(0);
+  const travel = distance ?? measured;
 
   useEffect(() => {
-    if (!animate) return undefined;
+    if (!animate || travel <= 0) return undefined;
+    x.setValue(0);
     const loop = Animated.loop(
       Animated.timing(x, { toValue: 1, duration, easing: Easing.linear, useNativeDriver: true }),
     );
     loop.start();
     return () => loop.stop();
-  }, [animate, duration, x]);
+  }, [animate, duration, travel, x]);
 
   const line = items.join(SEP) + SEP;
+
+  const onCopyLayout = (e: LayoutChangeEvent) => {
+    const w = Math.round(e.nativeEvent.layout.width);
+    if (w > 0 && w !== measured) setMeasured(w);
+  };
 
   return (
     <View
@@ -55,12 +63,19 @@ export default function Ticker({
     >
       <Animated.View
         style={{
+          // Absolute so the strip sizes to its content instead of being
+          // clipped to the shell width — otherwise each copy ellipsises.
+          position: 'absolute',
+          left: 0,
           flexDirection: 'row',
-          transform: [{ translateX: x.interpolate({ inputRange: [0, 1], outputRange: [0, -distance] }) }],
+          transform: [{ translateX: x.interpolate({ inputRange: [0, 1], outputRange: [0, -travel] }) }],
         }}
       >
-        <PixelText variant="bodySmall" numberOfLines={1} color={color.textDim}>
-          {line + line}
+        <PixelText variant="bodySmall" color={color.textDim} onLayout={onCopyLayout}>
+          {line}
+        </PixelText>
+        <PixelText variant="bodySmall" color={color.textDim}>
+          {line}
         </PixelText>
       </Animated.View>
     </View>
