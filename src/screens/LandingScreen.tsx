@@ -32,7 +32,8 @@ import {
 } from '../ui';
 import AppHeader from './AppHeader';
 import DuelLobbyScreen from './DuelLobbyScreen';
-import { HOW_IT_WORKS, LANDING_STAT_LABELS, MODES, RAKE, TICKER_ITEMS, TOKEN } from './data';
+import { HOW_IT_WORKS, LANDING_STAT_LABELS, MODES, RAKE, TOKEN } from './data';
+import { useTickerItems } from '../chain/useTickerItems';
 import { bpsPct, short, useTapes } from '../chain/useTapes';
 import { useChainStats } from '../chain/useChainStats';
 
@@ -49,8 +50,9 @@ export default function LandingScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const wide = width >= WIDE;
-  const [stake, setStake] = useState(5);
+  const [stake, setStake] = useState(0.1); // SOL
   const stats = useChainStats();
+  const tickerItems = useTickerItems();
   const { tapes, loaded: tapesLoaded } = useTapes();
 
   // "HOW IT WORKS" scrolls to the explainer rather than dumping you into a
@@ -106,7 +108,7 @@ export default function LandingScreen() {
         {/* Preview shell. Balance is 0 until a wallet connects — it used to
             display a hardcoded 50. */}
         <AppHeader balance={0} onHome={goPlay} onMenu={goPlay} />
-        <Ticker items={TICKER_ITEMS} />
+        <Ticker items={tickerItems} />
         <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
           <DuelLobbyScreen
             stake={stake}
@@ -149,7 +151,7 @@ export default function LandingScreen() {
         </Stack>
       </View>
 
-      <Ticker items={TICKER_ITEMS} />
+      <Ticker items={tickerItems} />
 
       {/* ---- how it works ---- */}
       <Stack

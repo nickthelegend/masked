@@ -1,4 +1,4 @@
-import { Badge, MatchRow, Orb, PixelButton, PixelText, Row, Stack, color, money, space } from '../ui';
+import { Badge, MatchRow, Orb, PixelButton, PixelText, Row, Stack, color, sol, space } from '../ui';
 import { short } from '../chain/useTapes';
 import { useOpenMatches } from '../chain/useOpenMatches';
 import { TOKEN } from './data';
@@ -41,7 +41,7 @@ export default function MatchmakingScreen({
       <Orb size={110} state="fog" />
 
       <PixelText variant="body">
-        POT {money(pot)} · {TOKEN}
+        POT {sol(pot)} · {TOKEN}
       </PixelText>
 
       <PixelButton tone="gold" label="OPEN A MATCH" size={11} loading={busy} onPress={onStart} />
@@ -73,7 +73,7 @@ export default function MatchmakingScreen({
 
         {loaded && matches.length === 0 ? (
           <PixelText variant="bodySmall" align="center" color={color.textFaint}>
-            NOBODY WAITING — OPEN ONE AT {stake}◎ AND THEY WILL COME TO YOU
+            NOBODY WAITING — OPEN ONE AT {sol(stake)} AND THEY WILL COME TO YOU
           </PixelText>
         ) : null}
       </Stack>

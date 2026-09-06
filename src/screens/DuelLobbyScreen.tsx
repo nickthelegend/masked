@@ -1,4 +1,4 @@
-import { Badge, Box, MaskAvatar, PixelButton, PixelText, Row, Stack, StakePicker, color, money, onInk, space } from '../ui';
+import { Badge, Box, MaskAvatar, PixelButton, PixelText, Row, Stack, StakePicker, color, sol, onInk, space } from '../ui';
 import { TOKEN } from './data';
 
 export interface DuelLobbyScreenProps {
@@ -56,7 +56,7 @@ export default function DuelLobbyScreen({ stake, onStakeChange, pot, onFind }: D
         <Rail items={RIGHT_RAIL} />
       </Row>
 
-      <StakePicker value={stake} onChange={onStakeChange} note={`WINNER TAKES ${money(pot)} · 2% RAKE`} />
+      <StakePicker value={stake} onChange={onStakeChange} note={`WINNER TAKES ${sol(pot)} · 2% RAKE`} />
 
       <PixelButton tone="primary" label="FIND MATCH" size={14} padY={18} onPress={onFind} />
 

@@ -2,7 +2,7 @@ import type { ViewStyle } from 'react-native';
 import Row from './Row';
 import PixelText from './PixelText';
 import { border, color, radius, space } from './theme';
-import { money } from './format';
+import { sol } from './format';
 import type { TypeRole } from './tokens';
 
 export interface PotPillProps {
@@ -49,7 +49,7 @@ export default function PotPill({
         </PixelText>
       ) : null}
       <PixelText variant={variant} size={size} color={tone}>
-        {typeof amount === 'number' ? money(amount) : amount}
+        {typeof amount === 'number' ? sol(amount) : amount}
       </PixelText>
     </Row>
   );

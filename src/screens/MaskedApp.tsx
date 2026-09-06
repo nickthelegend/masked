@@ -14,7 +14,7 @@ import LiveRoundScreen from './LiveRoundScreen';
 import RevealScreen from './RevealScreen';
 import ModesScreen from './ModesScreen';
 import QuestsScreen from './QuestsScreen';
-import { TICKER_ITEMS } from './data';
+import { useTickerItems } from '../chain/useTickerItems';
 import { useDuel } from './useDuel';
 
 const SCREEN_HEIGHT = 700;
@@ -22,6 +22,7 @@ const SCREEN_HEIGHT = 700;
 export default function MaskedApp() {
   const [tab, setTab] = useState('duel');
   const duel = useDuel();
+  const tickerItems = useTickerItems();
 
   const toMatchmaking = () => {
     setTab('duel');
@@ -41,7 +42,7 @@ export default function MaskedApp() {
       <SafeAreaView style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <PocketShell screenHeight={SCREEN_HEIGHT}>
           <AppHeader balance={duel.balance} onHome={() => setTab('feed')} />
-          <Ticker items={TICKER_ITEMS} />
+          <Ticker items={tickerItems} />
 
           <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
             {tab === 'feed' ? <FeedScreen onChallenge={toMatchmaking} /> : null}

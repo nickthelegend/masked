@@ -5,6 +5,7 @@ import PixelText from './PixelText';
 import Row from './Row';
 import Stack from './Stack';
 import { color, onInk, space } from './theme';
+import { sol } from './format';
 
 export interface StakePickerProps {
   /** Stake amounts in dollars. */
@@ -18,7 +19,8 @@ export interface StakePickerProps {
   style?: ViewStyle | ViewStyle[];
 }
 
-export const STAKES = [1, 5, 25, 100];
+/** In SOL. Sized for a devnet/localnet wallet, not dollars. */
+export const STAKES = [0.05, 0.1, 0.5, 1];
 
 /**
  * Pot deposit selector. The selected stake is an orange plate; the rest sit on
@@ -42,7 +44,7 @@ export default function StakePicker({
             <PixelButton
               key={v}
               flex={1}
-              label={`$${v}`}
+              label={sol(v, v < 1 ? 2 : 0)}
               size={10}
               disabled={disabled}
               bg={v === value ? color.orange : color.panelLight}

@@ -11,7 +11,7 @@ import {
   Stack,
   TapeChart,
   color,
-  money,
+  sol,
   mulberry32,
   space,
   toEnd,
@@ -75,7 +75,7 @@ export default function RevealScreen({
     <RevealCurtain
       active
       label={won ? 'YOU TAKE THE POT' : 'POT LOST'}
-      sublabel={won ? `+${money(pot)}` : `-${money(stake)}`}
+      sublabel={won ? `+${sol(pot)}` : `-${sol(stake)}`}
       onDone={() => setUnsealed(true)}
     />
     <Stack pad={space.lg} gap={space.md}>
@@ -84,7 +84,7 @@ export default function RevealScreen({
       </PixelText>
 
       <Badge
-        label={won ? `+${money(pot)}` : `-${money(stake)}`}
+        label={won ? `+${sol(pot)}` : `-${sol(stake)}`}
         tone={won ? 'win' : 'loss'}
         variant="numeric"
         style={{ alignSelf: 'center' }}

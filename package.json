@@ -20,7 +20,8 @@
     "seed": "tsx scripts/seed-demo.mts",
     "check:preflight": "tsx scripts/check-preflight.mts",
     "open": "tsx scripts/open-matches.mts",
-    "truth": "tsx scripts/chain-truth.mts"
+    "truth": "tsx scripts/chain-truth.mts",
+    "cancel": "tsx scripts/cancel-open.mts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",

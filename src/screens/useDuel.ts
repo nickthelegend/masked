@@ -90,7 +90,7 @@ export function useDuel(): Duel {
   }, [wallet.publicKey, wallet.signTransaction, wallet.signAllTransactions]);
 
   const [phase, setPhase] = useState<DuelPhase>('lobby');
-  const [stake, setStake] = useState(5);
+  const [stake, setStake] = useState(0.1); // SOL
   const [fillSize, setFillSize] = useState(DEFAULT_FILL_QTY);
   const [balance, setBalance] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -106,7 +106,7 @@ export function useDuel(): Duel {
 
   const settledRef = useRef(false);
 
-  const entryLamports = stake * 1e9;
+  const entryLamports = Math.round(stake * 1e9);
   const pot = stake * 2 * (1 - RAKE);
 
   /* ------------------------------- balance ------------------------------- */

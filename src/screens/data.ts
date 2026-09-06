@@ -67,12 +67,8 @@ export const QUESTS: QuestDef[] = [
   { name: 'Rematch the same wallet', reward: '+$1', value: 1, progress: '1 / 1' },
 ];
 
-export const TICKER_ITEMS = [
-  't_kev_2 WON $7.65 ON FOG DUEL',
-  'nofills.sol 6 WIN STREAK',
-  'vwapgoblin FADED jpegliq FOR $24',
-  'LIVE FOGS: 38',
-];
+/* TICKER_ITEMS deleted — the ticker reads real chain activity via
+   src/chain/useTickerItems.ts. */
 
 export const TOKEN = '$BONK';
 export const OPPONENT = 'nofills.sol';
