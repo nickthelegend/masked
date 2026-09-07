@@ -1,51 +1,49 @@
 # FOGDUEL — BUILD PLAN
 
-> MagicBlock Solana Blitz v8. Written 2026-09-07, then **executed**.
-> Statuses below reflect what was actually run and verified, not intent.
+> Rewritten **2026-09-07 05:40 UTC**, replacing the plan of the previous run.
+> Statuses reflect what was actually executed and verified, not intent.
 >
-> **Execution result: Phase 1 complete, Phase 3 complete except recording,
-> Phase 4 prepared, Phase 2 blocked end to end on devnet funding.**
+> A builder agent can pick up any single task below and start cold. Every task
+> names the file, the command, or the exact artefact it touches.
 
 ---
 
 ## 0. SITUATION
 
-**Deadline: Fri 2026-09-11 05:00 CDT. Now: Sun 2026-09-07 ~21:45 UTC.
-Remaining: 4 days 12 hours.**
+**Deadline: Fri 2026-09-11 05:00 CDT (= 10:00 UTC). Now: Mon 2026-09-07 05:38 UTC.
+Remaining: 4 days, 4 hours.**
 
-48 commits. The working tree is clean and the local stack is healthy.
+94 commits. Working tree clean.
 
-**What is genuinely finished and verified:**
+### What is genuinely finished and verified
 
-- An Anchor program with 14 instructions, deployed and exercised on a local
-  MagicBlock stack (`mb-test-validator` + `ephemeral-validator`).
-- **22 on-chain tests** across three suites (11 lifecycle, 7 ER, 4 permission);
-  20 pass, 2 deliberately skipped and documented.
-- **5 assertion suites, 74 assertions** — token drift, series maths, fog
-  integrity, error taxonomy, preflight — all green.
-- A typed client that drives a complete match end to end (`verify:client`).
-- A privacy proof script that walks a real match and reports honestly
-  (`prove:privacy`).
-- Five routes (`/`, `/play`, `/proof`, `/health`, `/gallery`) plus a branded
-  404, all reading live chain state.
-- **A 74-item browser test plan executed to 72 PASS / 0 FAIL / 2 untestable**,
-  with 11 defects found and fixed (see `TEST-PLAN.md`).
-- Effectively zero mocks: a full grep for
-  `mock|stub|todo|fixme|fake|dummy|placeholder|hardcod|hack|xxx` across
-  `src/`, `app/`, `chain/`, `scripts/` returns **one** hit — the documented
-  Mobile Wallet Adapter shim.
+| | |
+|---|---|
+| Anchor program | 16 instructions, deployed to the local MagicBlock stack |
+| On-chain tests | **26 passing, 2 pending** (`cd chain && anchor test --skip-local-validator`) |
+| Assertion suites | **9 suites** via `npm run check` — tokens, series, fog, errors, preflight, tape (1602 assertions over 92 real tapes), h2h (145), race (22), guards (6 refusals) |
+| Browser test plan | **139 items, 137 PASS, 0 outstanding FAIL, 2 UNTESTED** — see `TEST-PLAN.md` |
+| Routes | `/`, `/play`, `/proof`, `/health`, `/gallery`, `/spectate/<match>`, `/tape/<match>`, branded 404 |
+| Read gate | Real and proven locally: `query-filtering-service` on :6699 refuses a sealed position and serves a permission-less control (`npm run check:gate`) |
+| Mocks / stubs | A full grep for `mock\|stub\|todo\|fixme\|fake\|dummy\|placeholder\|hardcod\|hack\|xxx` across `src/ app/ chain/programs/ scripts/ server/` returns **4 hits, all prose explaining that something is *not* a placeholder**. There are no mocks. |
 
-**What is not done, in one line each:**
+### What is not done, one line each
 
-1. The **app itself never creates the privacy ACL** — only the script does.
-2. Nothing is deployed to **devnet**; the wallet has 0 SOL.
-3. **PER privacy is unproved** on a real TEE.
-4. There is **no demo video** and **no submission**.
+1. **Not submitted.** Hard deadline in 4 days. This is the only irreversible item.
+2. **No demo video and no public live URL.** `dist/` exists but is 7 hours stale.
+3. **Docs contradict the product** in five specific, checkable places (§6, GAP-1…5).
+4. **Not deployed to devnet.** Wallet holds 0 SOL; faucet refused 40+ times.
+5. **PER attestation unproved** — the gate is real, but it is a process we run.
+6. **Session keys: not started.** No dependency, no code. Every fill is a signature.
+7. **VRF has no product surface.** `request_market_draw` / `settle_market_draw`
+   exist in the program and are exercised by `check:vrf`, but nothing in `src/`
+   calls them and no oracle can fulfil.
 
-**The honest headline:** this is a well-built, well-tested local product that
-has not been submitted and whose differentiator is not yet wired into the
-product it differentiates. Phases 1 and 2 below are worth more than everything
-else in this document combined.
+**Honest headline:** the product is built, tested harder than most hackathon
+entries will be, and honest about its limits. What is missing is not code — it
+is the twenty minutes of recording and form-filling that turn it into an entry,
+plus two MagicBlock primitives that are half-present and should either be
+finished or stated plainly as unused.
 
 ---
 
@@ -53,312 +51,300 @@ else in this document combined.
 
 ### 1.1 "Done" — the floor for a valid submission
 
-- [ ] Program deployed to **devnet** with a published program ID.
-- [ ] A full match runs end to end on devnet: create → join → delegate →
-      fills on the ER → buzzer → commit + undelegate → settle → pot paid →
-      public `Tape` written.
-- [ ] **Ephemeral Rollups** integrated for real — already true locally, must be
-      true on devnet.
-- [ ] **Private Ephemeral Rollups** integrated: the opponent's `Position` is
-      unreadable by anyone but its owner while the match is Live.
-- [ ] Public repo with a README that states how to run it, which validator,
-      which accounts are private and when, and devnet tx signatures.
-- [ ] Demo video or live URL showing one complete match.
-- [ ] Submitted at https://build.magicblock.app/?stage=blitz#submit before
-      Fri Sep 11 05:00 CDT.
+- [ ] Submitted at `https://build.magicblock.app/?stage=blitz#submit` before
+      **Fri 2026-09-11 05:00 CDT**.
+- [ ] Public repo with a README that states: how to run it, which validator,
+      which accounts are private and when, and what is not proved.
+- [ ] A demo video or live URL showing **one complete duel end to end**:
+      open → join → seal → fills → buzzer → commit → undelegate → settle →
+      reveal → tape.
+- [ ] A published program ID (devnet if the faucet unblocks, otherwise the
+      local ID stated as local).
+- [ ] The MagicBlock primitives listed **accurately** — used, partially used,
+      and not used, each said plainly.
 
 ### 1.2 "Winning" — what actually places
 
-- [ ] **The privacy proof is on camera.** Terminal beside the UI: a read of the
-      opponent's `Position` **refused mid-round** and **allowed after settle**.
-      Without this we are a slower VERSUS with worse liquidity.
-- [ ] **The product does the thing, not just a script.** A judge who plays a
-      match through the UI must be creating and delegating real permissions. If
-      privacy only happens when a script runs, the pitch is a demo, not a
-      product. (This is Phase 1 and it is currently the single largest gap.)
-- [ ] The pitch names only MagicBlock primitives: PER hides the book so the
-      leaderboard cannot be copy-traded mid-match; ER gives real-time fills;
-      commit makes the result verifiable on Solana.
+- [ ] **The privacy claim is demonstrated, not asserted.** On camera: a read of
+      the opponent's position refused mid-round at :6699, and the same read
+      served after settlement. The control row (same account shape, no
+      permission → served) has to be in shot, because a door shut for everybody
+      is not access control.
+- [ ] **The product does it, not a script.** A judge who plays through the UI
+      creates and delegates real ACLs. *(Already true — verified in `TEST-PLAN.md`
+      E2, and by `npm run check:sealed`.)*
+- [ ] **Two people can actually play it.** Two browsers, two wallets, one duel,
+      one winner. *(Already true — verified end to end this run.)*
+- [ ] **Depth a judge can click.** `/proof` shows the delegation lifecycle as
+      real signatures; `/tape/<match>` is a permanent public record of any duel.
+      *(Already true.)*
+- [ ] **Nothing on screen is a lie.** Every number traceable to chain state; no
+      invented curves, no false confirmations. *(Twelve such defects were found
+      and fixed this run; see `TEST-PLAN.md` defect table.)*
 - [ ] Framed as a generalisation of `rock-paper-scissor` (hidden moves) and
       `sealed-auction` (private bids + escrow + reveal).
-- [ ] Every limitation disclosed before a judge finds it. `/proof` and the
-      README already do this; keep it that way.
 
 ### 1.3 Non-goals — do not build these
 
-Modes beyond Fog Duel (the 11 `SOON` tiles stay tiles). Social graph, chat,
-quests-as-an-economy, NFT trophies, tournaments, mobile-native wallet support.
-No new UI components — the library is complete and frozen at 35 files.
+The 11 `SOON` mode tiles stay tiles. No social graph, chat, NFT trophies,
+tournaments, or quest economy. No new UI primitives — the library is complete.
+Do not build a second game mode before §2–§4 are green.
 
 ---
 
-## 2. PHASE 1 — WIRE PRIVACY INTO THE PRODUCT ⚠ HIGHEST PRIORITY
+## 2. PHASE 1 — MAKE THE DOCS TRUE
 
-**Why first:** `useDuel` calls `delegatePosition` but never
-`createPositionPermission` or `delegatePositionPermission`. Verified by grep —
-both return 0 occurrences in `src/screens/useDuel.ts`. The ACL exists in the
-program, in the client, in the tests and in the proof script, but **not in the
-path a player takes.** No devnet work is worth anything until this is true.
+**Why first:** these are the pages a judge reads before they read code, and each
+one currently contradicts the product. Cheap, fast, and it blocks the quality of
+everything in Phase 2 and 3. Est. 60–90 minutes total.
 
 | # | Task | Status |
 |---|---|---|
-| 1.1 | In `useDuel.startMatch` and `joinMatchByAddress`, after both positions are delegated, call `client.createPositionPermission(match, owner, payer)` for both players. | DONE |
-| 1.2 | Then call `client.delegatePositionPermission(match, owner, payer)` for both, so the ACL is delegated to the same validator as the position. | DONE |
-| 1.3 | Order matters: create the permission **before** delegating the position, or the PDA is owned by the delegation program and the CPI will fail. Verify the ordering against `chain/tests/permission.ts`, which does create → delegate-permission → delegate-position. | DONE |
-| 1.4 | Surface it in the UI: a "SEALED" badge on the opponent panel once the permission is confirmed on chain, driven by a real `getAccountInfo` on the permission PDA — not a local boolean. | DONE |
-| 1.5 | Extend `useDelegationStatus` to watch the two permission PDAs so `/proof` shows them flipping to `ACLseo…` alongside the positions. | DONE |
-| 1.6 | Wire `init_position_privacy` into `client.ts`. It is the only program instruction with no client method (`process_undelegation` is called by the delegation program, not by us) and it is the TEE path needed in Phase 2. | DONE |
-| 1.7 | Add a browser test to `TEST-PLAN.md` section H: after starting a match through the UI, both permission PDAs exist on chain with the owner as sole member. | DONE |
+| 1.1 | `README.md` line ~26: the primitives table says `VRF \| — \| Not attempted`. It **is** attempted: `request_market_draw` builds a real request with the official SDK and the VRF program accepts it on chain (`npm run check:vrf`). Change to "Requested on chain; fulfilment blocked — no oracle identity, see Limitations" and add a Limitations entry explaining the devnet-dump queue problem. | NOT STARTED |
+| 1.2 | `README.md` line ~24: PER row reads "Implemented and building; live proof blocked". The gate is now proven locally. Change to "ACL enforced by the query-filtering-service; attestation needs a TEE" and point at the table in Limitations §1, which is already correct. | NOT STARTED |
+| 1.3 | `README.md` Limitations §3 still names `3nmxq3N78WQGQPXULxmSQ2rjXYwX8zrjrcYxnP2aQpNo` as "the market". Markets are now live pump.fun + Jupiter mints. Rewrite to say positions are virtual inventory against a real mainnet mint identity, and drop the demo mint. | NOT STARTED |
+| 1.4 | `README.md` Limitations §5 says the `.so` is 636KB. It is now **702,128 bytes**. Update the number and the SOL estimate. | NOT STARTED |
+| 1.5 | `README.md`: document `MAX_OPEN_AGE` (300s). An unjoined match older than that cannot be joined, because both books are seeded from the price snapshotted at creation. Currently undocumented anywhere outside `state.rs`. | NOT STARTED |
+| 1.6 | `SUBMISSION.md` is stale in five places: "VRF — not attempted"; `commit_and_undelegate_positions` (the instruction is singular); "Market mint: 3nmxq3N…" (retired); "5 assertion suites, 74 assertions" (now 9 suites); "22 tests, 20 pass, 2 skipped" (now 26 pass, 2 pending). Rewrite each against reality. | NOT STARTED |
+| 1.7 | `SUBMISSION.md` "What a judge can verify in five commands" — replace with the current set: `npm run check`, `npm run check:gate`, `npm run check:race`, `npm run check:guards`, `cd chain && anchor test --skip-local-validator`. | NOT STARTED |
+| 1.8 | `CHANGELOG-ui.md` stops at §19. Add §20 covering this run's UI work: `SettleProgress`, `RoundTimeline`, `SizePicker`, `LifecycleFeed`, `sound.ts` + the speaker icons, `solExact`, and `PixelButton` gaining `forwardRef`. | NOT STARTED |
+| 1.9 | `IDEAS.md` build log records #7, #9, #10, #11, #12. Add #13 (clickable delegation lifecycle on `/proof`) and #23 (size control + exact impact preview), both built and verified this run. | NOT STARTED |
+| 1.10 | Re-read `README.md` end to end against the running app and fix anything else that has drifted. Do this **after** 1.1–1.5 so it is a check, not a rewrite. | NOT STARTED |
 
 ---
 
-## 3. PHASE 2 — DEVNET + THE TEE PROOF
+## 3. PHASE 2 — CAPTURE THE DEMO
 
-**Why second:** this is where privacy becomes real rather than architectural.
+**Why second:** the submission cannot be filed without it, and it is the single
+artefact that decides whether the privacy claim lands. Est. 2–3 hours including
+retakes.
 
-**Hard blocker:** the wallet `3YUgUPu9AdJj6FCFFvzR9pJixCN7EcAnCXMJoTuYwsS5`
-holds **0 devnet SOL** and `solana airdrop` is rate-limited (re-checked at
-plan time — still refused). The program `.so` is **636,216 bytes**, so
-rent-exemption plus the deploy buffer needs roughly **5–9 SOL**. A single
-2 SOL airdrop is not enough; this needs several successful requests or a
-faucet that grants more.
+**Setup that already works** (verified this run — reuse it exactly):
+
+- Two browser sessions on **different origins** so each gets its own in-page
+  wallet: `http://localhost:8081` and `http://127.0.0.1:8081`. localStorage is
+  per-origin, so these are genuinely separate wallets.
+- Fund the second wallet: read its pubkey from `localStorage['masked.localKeypair.v1']`
+  (bytes 32..64 are the public key), then `solana airdrop 5 <pubkey> --url http://127.0.0.1:8999`.
+- Round length: `EXPO_PUBLIC_ROUND_SECONDS` overrides; demo default is 60s
+  (`src/screens/data.ts`).
 
 | # | Task | Status |
 |---|---|---|
-| 2.1 | Obtain ≥ 9 devnet SOL. Try in order: `solana airdrop 2` repeatedly with backoff; https://faucet.solana.com (web, captcha); the QuickNode / Helius devnet faucets; a funded teammate wallet. | BLOCKED — devnet faucet refused 20+ times; needs ~9 SOL |
-| 2.2 | `anchor deploy --provider.cluster devnet`. Record the program ID and the deploy signature. | BLOCKED by 2.1 |
-| 2.3 | Update `FOGDUEL_PROGRAM_ID` in `src/chain/config.ts` if the deployed ID differs, and re-run `npm run sync:idl`. | BLOCKED by 2.1 |
-| 2.4 | Run `EXPO_PUBLIC_CLUSTER=devnet npm run verify:client` — a full match against devnet + `devnet-tee.magicblock.app`. | BLOCKED by 2.1 |
-| 2.5 | Un-skip the two pending tests in `chain/tests/er-privacy.ts` (the ephemeral-permission path) and run them against the TEE. | BLOCKED by 2.1 |
-| 2.6 | Run `EXPO_PUBLIC_CLUSTER=devnet npm run prove:privacy`. The MID-ROUND VISIBILITY block must print `you reading THEIR position … NO ← REFUSED`. **This is the money shot.** | BLOCKED by 2.1 |
-| 2.7 | Wire `verifyTeeRpcIntegrity()` and `getAuthToken()` (both exported by `@magicblock-labs/ephemeral-rollups-sdk`) into the client so private reads carry an auth token, and show attestation status on `/proof`. | PARTIAL — initPositionPrivacy wired and called when cluster.tee; attestation display still BLOCKED by 2.1 |
-| 2.8 | Seed devnet with 3–5 real settled matches so the feed, board and `/proof` are not empty for judges. `npm run seed -- 5` already does this; it needs funded wallets on devnet. | BLOCKED by 2.1 |
-| 2.9 | If 2.1 cannot be unblocked by Sep 9, fall back: keep the local stack as the demo target, and make the honesty section on `/proof` and in the README the centrepiece rather than an apology. | DONE — local stack is the demo target; honesty is centre-stage in /proof, README and SUBMISSION.md |
+| 2.1 | Bring the stack up clean: `MASKED_RESET=1 ./scripts/localnet.sh`, deploy, `npm run sync:idl`, `npm run proxy`, `npm run seed -- 5` so the feed and leaderboard are not empty on camera. | NOT STARTED |
+| 2.2 | Rebuild the static export — `dist/` is 7 hours stale and predates every fix from this run. `npx expo export -p web`. Confirm the built bundle contains `SETTLES AT THE BUZZER` and `NOTHING LEFT TO LONG`. | NOT STARTED |
+| 2.3 | **Privacy shot (45s).** Split screen: `/proof` in the browser, terminal running `npm run check:gate` beside it. The table must be legible: sealed → REFUSED, control → served, owner token → own only. This is the money shot; shoot it first while the stack is fresh. | NOT STARTED |
+| 2.4 | **Full duel shot (≤3 min).** Two browsers side by side. Open a match in A, join from B's open book, both trade at different sizes (MAX vs 1/4 so the impact readouts visibly differ), let the buzzer settle it, show both reveals mirroring. End on `/tape/<match>` opened from COPY TAPE LINK. | NOT STARTED |
+| 2.5 | **Lifecycle shot (20s).** Scroll `/proof` to THE LIFE OF ONE DUEL and click one row so the explorer opens. Shows the delegation story is checkable, not asserted. | NOT STARTED |
+| 2.6 | Cut to a single video under 3 minutes. Order: hook (what it is) → duel → privacy proof → lifecycle → one line on what is not proved. Upload and get a public URL. | NOT STARTED |
+| 2.7 | Publish a live URL, or document precisely why there is none. Options in order: static export on any host (the app talks to `127.0.0.1` clusters, so a hosted build only works against a hosted cluster — **check this before promising a URL**); otherwise state "runs locally, five commands, see README". | NOT STARTED |
+| 2.8 | Rehearse 2.4 once end to end, timed, before recording. Two things reliably stall: the market feed on cold start, and a stale open match now showing STALE instead of JOIN. Open the match fresh, immediately before shooting. | NOT STARTED |
 
 ---
 
-## 4. PHASE 3 — DEMO READINESS
+## 4. PHASE 3 — SUBMIT
 
-Small, cheap, and each one removes a stumble in front of a judge.
+**Hard deadline. Do this on Wed 2026-09-09, not Thursday night.**
 
 | # | Task | Status |
 |---|---|---|
-| 3.1 | `ROUND_SECONDS` is 300. A five-minute wait is unwatchable. Make it configurable and default the demo to 60s; the seeder already uses 30s. | DONE |
-| 3.2 | Every `create_match` call passes `mint: PublicKey.default` while the UI labels the market `$BONK`. Either pass a real devnet mint and label it from the match account, or relabel honestly as a synthetic market. Do not leave a fictional ticker over a null mint. | DONE |
-| 3.3 | Record the privacy proof: split screen, `/proof` and the UI on the left, `prove:privacy` running on the right. 45 seconds. | BLOCKED by 2.6 — script runs and is timed (66s), but on a non-TEE cluster it cannot show a refused read |
-| 3.4 | Record one full match end to end with two wallets. Under 3 minutes total. | BLOCKED by 2.2 — recording needs a devnet deploy to be worth recording |
-| 3.5 | Rehearse the README's 3-minute demo script end to end once, timed, and fix anything that stalls. | DONE |
-| 3.6 | Confirm the app is reachable at a URL a judge can open — either a deployed static export (`npx expo export -p web`) or a documented local run. | DONE |
-| 3.7 | Two-wallet demo needs both funded and both browsers ready before recording. Prepare and check in advance. | BLOCKED by 2.1 |
+| 3.1 | Fill the form from `SUBMISSION.md` (updated in 1.6/1.7): project name, one-liner, description, repo URL, video URL, program ID, primitives used. | NOT STARTED |
+| 3.2 | State the primitives honestly and specifically: **Ephemeral Rollups** — used, positions delegated and committed. **Private ER** — used, ACL per position, gate enforces, attestation absent. **VRF** — request path on chain, fulfilment blocked. **Session keys** — not used. | NOT STARTED |
+| 3.3 | Include the five verification commands so a judge can reproduce without a wallet. | NOT STARTED |
+| 3.4 | Submit. Record the confirmation in `SUBMISSION.md` with a timestamp. | NOT STARTED |
 
 ---
 
-## 5. PHASE 4 — SUBMISSION
+## 5. PHASE 4 — DEVNET AND THE TEE (upside, blocked)
+
+**Blocked, not abandoned.** `3YUgUPu9AdJj6FCFFvzR9pJixCN7EcAnCXMJoTuYwsS5` holds
+**0 devnet SOL**, re-checked at plan time. The `.so` is **702,128 bytes**, so rent
+plus buffer needs roughly **6–10 SOL** — several successful airdrops, not one.
+
+Everything here is *upside*. Do not let it delay Phases 1–3.
 
 | # | Task | Status |
 |---|---|---|
-| 4.1 | Update the README: replace "Program ID (local)" with the devnet ID, and add devnet tx signatures for one complete match. | BLOCKED by 2.2 |
-| 4.2 | Re-check the README "Honest limitations" section against reality after Phase 2 — several items should shrink or disappear. | DONE |
-| 4.3 | Fill the submission form: repo URL, one-line description ("hidden-position 1v1 trading on Private ER, reveal + pot on L1"), demo video/live URL, explicit primitive list (ER + PER, VRF not attempted), devnet program ID. | DONE — SUBMISSION.md prepared; form not yet submitted |
-| 4.4 | **Submit by Thu Sep 10 evening.** Do not aim at the Friday 05:00 boundary. | NOT STARTED — cannot submit a devnet program ID that does not exist; SUBMISSION.md is ready to paste |
+| 4.1 | Obtain ≥ 10 devnet SOL. Try in order: `solana airdrop 2` with backoff; `faucet.solana.com` (browser captcha — a human can do this); QuickNode / Helius devnet faucets; a funded second wallet. | BLOCKED — faucet refused 40+ times |
+| 4.2 | `anchor deploy --provider.cluster devnet`. Record program ID and deploy signature. | BLOCKED by 4.1 |
+| 4.3 | Update `FOGDUEL_PROGRAM_ID` in `src/chain/config.ts` if the ID differs; `npm run sync:idl`. | BLOCKED by 4.1 |
+| 4.4 | `EXPO_PUBLIC_CLUSTER=devnet npm run verify:client` — a full match against devnet + `devnet-tee.magicblock.app`. | BLOCKED by 4.1 |
+| 4.5 | Un-skip the two pending tests in `chain/tests/er-privacy.ts` (`PHASE 3 — funds a delegated ephemeral fee payer`, `PHASE 3 — seals both positions private`) and run against the TEE. | BLOCKED by 4.1 |
+| 4.6 | `EXPO_PUBLIC_CLUSTER=devnet npm run prove:privacy` — the mid-round block must print a refused opponent read against a TEE, not a process we run. | BLOCKED by 4.1 |
+| 4.7 | Wire `verifyTeeRpcIntegrity()` from `@magicblock-labs/ephemeral-rollups-sdk` and show the attestation result on `/proof`, replacing the current `gate attested: NO — not a TEE` row. | BLOCKED by 4.1 |
+| 4.8 | Seed devnet with 3–5 settled matches: `npm run seed -- 5` against devnet, needs funded wallets. | BLOCKED by 4.1 |
+| 4.9 | **Fallback, already in force:** the local stack is the demo target and the honesty section is the centrepiece rather than an apology. `/proof` reports enforcement and attestation as two separate rows and only the second says NO. | DONE |
 
 ---
 
-## 6. PHASE 5 — ONLY IF PHASES 1–4 ARE GREEN
+## 6. PHASE 5 — THE TWO HALF-PRESENT PRIMITIVES (upside)
+
+Both are MagicBlock primitives that are currently neither finished nor honestly
+absent. Either finish them or say plainly they are unused — the worst outcome is
+a judge finding a half-wired primitive we implied was working.
+
+### 5A — Session keys · NOT STARTED
+
+No dependency, no code, no program support. Every fill is a wallet signature,
+which is the most visible UX flaw on camera when a real wallet is connected.
+(The in-page dev wallet signs silently, which is why this has not bitten yet.)
 
 | # | Task | Status |
 |---|---|---|
-| 5.1 | Session keys, so a fill does not need a wallet signature each time. Pattern: `session-keys/anchor`. | NOT STARTED — optional, correctly deprioritised |
-| 5.2 | Magic Router (`sendMagicTransaction`) so the client stops choosing endpoints by hand. | NOT STARTED — optional |
-| 5.3 | VRF blind-token select. Pattern: `roll-dice/anchor`. | NOT STARTED — optional |
-| 5.4 | Spectator mode — watch a live match with both sides fogged. | NOT STARTED — optional |
-| 5.5 | Real oracle price (Pyth/Switchboard) replacing the cranked `PriceFeed`. | NOT STARTED — optional |
+| 5.1 | Add `@magicblock-labs/session-keys` (JS) and the matching Rust crate to `chain/programs/fogduel/Cargo.toml`. | NOT STARTED |
+| 5.2 | Add a session-token account and a `#[session_auth_or(...)]` guard on `apply_fill` so a session key may sign fills for one match, for a bounded time, and nothing else. | NOT STARTED |
+| 5.3 | Create the session token at seal time in `useDuel.beginRound`, alongside the existing ACL creation. | NOT STARTED |
+| 5.4 | Route `applyFill` through the session key in `src/chain/client.ts`, falling back to the wallet if no session exists. | NOT STARTED |
+| 5.5 | Show it: a `SESSION ACTIVE` row on the live screen and a line on `/proof`. Add a `check:session` suite asserting a session key can fill and cannot settle or cancel. | NOT STARTED |
+| 5.6 | **If not done by Wed:** say "Session keys — not used" in the submission and README. Do not imply otherwise. | NOT STARTED |
+
+### 5B — VRF product surface · IN PROGRESS (program side done, fulfilment blocked)
+
+`request_market_draw` and `settle_market_draw` exist, are guarded by
+`#[vrf_callback]`, and `npm run check:vrf` shows the VRF program accepting a real
+request. **Nothing in `src/` calls either**, so the primitive has no product
+surface. Fulfilment is blocked: the queues this validator preloads were dumped
+from devnet and name oracle identities we do not hold keys for, and registering
+our own needs `modify_oracles` / `initialize_oracle_queue`, whose encoding is not
+in the published SDK.
+
+| # | Task | Status |
+|---|---|---|
+| 5.7 | Decide and record: either run a local oracle that can fulfil (`.keys/vrf-oracle.json` exists — establish whether the queue can be initialised at all), or accept the request-only state. Write the decision into `README.md`. | NOT STARTED |
+| 5.8 | If fulfilment can be made to work: build **BLIND DRAFT** (IDEAS #5) — VRF picks 3 markets, each player privately picks one. This is the natural showcase and would make the mode grid honest. | BLOCKED by 5.7 |
+| 5.9 | If it cannot: leave the program code in the tree (it is real), keep `check:vrf` reporting the blockage, and make sure the mode tile stays `SOON`. **Do not build UI on a draw that cannot resolve.** | NOT STARTED |
 
 ---
 
-## 7. GAP AUDIT
+## 7. PHASE 6 — PRODUCT DEPTH (only if 1–3 are green)
 
-Read from the codebase, not the README. Every gap tied to the task it blocks.
+Ranked list lives in `IDEAS.md`. Tier 1 is complete except #2 (session keys,
+above) and #5 (blind draft, blocked). The next unbuilt items, in order:
 
-### 7.1 Blocking gaps
-
-| Gap | Evidence | Blocks |
+| # | Task | Status |
 |---|---|---|
-| **The app never creates or delegates permissions** | `grep -c createPositionPermission src/screens/useDuel.ts` → **0**; same for `delegatePositionPermission` | 1.1–1.5. The differentiator is absent from the product. |
-| **Nothing deployed to devnet** | `solana account <id> --url devnet` → not found | 2.2, 3.4, 4.1, 4.3 |
-| **0 devnet SOL, faucets refusing** | `solana airdrop 2 --url devnet` → rate-limited, re-checked at plan time | 2.1 and everything downstream |
-| **Deploy needs ~5–9 SOL** | `.so` is 636,216 bytes; rent-exemption ≈ 4.4 SOL plus deploy buffer | 2.1 — one 2 SOL airdrop is insufficient |
-| **PER privacy unproved** | local `ephemeral-validator` has no TEE ingress; opponent read returns 519 bytes | 2.5, 2.6, 3.3 |
-| **No demo video** | no `*.mp4` / `*.mov` in the repo | 3.3, 3.4, 4.3 |
-| **Not submitted** | — | 4.4 |
-
-### 7.2 Correctness / honesty gaps
-
-| Gap | Evidence | Blocks |
-|---|---|---|
-| `init_position_privacy` has no client method | instruction-vs-client diff: the only unwired instruction | 1.6, 2.7 |
-| Fictional ticker over a null mint | `TOKEN = '$BONK'` in `data.ts`; every call site passes `mint: PublicKey.default` | 3.2 |
-| Round is 5 minutes | `ROUND_SECONDS = 300`; seeder uses 30s; README demo implies shorter | 3.1 |
-| README says "Program ID (local)" | `README.md:226` | 4.1 |
-| TEE attestation unused | `verifyTeeRpcIntegrity` / `getAuthToken` exported by the SDK, never called | 2.7 |
-
-### 7.3 Mock / stub scan — near clean
-
-Full grep for `mock|stub|todo|fixme|fake|dummy|placeholder|hardcod|hack|xxx`
-across `src/`, `app/`, `chain/programs/`, `chain/tests/`, `scripts/`:
-
-- **1 hit:** `src/chain/shims/empty.js` — a functional stub for
-  `@solana-mobile/*`, which `@solana/wallet-adapter-react` imports
-  unconditionally. The demo is web-only and this is documented. **Not a gap**,
-  but it is the reason mobile is out of scope.
-
-`Math.random` audit — 3 legitimate uses, no simulated product data:
-- `src/ui/series.ts` ×2 — a default `rand` parameter; every product call site
-  passes a seeded `mulberry32`.
-- `src/screens/UIGallery.tsx` — the "ROLL PNL" button that demonstrates the
-  odometer in isolation.
-
-Static content remaining in `data.ts` is copy, not data: `MODES` (all `SOON`),
-`HOW_IT_WORKS`, `FEED_FILTERS`, `LANDING_STAT_LABELS`, `TOKEN`, `RAKE`,
-`ROUND_SECONDS`. Only `TOKEN` is a problem, and it is 3.2.
-
-### 7.4 Known-untestable (from `TEST-PLAN.md`)
-
-| Item | Why | Unblocked by |
-|---|---|---|
-| H5 — TEE read-blocking | needs a TEE validator | 2.1 → 2.6 |
-| M2 — wallet connect round trip | needs a real Solflare wallet with a key | manual, out of scope for automation |
+| 6.1 | IDEAS #14 — mark sparkline on every market row in the picker. Needs a real price history source; pump.fun's `frontend-api-v3` must be checked for a candles endpoint first. **If there is no real history, do not build it** — a synthesised sparkline is exactly the class of defect removed this run. | NOT STARTED |
+| 6.2 | IDEAS #15 — "what you would have made" counterfactual PnL, computed from the tape's own fills. Real and cheap. | NOT STARTED |
+| 6.3 | IDEAS #16 — opponent fill-count heartbeat: animate the one thing the fog does leak. | NOT STARTED |
+| 6.4 | IDEAS #17 — keyboard controls (L long, C close, space settle). Demo speed. | NOT STARTED |
+| 6.5 | IDEAS #19 — auto-settle any expired match the app notices, not just your own. Turns `npm run crank` into product behaviour. | NOT STARTED |
+| 6.6 | IDEAS #22 — `/proof` "run this yourself": the exact commands, copyable. High judge value, near-zero cost. | NOT STARTED |
+| 6.7 | IDEAS #30 — honest "what this costs" panel: real fees paid per round, summed from the lifecycle transactions already fetched by `useDuelProof`. | NOT STARTED |
 
 ---
 
-## 8. SCHEDULE
+## 8. PHASE 7 — STANDING VERIFICATION
 
-| When | Focus | Exit criterion |
+Already built. Keep it green; do not let a Phase 5/6 change break it.
+
+| # | Task | Status |
 |---|---|---|
-| **Mon Sep 7 (rest of today)** | Phase 1 in full. Start Phase 2.1 in the background — hit the faucet on a loop from the first minute. | A match started in the UI creates two permission PDAs on chain. |
-| **Tue Sep 8** | Phase 2, assuming funding lands. If not, escalate 2.1 hard; it is the only thing standing between this and a winning submission. | `prove:privacy` on devnet prints REFUSED. |
-| **Wed Sep 9** | Phase 3. Decide 2.9 (devnet vs local demo) by end of day — do not leave it later. | Demo script rehearsed and timed. |
-| **Thu Sep 10** | Record, write up, **submit in the evening**. | Submitted. |
-| **Fri Sep 11 (before 05:00 CDT)** | Buffer only. No new features. | — |
-
-### Cut order
-
-1. Phase 5 in full (session keys, router, VRF, spectator, oracle)
-2. TEE attestation display (2.7)
-3. Real mint (3.2) — relabel instead
-4. Devnet entirely (2.9) — demo locally and be explicit about it
-
-**Never cut:** Phase 1 (privacy in the product), settlement, ER
-delegate/commit, the honesty sections.
+| 7.1 | `npm run check` — 9 suites. Run before every commit. | DONE |
+| 7.2 | `cd chain && anchor test --skip-local-validator` — 26 passing, 2 pending. | DONE |
+| 7.3 | `TEST-PLAN.md` — 139 items, 137 PASS / 2 UNTESTED. Re-run the affected section after any change. | DONE |
+| 7.4 | Two-session browser method documented in `TEST-PLAN.md` "How this run is different". Use it for anything touching matchmaking, sealing or settlement. | DONE |
+| 7.5 | Add `check:session` when 5A lands. | BLOCKED by 5.2 |
 
 ---
 
-## 9. RISKS
+## 9. GAP AUDIT
 
-| Risk | Likelihood | Impact | Mitigation |
+Every gap below is real, was found by reading the code or running it, and is
+tied to the task it blocks.
+
+### Documentation contradicts the product
+
+| ID | Gap | Evidence | Blocks |
 |---|---|---|---|
-| Devnet funding never arrives | **High** — every faucet refused at plan time | Removes the TEE proof and the devnet ID | Start on it immediately and in parallel; 2.9 is a real fallback, not a face-saver |
-| Wiring permissions into `useDuel` breaks the working match flow | Medium | Would damage the one thing that works | 22 on-chain tests + `verify:client` + the 74-item browser plan all exist — re-run them after every change |
-| Permission-before-delegation ordering | Medium | CPI fails once the position is owned by the delegation program | `chain/tests/permission.ts` already proves the correct order; copy it |
-| Recording eats Thursday | Medium | Missed submission | Submit a rough cut early, replace it if a better take lands |
-| Scope creep into Phase 5 | Low | Fatal to the timeline | It is explicitly last and explicitly cuttable |
+| GAP-1 | README claims VRF "Not attempted" | `README.md:26` vs `request_market_draw` in `lib.rs:515` and `npm run check:vrf` passing | 1.1, 3.2 |
+| GAP-2 | README PER row says live proof blocked; the gate is proven locally | `README.md:24` vs `README.md:246` (its own Limitations table) and `npm run check:gate` | 1.2 |
+| GAP-3 | README names a retired demo mint as "the market" | `README.md` Limitations §3 vs `src/chain/markets.ts` (live pump.fun/Jupiter mints) | 1.3 |
+| GAP-4 | README `.so` size wrong: says 636KB, is 702,128 bytes | `ls -la chain/target/deploy/fogduel.so` | 1.4, 4.1 |
+| GAP-5 | `MAX_OPEN_AGE` (300s) undocumented outside `state.rs` — a judge who leaves a match open and returns will find it un-joinable with no explanation in the docs | `chain/programs/fogduel/src/state.rs` | 1.5 |
+| GAP-6 | `SUBMISSION.md` stale in 5 named places | See task 1.6 | 1.6, 3.1 |
+| GAP-7 | `CHANGELOG-ui.md` stops at §19; six components and a sound engine undocumented | `grep '^## ' CHANGELOG-ui.md \| tail` | 1.8 |
+| GAP-8 | `IDEAS.md` build log missing #13 and #23, both built this run | `grep '^### #' IDEAS.md` | 1.9 |
+
+### Submission artefacts
+
+| ID | Gap | Evidence | Blocks |
+|---|---|---|---|
+| GAP-9 | **No demo video.** No `.mp4`/`.mov` anywhere in the repo | `ls *.mp4 *.mov docs/*.mp4` → none | 2.6, 3.1 |
+| GAP-10 | `dist/` is stale — built 03:31, newest source 10:59. Missing every fix from this run | `stat -f "%Sm" dist` vs newest `src/` file | 2.2, 2.7 |
+| GAP-11 | **Not submitted.** The only irreversible deadline in this document | `SUBMISSION.md` header: "Status: not yet submitted" | 3.4 |
+| GAP-12 | No live URL, and it may not be achievable — the app points at `127.0.0.1` clusters, so a hosted build needs a hosted cluster. Unverified either way | `src/chain/config.ts` `CLUSTERS.local` | 2.7 |
+
+### MagicBlock primitives
+
+| ID | Gap | Evidence | Blocks |
+|---|---|---|---|
+| GAP-13 | **Session keys entirely absent** — no JS dependency, no Rust crate, no code | `package.json` and `chain/programs/fogduel/Cargo.toml` contain no session package | 5.1–5.6 |
+| GAP-14 | **VRF has no product surface** — program instructions and `check:vrf` exist, but `grep -rn "requestMarketDraw\|MarketDraw" src/` hits only `idl.ts` | Nothing in `src/` calls either instruction | 5.7–5.9 |
+| GAP-15 | VRF cannot be fulfilled — preloaded queues are devnet dumps naming oracle identities we do not hold; `modify_oracles` / `initialize_oracle_queue` encodings are not in the published SDK | `npm run check:vrf` output | 5.7, 5.8 |
+| GAP-16 | Two chain tests permanently pending — the ephemeral-permission TEE path | `chain/tests/er-privacy.ts:162,175` (`it.skip`) | 4.5 |
+| GAP-17 | PER attestation unproved: the gate is a process we run, not an attested enclave | `/proof` `gate attested: NO — not a TEE` | 4.6, 4.7 |
+
+### Infrastructure
+
+| ID | Gap | Evidence | Blocks |
+|---|---|---|---|
+| GAP-18 | **0 devnet SOL**, faucet refused 40+ times; needs ~6–10 SOL for a 702KB program | `solana balance 3YUgUPu9… --url devnet` → 0 SOL | 4.1 → 4.2–4.8 |
+| GAP-19 | Demo depends on 5 local processes (8999, 7799, 6699, 8791, 8081). Any one down and the demo dies. No single health gate before recording | `./scripts/localnet.sh` + `npm run proxy` + metro | 2.1, 2.8 |
+| GAP-20 | Reduced motion honoured in code but never observed — browser tooling here cannot emulate the OS setting | `TEST-PLAN.md` O6, marked UNTESTED | — (accepted) |
+
+### Not gaps — checked and clear
+
+- **No mocks, stubs, fakes, dummies or placeholders.** The full grep returns 4
+  hits, every one prose explaining that something is *not* a placeholder
+  (`LocalKeyWallet.ts:4`, `pumpfun.ts:126`, `open-matches.mts:37`,
+  `seed-demo.mts:64`).
+- **No TODO or FIXME anywhere** in `src/ app/ chain/programs/ scripts/ server/`.
+- **No invented data on any screen.** Three pieces were found and removed this
+  run: the reveal's synthesized opponent curve, the feed's interpolated
+  sparkline, and the landing page's hardcoded market label.
+- The 11 `SOON` mode tiles are labelled `SOON` and claim nothing.
 
 ---
 
-## 10. VERIFICATION ALREADY IN PLACE
-
-Re-run all of it after any change in Phase 1 or 2. It is the safety net.
+## 10. RUNNING IT, FOR AN AGENT PICKING THIS UP COLD
 
 ```bash
-npm run check          # 5 suites, 74 assertions
-npm run verify:client  # full match through the app's own client
-npm run prove:privacy  # privacy proof, stage by stage
-npm run truth          # RPC ground truth, to check the UI against
-cd chain && anchor test --skip-local-validator   # 22 tests, 20 pass 2 skipped
+# 1. stack — base :8999, rollup :7799, gate :6699
+./scripts/localnet.sh                    # or MASKED_RESET=1 for genesis
+
+# 2. deploy + IDL
+cd chain && anchor build && anchor deploy --provider.cluster http://127.0.0.1:8999
+cd .. && npm run sync:idl
+
+# 3. market proxy :8791 (CORS shim for pump.fun + Jupiter)
+npm run proxy
+
+# 4. app :8081
+npm run web
+
+# 5. verify
+npm run check                            # 9 suites
+cd chain && anchor test --skip-local-validator   # 26 passing, 2 pending
+npm run check:gate                       # the privacy proof
+npm run crank                            # settle anything abandoned
 ```
 
-Local stack (needs `--limit-ledger-size` or `/proof`'s feed goes blank):
-
-```bash
-cd chain
-npx mb-test-validator --reset --ledger /tmp/fd-ledger \
-  --rpc-port 8999 --faucet-port 9901 --gossip-port 8110 \
-  --dynamic-port-range 8111-8220 --limit-ledger-size 500000000
-npx ephemeral-validator --remotes http://127.0.0.1:8999 \
-  --lifecycle ephemeral --listen 127.0.0.1:7799 --storage /tmp/fd-er --reset --no-tui
-```
-
+**Two-session testing** (required for anything touching matchmaking, sealing or
+settlement — a single browser plus a CLI hides races):
+open `http://localhost:8081` and `http://127.0.0.1:8081`. Different origins mean
+different `localStorage`, so each gets its own wallet. Fund the second with
+`solana airdrop 5 <pubkey> --url http://127.0.0.1:8999`.
 
 ---
 
-# 11. EXECUTION RESULT
+## 11. ORDER OF WORK
 
-## 11.1 Done and verified
+1. **Phase 1** (docs true) — 90 minutes. Do it today.
+2. **Phase 2** (demo capture) — 3 hours. Do it Mon/Tue while the stack is fresh.
+3. **Phase 3** (submit) — Wed. Not Thursday night.
+4. **Phase 4** (devnet) — opportunistic; retry the faucet daily, never block on it.
+5. **Phase 5A** (session keys) — only if 1–3 are done by Wed. Otherwise task 5.6.
+6. **Phase 6** — only if everything above is green.
 
-**Phase 1 — privacy is in the product (7/7).** This was the headline gap:
-`useDuel` delegated positions but never created their ACLs, so a match played
-through the UI was unsealed. `client.sealAndDelegateMatch()` now owns the
-ordering — create each ACL, delegate each ACL, then delegate each position —
-and both UI entry points call it. `npm run check:sealed` proves 2/2 ACLs land
-on chain via the exact method the UI calls, and `/proof` shows them.
-
-Two things the work itself corrected:
-- I had asserted a sealed ACL is owned by `ACLseo…`. It is not — sealing
-  delegates it, so it ends up owned by `DELeGG…`. The `/proof` panel would
-  otherwise have reported every sealed match as unsealed.
-- `/proof`'s evidence panels required a connected wallet. Account owners are
-  public, and a judge who has not connected one is exactly who that screen is
-  for. They now read from their own Connection.
-
-**Phase 3 — demo readiness (4/7).** Round length is a real parameter again
-(60s demo default, 300s full, env-overridable) and the lobby badge derives from
-it. The fictional `$BONK` over `PublicKey.default` is gone: a real SPL mint was
-created with `spl-token create-token` and the label resolves from the match's
-actual mint, showing `SYNTHETIC` when there is none. A production static export
-serves all five routes with real data and zero console errors.
-
-**Phase 4 — submission prepared (2/4).** `SUBMISSION.md` holds every form
-field, the five verification commands, and the blockers stated plainly. The
-README's limitations were rewritten — the old text said the privacy layer was
-"code-complete but unproved", which is now only half true.
-
-## 11.2 Not done, and exactly why
-
-**Phase 2 in full — blocked on devnet SOL.** `solana airdrop` was attempted
-**20+ times** across `api.devnet.solana.com` and `api.testnet.solana.com` during
-this run and refused every time as rate-limited. `faucet.solana.com` requires a
-browser captcha, which was not bypassed. The `.so` is 636KB, so rent-exemption
-plus the deploy buffer needs roughly **5-9 SOL** — several successful airdrops,
-not one. Everything downstream (TEE proof, devnet program ID, recordings,
-submission) inherits this.
-
-This is a credential/resource that genuinely does not exist here, so it was
-noted and skipped rather than faked.
-
-**Phase 3.3 / 3.4 — recordings.** The proof script runs and is timed at 66s,
-but on a non-TEE cluster it cannot show a refused read, which is the whole
-point of the recording. Recording a full match is likewise worth doing against
-devnet, not localhost.
-
-**Phase 4.4 — submission.** Not submitted. Submitting a local program ID as if
-it were deployed would be a false claim.
-
-**Phase 5 — untouched, by design.** Correctly last and correctly cuttable.
-
-## 11.3 Final verification state
-
-| Suite | Result |
-|---|---|
-| `npm run check` (5 suites, 74 assertions) | green |
-| `npm run check:sealed` | 2/2 ACLs on chain, 2/2 delegated |
-| `npm run verify:client` | full match end to end |
-| `npm run prove:privacy` | runs, honest verdict, 66s |
-| `anchor test` | 20 passing, 2 skipped |
-| Browser sweep (5 routes, all tabs) | renders, zero console errors |
-| Static export | all 5 routes, real data, zero errors |
-
-## 11.4 The one thing that would change the outcome
-
-Fund `3YUgUPu9AdJj6FCFFvzR9pJixCN7EcAnCXMJoTuYwsS5` with ~9 devnet SOL. Then
-Phase 2 unblocks in roughly an hour, and with it Phases 3.3, 3.4, 4.1 and 4.4.
-Every piece downstream is already written and waiting.
+The single highest-value hour in this document is **Phase 2, task 2.3** — the
+privacy shot. Everything else is either already built or replaceable.
