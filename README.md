@@ -30,7 +30,7 @@ after**. That window is the product.
 | **Private Ephemeral Rollups** — per-position ACL | `create_position_permission`, `delegate_position_permission`, `init_position_privacy` | **Enforced, not attested.** Every match started through the UI puts an ACL on chain naming only its owner, and the query-filtering-service refuses a sealed position while serving the same account shape without one — `npm run check:gate` proves it every run. What is missing is attestation; see Limitations §1. |
 | Magic Router / ER RPC | `src/chain/client.ts` | Working |
 | **VRF** | `request_market_draw`, `settle_market_draw` | **Requested on chain; cannot be fulfilled here.** The request is built with the official SDK and the VRF program accepts it (`npm run check:vrf`). No oracle answers: the queues this validator preloads were dumped from devnet and name oracle identities we do not hold keys for. Nothing simulates a draw, and no UI is built on one that cannot resolve. See Limitations §7. |
-| **Session keys** (Gum Session Protocol) | `session.ts`, `session_auth_or` on `apply_fill` | **Used.** At seal time the player signs once to mint a session token authorising a throwaway key to call `apply_fill` on their behalf — bounded to an hour and scoped to this program. A sixty-second round costs one signature instead of one per fill. `apply_fill` carries `session_auth_or`, so without a token the signer must be the position's owner, and a token names exactly one owner. Proved by `npm run check:session` (15 assertions) and visible on chain: a real `ApplyFill` on the owner's position, signed and paid by the session key. |
+| **Session keys** (Gum Session Protocol) | `session.ts`, `session_auth_or` on `apply_fill` | **Used.** At seal time the player signs once to mint a session token authorising a throwaway key to call `apply_fill` on their behalf — bounded to an hour and scoped to this program. A five-minute round costs one signature instead of one per fill. `apply_fill` carries `session_auth_or`, so without a token the signer must be the position's owner, and a token names exactly one owner. Proved by `npm run check:session` (15 assertions) and visible on chain: a real `ApplyFill` on the owner's position, signed and paid by the session key. |
 
 ---
 
@@ -83,14 +83,14 @@ npm run proxy      # :8791, and GET /whoami identifies it
 ### 4. Test
 
 ```bash
-# 26 passing, 2 pending across three suites: lifecycle (escrow, the private
+# 27 passing, 2 pending across three suites: lifecycle (escrow, the private
 # book, impact, the mark's rate limit, rake, settlement, tape, stats), the
 # rollup (delegation, ER writes, L1 rejection, commit-back, settle) and the
 # permission ACL. The two pending are the ephemeral-permission TEE path.
 cd chain && anchor test --skip-local-validator
 
 cd ..
-npm run check          # typecheck + 9 assertion suites, 1963 assertions
+npm run check          # typecheck + 15 assertion suites, 1139 assertions
 npm run verify:client  # a full match through the app's own client
 npm run check:gate     # what the front door enforces, against a control
 npm run check:guards   # every refusal the program makes, exercised for real
@@ -268,7 +268,7 @@ opponent's.
 ## Verification you can run
 
 ```bash
-npm run check          # typecheck + 9 assertion suites, 1963 assertions
+npm run check          # typecheck + 15 assertion suites, 1139 assertions
 npm run check:gate     # what the front door enforces, tested against a control
 npm run check:guards   # every refusal the deployed program makes, exercised for real
 npm run check:race     # two independent clients sealing and settling one match at once
@@ -284,7 +284,7 @@ npm run prove:privacy  # the privacy proof, stage by stage (~31s)
 npm run truth          # RPC ground truth, to check rendered numbers against
 npm run state          # where every unfinished match got to
 npm run crank          # settle anything abandoned past its buzzer
-cd chain && anchor test --skip-local-validator   # 26 passing, 2 pending
+cd chain && anchor test --skip-local-validator   # 27 passing, 2 pending
 ```
 
 ---
@@ -342,7 +342,7 @@ Read this before judging — none of it is hidden in the code.
    `@solana-mobile/*` to a stub. A native build needs Mobile Wallet Adapter or
    Solflare deeplinks.
 5. **Not deployed to devnet** for the same faucet reason — the `.so` is
-   702,128 bytes, so rent plus the deploy buffer needs roughly 6–10 SOL, which
+   798,936 bytes, so rent plus the deploy buffer needs roughly 6–10 SOL, which
    is several successful airdrops rather than one. Airdrops were refused 40+
    times across the public faucets; `faucet.solana.com` requires a captcha. The
    program ID below is the local deployment. See `SUBMISSION.md` for the exact

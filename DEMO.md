@@ -126,13 +126,21 @@ and prints visibility at each stage (31s, measured). Otherwise skip it —
 
 Two browsers side by side, both already connected and funded.
 
-1. **A: FIND MATCH → OPEN A MATCH.** Balance drops by the entry — point at it.
-2. **B: FIND MATCH.** A's match is in the OPEN BOOK. **JOIN it.**
+1. **A: pick a market, then FIND MATCH → OPEN A MATCH.** Search a ticker if you
+   like — the field takes a name, a symbol or a pasted mint. Balance drops by
+   the entry; point at it.
+2. **B: pick a *different* market.** Switch to MAJORS and take SOL while A is on
+   a memecoin. This is the part to say out loud:
+   > "We are not trading the same coin. He picked his, I picked mine, and we are
+   > scored on which of us read our own market better."
+3. **B: FIND MATCH.** A's match is in the OPEN BOOK — any open match is joinable
+   now, because there is nothing the two sides have to agree on but the stake.
+   **JOIN it.**
    > "Joining seals it: two ACLs created on chain and delegated before either
    > position is."
    Both screens show **SEALED · ACL ON CHAIN** — read back from chain, not a
    local flag. Each shows the opponent as **FOGGED**, with a fill count and
-   nothing else.
+   nothing else. Each header shows *its own* token, priced by its own feed.
 3. **Point at the SESSION KEY badge.** It appears once the round is sealed.
    > "One signature for the whole round. The player signed once to mint a Gum
    > session token; a throwaway key signs each fill on their behalf, bounded to
@@ -140,12 +148,19 @@ Two browsers side by side, both already connected and funded.
    > else."
    If you have a terminal free, `npm run check:session` proves it in 15
    assertions — including that a token for one owner cannot move another's book.
-4. **Trade at different sizes so the book is visible.**
-   Keys work if your hands are already there: **L** long, **C** close.
+4. **Trade both directions, at different sizes, so the book is visible.**
+   Keys work if your hands are already there: **L** long, **S** short, **C**
+   close.
    - A: **MAX** → the note reads `THAT SIZE COSTS 1.56% IN IMPACT`. LONG.
      The receipt shows the mark and what you actually filled at.
-   - B: **1/4** → `0.39%`. LONG.
-   > "That quote is exact, not an estimate — the chain charges 1.56%."
+   - B: **1/4** → `0.39%`. **SHORT.**
+   > "That quote is exact, not an estimate — the chain charges 1.56%. And that
+   > is a real short: the position goes negative on chain, capped at one times
+   > the entry, and if the mark runs far enough against it the program closes
+   > it out and says so."
+   `npm run check:short` proves that in 15 assertions if you have a terminal
+   free — including that the liquidation is public while the position behind it
+   stays refused.
 5. **Let the buzzer go.** Rounds are five minutes; record with
    `EXPO_PUBLIC_ROUND_SECONDS=60` so the take fits under three minutes.
    **SETTLING ON SOLANA** shows three real stages: the commit reports how many
@@ -153,8 +168,11 @@ Two browsers side by side, both already connected and funded.
    settle reports the pot paid.
 6. **The reveal, on both screens at once.** They mirror: A's "you" is B's
    "opponent" to the basis point. The **ROUND TIMELINE** draws both players'
-   real fills on one axis, replayed from the tape the program just wrote.
-   The head-to-head record and what the market itself did sit underneath.
+   real fills on one axis, replayed from the tape the program just wrote —
+   the axis is PnL, which is the only thing two different tokens can share.
+   Underneath, the head-to-head record and **a line per market**:
+   > "WOFI moved +0.34%, SOL moved +1.58%. Two markets, because we were not in
+   > the same one — and that is what the score is measured against.
 
 **Timing note:** the product round is five minutes. Record with
 `EXPO_PUBLIC_ROUND_SECONDS=60` — the app reads it and the program accepts it,

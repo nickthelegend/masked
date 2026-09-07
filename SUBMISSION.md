@@ -10,20 +10,24 @@ which is blocked on faucet funding (see Blockers).
 
 **Project name:** Fogduel
 
-**One line:** Hidden-position 1v1 trading on Private Ephemeral Rollups — reveal
-and pot settlement on Solana.
+**One line:** Hidden-position 1v1 trading on Private Ephemeral Rollups — any
+token, long or short, reveal and pot settlement on Solana.
 
 **Description (short):**
-> Two traders stake an equal pot and trade the same market for a fixed window
-> with their positions delegated to a MagicBlock Ephemeral Rollup. Each position
-> carries an on-chain access-control list naming only its owner, and the rollup
-> sits behind a query-filtering-service that reads it — so the opponent's size,
-> side and fill count are refused to everyone but the owner while the round is
-> live. At the buzzer both positions commit back to Solana, PnL is compared, the
-> winner takes the pot less a 2% rake, and a public Tape is written — every fill
-> of both players, readable forever. Every other 1v1 trading product on Solana
-> is public during the fight; this one is private during the fight and public
-> after.
+> Two traders stake an equal pot and trade for five minutes — each on a token of
+> their own choosing, long or short, scored on PnL. Anything Jupiter can price is
+> duelable, from SOL and wrapped BTC down to a pump.fun memecoin minted an hour
+> ago. Each position is delegated to a MagicBlock Ephemeral Rollup and carries an
+> on-chain access-control list naming only its owner, and the rollup sits behind
+> a query-filtering-service that reads it — so the opponent's size, side and fill
+> count are refused to everyone but the owner while the round is live. Shorts are
+> real margin: size is capped at one times the entry, and a position whose equity
+> reaches zero is liquidated and announced, which is the one deliberate hole in
+> the fog. At the buzzer both positions commit back to Solana, PnL is compared,
+> the winner takes the pot less a 2% rake, and a public Tape is written — both
+> players' markets and every fill, readable forever. Every other 1v1 trading
+> product on Solana is public during the fight; this one is private during the
+> fight and public after.
 
 **Repo:** *(this repository)*
 
@@ -49,7 +53,7 @@ and pot settlement on Solana.
 - **Session keys** (Gum Session Protocol, `KeyspM2s…`) — used. At seal time the
   player signs once to mint a session token authorising a throwaway key to
   call `apply_fill` on their behalf, bounded to an hour and scoped to this
-  program alone. A sixty-second round then costs one signature instead of one
+  program alone. A five-minute round then costs one signature instead of one
   per fill. `apply_fill` carries a `session_auth_or` guard, so without a token
   the signer must be the position's owner, and a token names exactly one
   owner — a session key cannot move anybody else's book, settle, or cancel.
@@ -73,8 +77,9 @@ blocker below. Tunnelling the local stack was rejected: it would put a
 validator and a faucet on the internet and would die with the machine.
 
 **Markets:** live pump.fun (`frontend-api-v3`) and Jupiter over HTTP — real
-mainnet mints, real market caps, real logos. The mint on a `Match` is the
-market's true mainnet identity. Fills do **not** route to either venue: each
+mainnet mints, real market caps, real logos, plus Jupiter token search so any
+priced token can be duelled on. A `Match` carries a leg per player, each naming
+that side's true mainnet mint. Fills do **not** route to either venue: each
 executes against a constant-product book inside that player's own `Position`,
 because a public swap print mid-round would leak the wallet, mint and size the
 fog exists to hide. The program contains no CPI into either venue.
@@ -84,13 +89,14 @@ fog exists to hide. The program contains no CPI into either venue.
 ## What a judge can verify in five commands
 
 ```bash
-npm run check          # 9 suites, 1963 assertions — incl. 1683 replaying every
+npm run check          # 15 suites, 1139 assertions — incl. 818 replaying every
                        # real settled tape onto the chain's own PnL
 npm run check:gate     # the privacy proof: sealed REFUSED, control SERVED
-npm run check:guards   # 6 refusals the program enforces, exercised for real
+npm run check:guards   # every refusal the program enforces, exercised for real
 npm run check:race     # two independent clients seal and settle one match at once
 npm run check:session  # a real Gum session token signing a real fill on the rollup
-cd chain && anchor test --skip-local-validator   # 26 passing, 2 pending
+npm run check:short    # a real short, the margin cap refused, a real liquidation
+cd chain && anchor test --skip-local-validator   # 27 passing, 2 pending
 ```
 
 Plus `/proof` in the app: live cluster identity, measured L1-vs-ER latency,
@@ -105,7 +111,7 @@ transaction history with explorer links. None of it requires a wallet.
 holds 0 devnet SOL. `solana airdrop` was attempted 16+ times across
 `api.devnet.solana.com` and `api.testnet.solana.com` over the build and refused
 every time as rate-limited; `faucet.solana.com` requires a browser captcha,
-which was not bypassed. The program `.so` is 702,128 bytes, so rent-exemption plus the
+which was not bypassed. The program `.so` is 798,936 bytes, so rent-exemption plus the
 deploy buffer needs roughly 6–10 SOL — several successful airdrops, not one.
 
 **Consequence:** PER read-blocking is implemented and wired end to end but is
@@ -115,7 +121,7 @@ reads are not refused. `prove:privacy` says exactly this rather than implying
 otherwise, and `/proof` shows "privacy enforced: NO — needs a TEE" in red.
 
 **To unblock:** fund that address with ~10 devnet SOL (the `.so` is now
-702,128 bytes), then
+798,936 bytes), then
 
 ```bash
 cd chain && anchor deploy --provider.cluster devnet
