@@ -66,3 +66,4 @@ export {
   type MarketKindKey,
 } from './MarketPicker';
 export { default as MarketHeader, type MarketHeaderProps } from './MarketHeader';
+export { default as LiveDuelRow, type LiveDuelRowProps } from './LiveDuelRow';

@@ -31,6 +31,11 @@ export interface LiveMatch {
   address: PublicKey;
   creator: PublicKey;
   joiner: PublicKey;
+  symbol: string;
+  mint: PublicKey;
+  entry: number;
+  startTs: number;
+  duration: number;
 }
 
 /** A zero-padded on-chain string back to a JS one. */
@@ -90,6 +95,11 @@ export function useOpenMatches(pollMs = 4000) {
             address: m.publicKey,
             creator: m.account.creator,
             joiner: m.account.joiner as PublicKey,
+            symbol: decodeFixed(m.account.symbol),
+            mint: m.account.mint,
+            entry: m.account.entry.toNumber(),
+            startTs: m.account.startTs.toNumber(),
+            duration: m.account.duration.toNumber(),
           }));
 
         setMatches(open);

@@ -5,13 +5,15 @@
  * also shown: account owners, delegation state, measured latency, and an
  * explicit statement of what this cluster does and does not enforce.
  */
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { router } from 'expo-router';
 import { ScrollView, View } from 'react-native';
 import { PublicKey } from '@solana/web3.js';
 import {
   Badge,
   ConnectWalletButton,
   Divider,
+  LiveDuelRow,
   PixelText,
   ProofPanel,
   Row,
@@ -71,6 +73,13 @@ export default function ProofScreen() {
   // from live matches first — those are the ones actually sealed right now —
   // and fall back to the most recent settled duel's positions.
   const { live: liveMatches } = useOpenMatches(8000);
+
+  // Ticks so the clocks on the live rows count down.
+  const [nowSecs, setNowSecs] = useState(() => Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    const id = setInterval(() => setNowSecs(Math.floor(Date.now() / 1000)), 1000);
+    return () => clearInterval(id);
+  }, []);
   const gateCandidates = useMemo(() => {
     const out: PublicKey[] = [];
     // Live matches first: those are the positions that are sealed right now.
@@ -140,6 +149,46 @@ export default function ProofScreen() {
           },
         ]}
       />
+
+      {/* Duels happening now, watchable without a wallet. The point of putting
+          this on the evidence page: a judge can click through and see the fog
+          from outside, which is a stronger demonstration than any panel. */}
+      <Stack gap={space.sm}>
+        <Row justify="space-between" align="center">
+          <PixelText variant="label" size={8}>
+            LIVE RIGHT NOW
+          </PixelText>
+          <Badge
+            label={`${liveMatches.length} DUEL${liveMatches.length === 1 ? '' : 'S'}`}
+            tone={liveMatches.length > 0 ? 'live' : 'quiet'}
+            variant="label"
+          />
+        </Row>
+        {liveMatches.length === 0 ? (
+          <PixelText variant="bodySmall" size={10} color={color.textFaint}>
+            Nothing running. Open one at /play and this fills in.
+          </PixelText>
+        ) : (
+          <Stack gap={space.xs}>
+            {liveMatches.slice(0, 5).map((m) => (
+              <LiveDuelRow
+                key={m.address.toBase58()}
+                symbol={m.symbol}
+                mint={m.mint.toBase58()}
+                creator={shortKey(m.creator)}
+                joiner={shortKey(m.joiner)}
+                potSol={(m.entry * 2) / 1e9}
+                secondsLeft={Math.max(0, m.duration - (nowSecs - m.startTs))}
+                onPress={() => router.push(`/spectate/${m.address.toBase58()}`)}
+              />
+            ))}
+          </Stack>
+        )}
+        <PixelText variant="bodySmall" size={10} color={color.textFaint}>
+          Spectating needs no wallet, and shows no position — the rollup refuses
+          them to a spectator exactly as it does to the opponent.
+        </PixelText>
+      </Stack>
 
       <ProofPanel
         title="MEASURED SPEED"
