@@ -38,6 +38,8 @@ export interface RevealScreenProps {
   myFills: number;
   opponentFills: number;
   opponentName: string;
+  /** The record against this opponent, counted off chain. Null while unknown. */
+  record?: string | null;
   onRematch: () => void;
   /** Copies a spectate link for this duel. */
   onShare: () => void;
@@ -71,6 +73,7 @@ export default function RevealScreen({
   myFills,
   opponentFills,
   opponentName,
+  record,
   onRematch,
   onShare,
   onPost,
@@ -166,6 +169,14 @@ export default function RevealScreen({
           </Stack>
         </PixelPanel>
       </Row>
+
+      {/* The rivalry, recounted from every tape these two wallets share. It is
+          the reason to press REMATCH, so it sits directly above it. */}
+      {record ? (
+        <PixelText variant="label" size={9} align="center" color={color.yellow}>
+          {record}
+        </PixelText>
+      ) : null}
 
       <Row gap={space.sm}>
         <PixelButton flex={1} tone="gold" label="REMATCH" size={10} onPress={onRematch} />

@@ -17,6 +17,7 @@ import {
   space,
 } from '../ui';
 import { useTape } from '../chain/useTape';
+import { useHeadToHead } from '../chain/useHeadToHead';
 import { fillTokens, fillValue, replayEquity, type TapeFill } from '../chain/tape';
 import { formatSolPrice } from '../chain/units';
 import { short } from '../chain/useTapes';
@@ -81,6 +82,10 @@ function FillList({ fills, startTs, tone }: { fills: TapeFill[]; startTs: number
  */
 export default function TapeScreen({ address }: TapeScreenProps) {
   const { data, error, loaded } = useTape(address);
+
+  // The record between these two, counted off every tape they share. On a
+  // public page there is no "you", so it is stated in both names.
+  const h2h = useHeadToHead(data?.tape.playerA ?? null, data?.tape.playerB ?? null);
 
   const lanes = useMemo(() => {
     if (!data || data.entry <= 0) return null;
@@ -190,6 +195,14 @@ export default function TapeScreen({ address }: TapeScreenProps) {
             </Stack>
           ))}
         </Row>
+
+        {h2h && h2h.played > 1 ? (
+          <PixelText variant="label" size={9} align="center" color={color.yellow}>
+            {h2h.mine === h2h.theirs
+              ? `${h2h.played} MEETINGS · ${h2h.mine}-${h2h.theirs}, ALL SQUARE`
+              : `${h2h.played} MEETINGS · ${short(h2h.mine > h2h.theirs ? tape.playerA : tape.playerB)} LEADS ${Math.max(h2h.mine, h2h.theirs)}-${Math.min(h2h.mine, h2h.theirs)}`}
+          </PixelText>
+        ) : null}
 
         {/* Fill by fill. This is the part that could not be shown while the
             round was running, and the reason the page exists. */}

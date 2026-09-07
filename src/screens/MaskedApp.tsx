@@ -165,6 +165,7 @@ export default function MaskedApp() {
                 myFills={duel.fills.length}
                 opponentFills={duel.opponentFills}
                 opponentName={duel.opponentName}
+                record={duel.record}
                 onRematch={duel.rematch}
                 onShare={shareWatchLink}
                 shareLabel={shareLabel}

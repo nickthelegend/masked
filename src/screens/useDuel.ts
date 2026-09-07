@@ -25,6 +25,7 @@ import { assertFogIntact } from '../chain/fog';
 import { FogduelClient, pnlBps, type MatchState, type PositionState } from '../chain/client';
 import { formatSolPrice } from '../chain/units';
 import type { TapeState } from '../chain/tape';
+import { useHeadToHead, describeRecord } from '../chain/useHeadToHead';
 import { livePxFor, type TradableMarket } from '../chain/markets';
 import { ACTIVE_CLUSTER } from '../chain/config';
 import { DEMO_MINT, marketLabel } from '../chain/market';
@@ -102,6 +103,8 @@ export interface Duel {
   settleStages: SettleStage[];
   /** The public tape once the round has settled, with both real fill lists. */
   tape: TapeState | null;
+  /** The record against this opponent, counted off chain. Null until known. */
+  record: string | null;
   /** Whether you are the tape's player A — which fill list is yours. */
   isPlayerA: boolean;
   /** Per-player entry in lamports, which the tape replay starts from. */
@@ -902,6 +905,12 @@ export function useDuel(): Duel {
     ? bpsToPct(iAmCreator ? match.pnlBBps : match.pnlABps)
     : 0;
 
+  /**
+   * The rivalry, recounted from the chain whenever the phase changes — which
+   * includes arriving at the reveal, so the duel just settled is in the count.
+   */
+  const headToHead = useHeadToHead(wallet.publicKey ?? null, opponentKey, phase);
+
   const fills: Fill[] = (myPosition?.fills ?? []).map((f) => ({
     side: f.side === 'BUY' ? 'LONG' : f.side === 'SELL' ? 'CLOSE' : 'SETTLE',
     px: formatSolPrice(f.px),
@@ -955,6 +964,7 @@ export function useDuel(): Duel {
     lastFill,
     settleStages,
     tape,
+    record: describeRecord(headToHead),
     isPlayerA: !!(match && wallet.publicKey && match.creator.equals(wallet.publicKey)),
     entryLamports: match?.entry ?? 0,
     startTs: match?.startTs ?? 0,
