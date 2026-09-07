@@ -293,6 +293,38 @@ export function useDuel(): Duel {
     if (phase === 'live' && secondsLeft === 0) void settle();
   }, [phase, secondsLeft, settle]);
 
+  /**
+   * Seal both positions and start the round.
+   *
+   * Sealing here rather than only in a script is what makes a match played
+   * through the UI actually private: ACL, delegate the ACL, delegate the
+   * position — and only then is anything traded.
+   */
+  const beginRound = useCallback(
+    async (m: MatchState, creator: PublicKey, joiner: PublicKey, payer: PublicKey) => {
+      await client!.sealAndDelegateMatch(m.address, creator, joiner, payer);
+      if (ACTIVE_CLUSTER.tee) {
+        // TEE clusters take the extra ephemeral-permission step that turns the
+        // ACL into an enforced read gate.
+        for (const owner of [creator, joiner]) {
+          await client!.initPositionPrivacy(m.address, owner, payer);
+        }
+      }
+      setSealed(await client!.isPositionSealed(m.address, creator));
+
+      settledRef.current = false;
+      setMatch(m);
+      setSeries([]);
+      setEquity([0]);
+      // Resume from where the clock actually is: a match that was joined while
+      // we were polling has already been running for a second or two.
+      setSecondsLeft(Math.max(0, m.duration - (Math.floor(Date.now() / 1000) - m.startTs)));
+      setPrice(await client!.fetchPrice(m.address, true));
+      setPhase('live');
+    },
+    [client]
+  );
+
   /* ----------------------------- transitions ----------------------------- */
   const guard = useCallback(
     async (label: string, fn: () => Promise<void>) => {
@@ -405,29 +437,53 @@ export function useDuel(): Duel {
 
       const m = await client!.fetchMatch(target);
       if (!m || !m.joiner) return;
-
-      // Seal before delegating: ACL, then delegate the ACL, then delegate the
-      // position. Doing this here — rather than only in a script — is what
-      // makes a match played through the UI actually private.
-      await client!.sealAndDelegateMatch(target, creator, m.joiner, me);
-      if (ACTIVE_CLUSTER.tee) {
-        // TEE clusters take the extra ephemeral-permission step that turns the
-        // ACL into an enforced read gate.
-        for (const owner of [creator, m.joiner]) {
-          await client!.initPositionPrivacy(target, owner, me);
-        }
-      }
-      setSealed(await client!.isPositionSealed(target, creator));
-
-      settledRef.current = false;
-      setMatch(m);
-      setSeries([]);
-      setEquity([0]);
-      setSecondsLeft(m.duration);
-      setPrice(await client!.fetchPrice(target, true));
-      setPhase('live');
+      await beginRound(m, creator, m.joiner, me);
     });
-  }, [guard, client, wallet.publicKey, entryLamports]);
+  }, [guard, client, wallet.publicKey, entryLamports, selectedMarket, beginRound]);
+
+  /**
+   * Watch a match we opened until somebody takes it.
+   *
+   * Without this the creator waits forever: an unjoined match cannot start, so
+   * `startMatch` returns after creating one and nothing was then looking for
+   * the opponent. Pressing the button again would not have helped either —
+   * the open book excludes your own matches, so it would have opened a second.
+   */
+  useEffect(() => {
+    if (phase !== 'searching' || !client || !match || match.joiner || !wallet.publicKey) {
+      return undefined;
+    }
+    const me = wallet.publicKey;
+    const address = match.address;
+    let alive = true;
+
+    // Guards against a slow seal being started twice by two ticks. Not the
+    // interval id: clearing that before the work meant a failed seal stopped
+    // the watch for good and left the player sitting on MATCHING with no idea
+    // why, because the error was swallowed as "transient".
+    let starting = false;
+
+    const id = setInterval(async () => {
+      if (starting) return;
+      try {
+        const m = await client.fetchMatch(address);
+        if (!alive || !m?.joiner || m.status !== 'live') return;
+        starting = true;
+        await beginRound(m, m.creator, m.joiner, me);
+        clearInterval(id);
+      } catch (e) {
+        starting = false;
+        const friendly = explainError(e);
+        setError(friendly.title);
+        toast.error(friendly.title, friendly.detail);
+      }
+    }, 2000);
+
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [phase, client, match, wallet.publicKey, beginRound, toast]);
 
   const openLong = useCallback(() => {
     void guard('LONG FILLED', async () => {

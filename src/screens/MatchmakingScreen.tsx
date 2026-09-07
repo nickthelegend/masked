@@ -1,13 +1,17 @@
-import { Badge, MatchRow, Orb, PixelButton, PixelText, Row, Stack, color, sol, space } from '../ui';
+import { Badge, MatchRow, Orb, PixelButton, PixelText, Row, Stack, TokenLogo, color, sol, space } from '../ui';
 import { short } from '../chain/useTapes';
 import { useOpenMatches } from '../chain/useOpenMatches';
-import { DEMO_MINT, marketLabel } from '../chain/market';
+
 
 export interface MatchmakingScreenProps {
   pot: number;
   stake: number;
   busy?: boolean;
   myAddress?: string | null;
+  /** The market the next match will be opened on. */
+  marketSymbol?: string;
+  marketMint?: string;
+  marketImageUri?: string | null;
   onStart: () => void;
   onJoin?: (address: string, creator: string) => void;
   onCancel?: (address: string) => void;
@@ -26,6 +30,9 @@ export default function MatchmakingScreen({
   stake,
   busy = false,
   myAddress = null,
+  marketSymbol,
+  marketMint,
+  marketImageUri = null,
   onStart,
   onJoin,
   onCancel,
@@ -40,9 +47,17 @@ export default function MatchmakingScreen({
 
       <Orb size={110} state="fog" />
 
-      <PixelText variant="body">
-        POT {sol(pot)} · {marketLabel(DEMO_MINT)}
-      </PixelText>
+      {/* The market the player actually picked. This used to print a fixed
+          "$FOG" from a demo mint, whatever they had chosen. */}
+      <Row gap={space.sm} align="center">
+        {marketMint ? (
+          <TokenLogo mint={marketMint} symbol={marketSymbol ?? '?'} uri={marketImageUri} size={22} />
+        ) : null}
+        <PixelText variant="body">
+          POT {sol(pot)}
+          {marketSymbol ? ` · ${marketSymbol}` : ''}
+        </PixelText>
+      </Row>
 
       <PixelButton tone="gold" label="OPEN A MATCH" size={11} loading={busy} onPress={onStart} />
 

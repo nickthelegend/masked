@@ -91,6 +91,11 @@ pub struct Match {
     /// virtual inventory, so no SPL transfer happens mid-round.
     pub mint: Pubkey,
     pub match_id: u64,
+    /// When the match was opened. `start_ts` is when it went live, which is a
+    /// different moment and is zero until somebody joins — so "opened 3m ago"
+    /// had nowhere to come from and was being decoded out of `match_id`, whose
+    /// scale differed between the app and the seeder.
+    pub created_ts: i64,
     pub start_ts: i64,
     pub duration: i64,
     /// Per-player entry, in lamports.

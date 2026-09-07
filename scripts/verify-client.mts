@@ -9,7 +9,7 @@ import { Keypair, LAMPORTS_PER_SOL, PublicKey, type Transaction } from '@solana/
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { positionPda } from '../src/chain/pdas';
-import { FogduelClient } from '../src/chain/client';
+import { FogduelClient, pnlBps } from '../src/chain/client';
 import { DEMO_MINT } from '../src/chain/market';
 import { CLUSTERS } from '../src/chain/config';
 import { pxFromSolPerToken } from '../src/chain/units';
@@ -152,6 +152,19 @@ const wrap = (kp: Keypair) => ({
   console.log('   rake taken:', tape.rake.toNumber() / LAMPORTS_PER_SOL, 'SOL',
               '| payout:', tape.potPaid.toNumber() / LAMPORTS_PER_SOL, 'SOL');
   console.log('   creator balance delta:', ((after - before) / LAMPORTS_PER_SOL).toFixed(4), 'SOL');
+
+  // The client's PnL must equal the chain's, or the screen shows one winner
+  // while the pot pays another. Both copies of this arithmetic have drifted
+  // before — most recently rendering a flat position as +29,813,639%.
+  console.log('7a. client PnL agrees with the chain');
+  const settledPos = (await client.fetchPosition(match, creator.publicKey, false))!;
+  const finalPx = await client.fetchPrice(match, false);
+  const clientBps = pnlBps(settledPos, finalPx, ENTRY);
+  assert.equal(
+    clientBps, m.pnlABps,
+    `client says ${clientBps}bps, chain says ${m.pnlABps}bps`
+  );
+  console.log('   both say', clientBps, 'bps');
 
   console.log('8. feed reads real tapes');
   const tapes = await client.fetchAllTapes();

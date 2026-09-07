@@ -2007,6 +2007,16 @@ export const FOGDUEL_IDL = {
             "type": "u64"
           },
           {
+            "name": "created_ts",
+            "docs": [
+              "When the match was opened. `start_ts` is when it went live, which is a",
+              "different moment and is zero until somebody joins — so \"opened 3m ago\"",
+              "had nowhere to come from and was being decoded out of `match_id`, whose",
+              "scale differed between the app and the seeder."
+            ],
+            "type": "i64"
+          },
+          {
             "name": "start_ts",
             "type": "i64"
           },

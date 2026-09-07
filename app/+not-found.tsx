@@ -26,7 +26,7 @@ export default function NotFound() {
             NO SUCH ROUTE
           </PixelText>
           <PixelText variant="bodySmall" color={color.textDim}>
-            That page does not exist. Everything lives at one of the four below.
+            That page does not exist. Every route this app has is below.
           </PixelText>
         </Stack>
       </PixelPanel>
@@ -43,6 +43,9 @@ export default function NotFound() {
         </Link>
         <Link href="/health" asChild>
           <PixelButton tone="quiet" label="SYSTEM HEALTH" size={10} />
+        </Link>
+        <Link href="/gallery" asChild>
+          <PixelButton tone="quiet" label="COMPONENT GALLERY" size={10} />
         </Link>
       </Stack>
     </ScrollView>

@@ -44,6 +44,7 @@ export { default as Wordmark, type WordmarkProps } from './Wordmark';
 /* icons */
 export * from './icons';
 export { default as ConnectWalletButton, type ConnectWalletButtonProps } from './ConnectWalletButton';
+export { default as WalletPicker, type WalletPickerProps, type WalletChoice } from './WalletPicker';
 export { default as ProofPanel, type ProofPanelProps, type ProofRow } from './ProofPanel';
 export { ToastProvider, useToast, type Toast, type ToastTone } from './Toast';
 export { default as ErrorBoundary } from './ErrorBoundary';

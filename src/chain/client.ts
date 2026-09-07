@@ -22,14 +22,21 @@ import { FOGDUEL_IDL as idl } from './idl';
 import { ACTIVE_CLUSTER, type ClusterConfig } from './config';
 import { feedPda, matchPda, positionPda, statsPda, tapePda, treasuryPda, vaultPda } from './pdas';
 import { authenticate, type MessageSigner } from './erAuth';
+import { VALUE_DIV } from './units';
 
 const COMMITMENT: Commitment = 'confirmed';
 
 /** Prices and base quantities are integers scaled by 1e6 on-chain. */
-export const PRICE_SCALE = 1_000_000;
 /** Mirrors `MAX_PUSH_BPS` in state.rs: the per-push cap on the mark. */
 export const MAX_PUSH_BPS = 500;
-export const BASE_SCALE = 1_000_000;
+/**
+ * Re-exported from units.ts, which is the one place these are defined.
+ *
+ * They were declared here as well, and the two copies drifted: `px` gained
+ * PRICE_SCALE, units.ts followed, this file did not, and a flat position
+ * rendered as +29,813,639%. Import them, do not retype them.
+ */
+export { BASE_SCALE, PRICE_SCALE, VALUE_DIV } from './units';
 export const BPS = 10_000;
 
 export type Side = 'buy' | 'sell';
@@ -52,6 +59,8 @@ export interface MatchState {
   marketType: MarketKind;
   /** Ticker, as written on chain at create time. */
   symbol: string;
+  /** When the match was opened, from the chain's clock. */
+  createdTs: number;
   /** Full market name, as written on chain at create time. */
   name: string;
   matchId: number;
@@ -386,7 +395,7 @@ export class FogduelClient {
   async fetchBookMid(match: PublicKey, owner: PublicKey, fromEr: boolean): Promise<number> {
     const pos = await this.fetchPosition(match, owner, fromEr);
     if (!pos || pos.book.virtualBase === 0) return 0;
-    return (pos.book.virtualQuote * BASE_SCALE) / pos.book.virtualBase;
+    return (pos.book.virtualQuote * VALUE_DIV) / pos.book.virtualBase;
   }
 
   /**
@@ -643,6 +652,7 @@ export class FogduelClient {
       mint: raw.mint,
       marketType: decodeMarketType(raw.marketType),
       symbol: decodeFixed(raw.symbol),
+      createdTs: raw.createdTs.toNumber(),
       name: decodeFixed(raw.name),
       matchId: raw.matchId.toNumber(),
       startTs: raw.startTs.toNumber(),
@@ -667,6 +677,7 @@ export class FogduelClient {
         mint: m.account.mint,
         marketType: decodeMarketType(m.account.marketType),
         symbol: decodeFixed(m.account.symbol),
+        createdTs: m.account.createdTs.toNumber(),
         name: decodeFixed(m.account.name),
         matchId: m.account.matchId.toNumber(),
         startTs: m.account.startTs.toNumber(),
@@ -753,14 +764,15 @@ export class FogduelClient {
 /**
  * PnL in basis points against the starting quote balance.
  *
- * `px` is lamports per traded unit and `baseQty` is units x BASE_SCALE, so
- * their product over BASE_SCALE is lamports — the same currency as the quote
- * balance and the entry. Mirrors `Position::pnl_bps` on-chain exactly; a
- * client that computed this differently would show a winner the chain
- * disagrees with.
+ * `px` is lamports per token x PRICE_SCALE and `baseQty` is tokens x
+ * BASE_SCALE, so their product over VALUE_DIV is lamports — the same currency
+ * as the quote balance and the entry. Mirrors `Position::equity` on-chain
+ * exactly; a client that computed this differently would show a winner the
+ * chain disagrees with, and dividing by BASE_SCALE alone put +29,813,639% on
+ * the screen of a position that was flat.
  */
 export const pnlBps = (position: PositionState, px: number, entry: number): number => {
   if (entry === 0) return 0;
-  const equity = position.quoteBalance + (position.baseQty * px) / BASE_SCALE;
+  const equity = position.quoteBalance + (position.baseQty * px) / VALUE_DIV;
   return Math.trunc(((equity - entry) * BPS) / entry);
 };

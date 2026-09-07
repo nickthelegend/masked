@@ -67,6 +67,9 @@ export default function MaskedApp() {
                 stake={duel.stake}
                 busy={duel.busy}
                 myAddress={duel.myAddress}
+                marketSymbol={duel.selectedMarket?.symbol}
+                marketMint={duel.selectedMarket?.mint}
+                marketImageUri={duel.selectedMarket?.imageUri}
                 onStart={duel.startMatch}
                 onJoin={duel.joinMatch}
                 onCancel={duel.cancelMatch}

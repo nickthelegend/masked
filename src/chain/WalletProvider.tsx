@@ -16,23 +16,36 @@ import { ConnectionProvider, WalletProvider as AdapterProvider } from '@solana/w
 import { SolflareWalletAdapter } from '@solana/wallet-adapter-solflare';
 import type { Adapter } from '@solana/wallet-adapter-base';
 import { ACTIVE_CLUSTER } from './config';
+import { LocalKeyWalletAdapter, LocalKeyWalletName } from './LocalKeyWallet';
 
 export interface MaskedWalletProviderProps {
   children: ReactNode;
 }
 
+/** Which wallets may reconnect themselves on load. See the provider below. */
+const autoConnect = async (adapter: Adapter): Promise<boolean> =>
+  adapter.name === LocalKeyWalletName;
+
 export default function MaskedWalletProvider({ children }: MaskedWalletProviderProps) {
-  const wallets = useMemo<Adapter[]>(
-    () => (Platform.OS === 'web' ? [new SolflareWalletAdapter()] : []),
-    []
-  );
+  const wallets = useMemo<Adapter[]>(() => {
+    if (Platform.OS !== 'web') return [];
+    const list: Adapter[] = [new SolflareWalletAdapter()];
+    // On a local validator, offer an in-page key as well. It signs real
+    // transactions with a real keypair — see LocalKeyWallet — and it is the
+    // only way to exercise the app end to end without an unlocked extension.
+    // The adapter itself refuses to exist on any other cluster.
+    if (ACTIVE_CLUSTER.name === 'local') list.push(new LocalKeyWalletAdapter());
+    return list;
+  }, []);
 
   return (
     <ConnectionProvider endpoint={ACTIVE_CLUSTER.l1}>
-      {/* autoConnect is off deliberately: Solflare's adapter opens its embedded
+      {/* Auto-connect, but not to Solflare: its adapter opens an embedded
           web-wallet iframe the moment it connects, which would take over the
-          screen on first load. Connecting is user-initiated. */}
-      <AdapterProvider wallets={wallets} autoConnect={false}>
+          screen on first load. Everything else reconnects on its own, so a
+          refresh mid-round comes back to the round instead of to a
+          disconnected lobby. */}
+      <AdapterProvider wallets={wallets} autoConnect={autoConnect}>
         {children}
       </AdapterProvider>
     </ConnectionProvider>

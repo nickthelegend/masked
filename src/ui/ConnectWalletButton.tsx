@@ -1,6 +1,7 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import PixelButton from './PixelButton';
+import WalletPicker from './WalletPicker';
 import type { ButtonTone } from './PixelButton';
 
 export interface ConnectWalletButtonProps {
@@ -24,19 +25,52 @@ export default function ConnectWalletButton({
   flex,
   tone = 'gold',
 }: ConnectWalletButtonProps) {
-  const { publicKey, connected, connecting, disconnect, select, wallet, wallets } = useWallet();
+  const { publicKey, connected, connecting, connect, disconnect, select, wallet, wallets } =
+    useWallet();
   const [busy, setBusy] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [wantConnect, setWantConnect] = useState(false);
+
+  const choose = useCallback(
+    (name: string) => {
+      setPicking(false);
+      // Selection only tells the provider which adapter to use. With
+      // autoConnect off — and it is off, so Solflare's iframe does not open
+      // itself on page load — nothing then connects, so the wallet sat
+      // selected-but-disconnected and the button kept saying CONNECT. The
+      // effect below finishes the job once the provider has the adapter.
+      select(name as Parameters<typeof select>[0]);
+      setWantConnect(true);
+    },
+    [select]
+  );
+
+  useEffect(() => {
+    if (!wantConnect || !wallet || connected || connecting) return undefined;
+    setWantConnect(false);
+    // Deferred a tick on purpose. React runs child effects before parent ones,
+    // so connecting straight from here happens before the provider above has
+    // attached its listeners to the freshly selected adapter — the adapter
+    // connects, emits, and the provider never hears it, leaving the app
+    // showing CONNECT next to a wallet that is connected.
+    const id = setTimeout(() => {
+      connect().catch(() => {
+        // A refused connect is a normal outcome, and the adapter reports it.
+      });
+    }, 0);
+    return () => clearTimeout(id);
+  }, [wantConnect, wallet, connected, connecting, connect]);
 
   const onPress = useCallback(async () => {
     setBusy(true);
     try {
       if (connected) {
         await disconnect();
-      } else if (!wallet && wallets.length > 0) {
-        // Selecting is enough — the adapter connects on selection. Doing this
-        // on press rather than on mount keeps Solflare's iframe from opening
-        // itself the instant the page loads.
-        select(wallets[0].adapter.name);
+      } else if (wallets.length === 1) {
+        choose(wallets[0].adapter.name);
+      } else if (wallets.length > 1) {
+        // More than one: ask. Picking the first for them was silently wrong.
+        setPicking(true);
       }
     } catch {
       // The adapter surfaces its own modal/errors; a rejected connect is a
@@ -44,7 +78,7 @@ export default function ConnectWalletButton({
     } finally {
       setBusy(false);
     }
-  }, [connected, disconnect, select, wallet, wallets]);
+  }, [choose, connected, disconnect, wallets]);
 
   const noWallet = wallets.length === 0;
   const label = noWallet
@@ -54,15 +88,26 @@ export default function ConnectWalletButton({
       : 'CONNECT';
 
   return (
-    <PixelButton
-      label={label}
-      size={size}
-      padY={padY}
-      flex={flex}
-      tone={connected ? 'quiet' : tone}
-      disabled={noWallet}
-      loading={busy || connecting}
-      onPress={onPress}
-    />
+    <>
+      <PixelButton
+        label={label}
+        size={size}
+        padY={padY}
+        flex={flex}
+        tone={connected ? 'quiet' : tone}
+        disabled={noWallet}
+        loading={busy || connecting}
+        onPress={onPress}
+      />
+      <WalletPicker
+        visible={picking}
+        wallets={wallets.map((w) => ({
+          name: w.adapter.name,
+          ready: w.readyState === 'Installed',
+        }))}
+        onSelect={choose}
+        onClose={() => setPicking(false)}
+      />
+    </>
   );
 }

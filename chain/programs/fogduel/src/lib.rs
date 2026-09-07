@@ -79,6 +79,7 @@ pub mod fogduel {
         m.joiner = None;
         m.mint = mint;
         m.match_id = match_id;
+        m.created_ts = Clock::get()?.unix_timestamp;
         m.start_ts = 0;
         m.duration = duration;
         m.entry = entry;

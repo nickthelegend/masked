@@ -101,7 +101,14 @@ export default function BeachBackdrop({ animate = true, height }: BeachBackdropP
   const stripes = Math.ceil(Math.max(0, resolved - s(SAND_TOP)) / s(SAND_STRIPE)) + 1;
 
   return (
-    <View style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]} onLayout={onLayout}>
+    // overflow hidden, because the wave rows are a fixed count of tiles laid
+    // out from left:-120 and run past the right edge on any narrow viewport.
+    // Unclipped, a decorative background made the whole page scroll sideways —
+    // 2156px of document inside a 1280px window on /play.
+    <View
+      style={[StyleSheet.absoluteFill, { pointerEvents: 'none', overflow: 'hidden' }]}
+      onLayout={onLayout}
+    >
       {SKY.map(([i, top]) => band(top, BAND_HEIGHT, color.sunset[i], `sky-${top}`))}
 
       <View

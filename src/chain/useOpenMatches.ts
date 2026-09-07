@@ -18,7 +18,7 @@ export interface OpenMatch {
   entry: number;
   duration: number;
   matchId: number;
-  /** Seconds since the match was opened, from the creator's clock. */
+  /** Seconds since the match was opened, from the chain's own clock. */
   ageSecs: number;
 }
 
@@ -65,9 +65,7 @@ export function useOpenMatches(pollMs = 4000) {
             entry: m.account.entry.toNumber(),
             duration: m.account.duration.toNumber(),
             matchId: m.account.matchId.toNumber(),
-            // match_id is seeded from the creator's clock, so it doubles as an
-            // open-time for display purposes.
-            ageSecs: Math.max(0, now - Math.floor(m.account.matchId.toNumber() / 1000)),
+            ageSecs: Math.max(0, now - m.account.createdTs.toNumber()),
           }))
           .sort((a: OpenMatch, b: OpenMatch) => a.entry - b.entry);
 
