@@ -25,7 +25,7 @@ import { assertFogIntact } from '../chain/fog';
 import { FogduelClient, pnlBps, type MatchLeg, type MatchState, type PositionState } from '../chain/client';
 import { formatSolPrice, MAX_OPEN_AGE_SECS, VALUE_DIV } from '../chain/units';
 import type { TapeState } from '../chain/tape';
-import { buyImpact, sellImpact } from '../chain/book';
+import { buyImpact, quoteToBuyBase, sellImpact } from '../chain/book';
 import { useHeadToHead, describeRecord } from '../chain/useHeadToHead';
 import { fetchMemeMarkets, livePxFor, type TradableMarket } from '../chain/markets';
 import { mintSession, type ActiveSession } from '../chain/session';
@@ -1189,10 +1189,12 @@ export function useDuel(): Duel {
         await fill('sell', qty, markBefore);
       } else {
         // Buying back: `apply_fill`'s buy side consumes quote, so the size has
-        // to be converted at the mark. Rounded up, because covering slightly
-        // more than the notional is what actually clears the position.
+        // to be inverted through the curve rather than valued at the mark.
+        // Multiplying by the mark ignores the impact of the buy itself, and
+        // bought back less than was sold — a MAX close reported POSITION
+        // CLOSED with 0.8% of the short still open.
         const mark = Number(markBefore);
-        const quoteIn = Math.ceil((qty * mark) / VALUE_DIV);
+        const quoteIn = quoteToBuyBase(qty, mark, match.entry);
         const spend = Math.min(quoteIn, myPosition.quoteBalance);
         if (spend <= 0) {
           toast.error('NOT ENOUGH TO COVER', 'There is no quote left to buy the short back with.');

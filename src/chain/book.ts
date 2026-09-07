@@ -58,3 +58,30 @@ export function buyBaseOut(quoteIn: number, mark: number, entry: number): number
   if (px <= 0) return 0;
   return (quoteIn * VALUE_DIV) / px;
 }
+
+/**
+ * Quote needed to buy back exactly `baseOut`, given the posted mark.
+ *
+ * The inverse of `buyBaseOut`, and the client's mirror of `Book::buy_base`.
+ * Closing a short buys a known quantity of base, but `apply_fill`'s buy side
+ * consumes *quote* — so the amount has to be inverted through the curve rather
+ * than estimated at the mark.
+ *
+ * Estimating it left dust. Multiplying the size by the mark ignores the impact
+ * of the buy itself, so the quote sent bought slightly less base than was
+ * sold: a MAX close of a 2,934,955 short bought back 2,912,191 and reported
+ * POSITION CLOSED with 22,764 still open.
+ *
+ * From `Q * B = k` with `Q = entry * DEPTH` and `B = Q * VALUE_DIV / mark`:
+ *
+ *   quote_in = k / (B - baseOut) - Q  =  Q * baseOut / (B - baseOut)
+ */
+export function quoteToBuyBase(baseOut: number, mark: number, entry: number): number {
+  const Q = depthFor(entry);
+  if (Q <= 0 || mark <= 0 || baseOut <= 0) return 0;
+  const B = (Q * VALUE_DIV) / mark;
+  if (baseOut >= B) return 0; // more base than the curve holds
+  // Rounded up: the program floors the base it hands back, so a fraction short
+  // would leave exactly the dust this exists to avoid.
+  return Math.ceil((Q * baseOut) / (B - baseOut));
+}
