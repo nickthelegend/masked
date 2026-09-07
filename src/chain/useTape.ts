@@ -25,8 +25,11 @@ export interface RevealedTape {
   startTs: number;
   duration: number;
   /** Market identity, off the Match rather than the Tape. */
-  mint: PublicKey;
-  marketType: 'meme' | 'major';
+  // No `mint` or `marketType` here any more: a duel has two markets, and both
+  // are on the tape itself as `legA` and `legB`. Reading them off the Match
+  // account is what silently broke the page — those fields are gone, and
+  // `Object.keys(undefined)` threw into the catch, which reported a healthy
+  // cluster as unreachable.
 }
 
 const readOnlyWallet = {
@@ -91,9 +94,6 @@ export function useTape(address: string | null) {
           entry: rawMatch ? rawMatch.entry.toNumber() : 0,
           startTs: rawMatch ? rawMatch.startTs.toNumber() : 0,
           duration: rawMatch ? rawMatch.duration.toNumber() : 0,
-          mint: rawMatch ? rawMatch.mint : rawTape.mint,
-          marketType:
-            rawMatch && Object.keys(rawMatch.marketType)[0] === 'major' ? 'major' : 'meme',
         });
         setLoaded(true);
       } catch (e) {
