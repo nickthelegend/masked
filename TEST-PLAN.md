@@ -291,3 +291,35 @@ these are the items the old plan could not have covered.
 | S18 | replay handles shorts | a short and a liquidation replay to the chain's own bps | **P** |
 | S19 | fill labels | BUY/SELL/BUZZER/LIQUIDATED — never LONG/CLOSE, which a sell no longer means | **P** |
 | S20 | rate limits | a Jupiter 429 retries rather than blanking the market list | **P** |
+
+---
+
+## Re-execution — full pass on a rebuilt stack
+
+The plan was executed once, then executed again from top to bottom after the
+local chain had to be rebuilt from genesis. That rebuild was not planned: the
+validator was killed mid-snapshot-write when the machine's session ended, and
+**both** snapshot archives came back `IO error: incomplete frame`. The ledger
+was unrecoverable, so the second pass ran against a fresh chain — new genesis,
+redeployed program, re-seeded history, re-funded wallets.
+
+That turned out to be worth more than the state it cost. The second pass is the
+only one that exercised first-run conditions honestly:
+
+- **D1/D2/D3/D6** — a genuinely first-time visitor. The adapter mints a key only
+  after a wallet has been chosen, so a fresh origin really does show CONNECT,
+  really does offer exactly SOLFLARE and LOCAL KEY (DEV), and really does start
+  at 0.00 SOL. On a chain with history that state is unreachable.
+- **D7/D8** — the zero-balance preflight, measured on a wallet that had never
+  held anything: one toast at 997ms, no repeat, no TRANSACTION FAILED.
+- **L5** — verified in *both* states for the first time. Populated:
+  `1 DUEL · WOFI · 6MtTMn…ZVno v 5Tj6Hq…suoU · 0.20◎ · 3:10`. Empty:
+  `0 DUELS · Nothing running`, with expired-unsettled counted separately.
+- **`check:guards`** reported 7 refusals rather than 8, because on a chain
+  minutes old nothing is older than `MAX_OPEN_AGE` yet. The script skips that
+  case and says so instead of passing it vacuously — which is the behaviour you
+  want from a suite, and worth recording rather than smoothing over.
+
+Both passes agree. The one defect the second pass found that the first did not
+is recorded in its own commit: the margin cap rejected every MAX long from
+flat.
