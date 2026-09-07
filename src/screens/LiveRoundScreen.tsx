@@ -1,24 +1,25 @@
 import { useEffect, useRef } from 'react';
 import { Animated, Easing, Platform } from 'react-native';
 import {
+  ArenaChart,
   Badge,
   Box,
+  EndingIn,
   FillTape,
   Orb,
   orbStateForPnl,
   PixelButton,
+  PotentialEarnings,
+  RankRow,
   SizePicker,
   PixelPanel,
   PixelText,
   PnLOdometer,
-  PnLReadout,
   PotPill,
   Row,
-  RoundClock,
   FillReceipt,
   SettleProgress,
   Stack,
-  TapeChart,
   TokenLogo,
   color,
   space,
@@ -29,7 +30,14 @@ import { FRAME_MS, USE_NATIVE_DRIVER, useReducedMotion } from '../ui/motion';
 export interface LiveRoundScreenProps {
   secondsLeft: number;
   pot: number;
-  series: number[];
+  /**
+   * Your PnL curve, in percent — not the price tape.
+   *
+   * The arena plots what you have made, because that is what the round is
+   * scored on. A price line would be the same shape for both players and would
+   * say nothing about who is winning.
+   */
+  equity: number[];
   price: number;
   myPnl: number;
   positionLabel: string;
@@ -88,6 +96,19 @@ export interface LiveRoundScreenProps {
   } | null;
   /** Whether this cluster enforces that ACL at read time (TEE only). */
   teeEnforced?: boolean;
+  /** Your wallet, shortened, for the board row. */
+  myName?: string;
+  /** Which way you are facing. Theirs is sealed and is never passed in. */
+  mySide?: 'long' | 'short' | 'flat';
+  /** Their ticker and mint — read off the match account, not the position. */
+  opponentMarket?: string;
+  opponentMarketMint?: string;
+  /** What taking this round pays, net of rake, already formatted. */
+  payout?: string;
+  /** Trophies a win is worth. */
+  trophies?: number;
+  /** Seconds since the round opened, for the chart's x-axis. */
+  elapsed?: number;
 }
 
 /**
@@ -97,7 +118,7 @@ export interface LiveRoundScreenProps {
 export default function LiveRoundScreen({
   secondsLeft,
   pot,
-  series,
+  equity,
   price,
   myPnl,
   positionLabel,
@@ -124,6 +145,13 @@ export default function LiveRoundScreen({
   lastFill = null,
   settleStages,
   teeEnforced = false,
+  myName = 'YOU',
+  mySide = 'flat',
+  opponentMarket = '',
+  opponentMarketMint = '',
+  payout = '',
+  trophies = 0,
+  elapsed = 0,
 }: LiveRoundScreenProps) {
   /**
    * The opponent's fill count, beating when it changes.
@@ -188,6 +216,8 @@ export default function LiveRoundScreen({
 
   return (
     <Stack pad={space.md} gap={space.md}>
+      {/* Market, clock, pot. The clock is the loudest thing on the round, so
+          it sits alone under the header rather than inside it. */}
       <Row justify="space-between" bg={color.ink} outline={color.panelLight} pad={space.sm + 2}>
         <Row gap={space.sm} align="center">
           {/* The orb is a glanceable read on your position — green when up,
@@ -198,14 +228,15 @@ export default function LiveRoundScreen({
             {market}
           </PixelText>
         </Row>
-        <RoundClock seconds={secondsLeft} />
         <PotPill amount={pot} tone={color.green} />
       </Row>
 
-      <PixelPanel flat bg={color.chartBg} pad={space.sm}>
+      <EndingIn seconds={secondsLeft} />
+
+      <PixelPanel flat bg={color.chartBg} pad={0}>
         <Stack gap={space.xs}>
-          <TapeChart mine={series} height={200} baseline />
-          <Row justify="space-between">
+          <ArenaChart series={equity} height={200} elapsed={elapsed} />
+          <Row justify="space-between" padX={space.sm} padY={space.xs}>
             <Row gap={space.xs} align="center">
               <PixelText variant="bodySmall">MARK {priceLabel ?? price}</PixelText>
               <PixelText variant="bodySmall" size={9} color={color.textFaint}>
@@ -221,6 +252,9 @@ export default function LiveRoundScreen({
           </Row>
         </Stack>
       </PixelPanel>
+
+      {/* A conditional, not a standing. See PotentialEarnings. */}
+      {payout ? <PotentialEarnings sol={payout} trophies={trophies} /> : null}
 
       {/* Shown from the moment settlement starts, not from the clock hitting
           zero: the two are close but not the same, and it is the settlement
@@ -240,27 +274,47 @@ export default function LiveRoundScreen({
         />
       ) : null}
 
-      <Row gap={space.sm} align="stretch">
-        <PnLReadout panel flex={1} label="YOU" value={myPnl} note={positionLabel} />
-        <Stack flex={1} gap={space.xs}>
-          <Animated.View style={{ transform: [{ scale: beat }] }}>
-            <PnLReadout
-              panel
-              label={opponentName.toUpperCase()}
-              fogged
-              note={opponentFills === null ? 'FOGGED · FILLS HIDDEN' : `FOGGED · ${opponentFills} FILLS`}
-              accent={color.panelLight}
-            />
-          </Animated.View>
-          {/* Says exactly what is true: sealed means the ACL is on chain;
-              enforced means the rollup will refuse a read against it. */}
+      {/* The board. Both rows are unranked while the round runs — see the
+          `rank: null` note on RankRow — and the opponent's PnL and side are
+          the two fields the ACL refuses, so they are the two that are fogged.
+          Their ticker is not fogged: it is written in the match account. */}
+      <Stack gap={space.sm}>
+        <RankRow
+          rank={null}
+          lastRank={2}
+          name={myName}
+          you
+          pnl={myPnl}
+          side={mySide}
+          token={marketMint ? { mint: marketMint, symbol: market, uri: marketImageUri } : null}
+          liquidated={liquidated?.me}
+        />
+        <Animated.View style={{ transform: [{ scale: beat }] }}>
+          <RankRow
+            rank={null}
+            lastRank={2}
+            name={opponentName.toUpperCase()}
+            pnl={null}
+            side={null}
+            token={
+              opponentMarketMint ? { mint: opponentMarketMint, symbol: opponentMarket, uri: null } : null
+            }
+            liquidated={liquidated?.opponent}
+          />
+        </Animated.View>
+        {/* Says exactly what is true: sealed means the ACL is on chain;
+            enforced means the rollup will refuse a read against it. */}
+        <Row justify="space-between" align="center" gap={space.sm}>
           <Badge
             label={sealed ? (teeEnforced ? 'SEALED · TEE ENFORCED' : 'SEALED · ACL ON CHAIN') : 'NOT SEALED'}
             tone={sealed ? (teeEnforced ? 'live' : 'soon') : 'loss'}
             variant="tabLabel"
           />
-        </Stack>
-      </Row>
+          <PixelText variant="tabLabel" size={7} color={color.textFaint}>
+            {`${positionLabel} · ${opponentFills === null ? 'THEIR FILLS HIDDEN' : `THEIR FILLS ${opponentFills}`}`}
+          </PixelText>
+        </Row>
+      </Stack>
 
       {/* Size, then the trade. Impact is quadratic in size against a
           constant-product curve, so this is the decision the private book
@@ -275,16 +329,6 @@ export default function LiveRoundScreen({
           tone="live"
           variant="tabLabel"
         />
-      ) : null}
-
-      {/* Liquidation is public while the round runs — the only thing that is.
-          Position contents stay sealed either way; this says that a side is
-          out, not what it was holding. */}
-      {liquidated?.me ? (
-        <Badge label="LIQUIDATED · YOU ARE OUT" tone="loss" variant="tabLabel" />
-      ) : null}
-      {liquidated?.opponent ? (
-        <Badge label="OPPONENT LIQUIDATED" tone="win" variant="tabLabel" />
       ) : null}
 
       <Row gap={space.sm}>

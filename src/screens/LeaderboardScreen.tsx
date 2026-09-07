@@ -1,4 +1,4 @@
-import { Badge, LeaderRow, PixelText, Podium, Row, Stack, color, space } from '../ui';
+import { Badge, LeaderRow, PixelText, Podium, Row, Stack, TierBadge, color, space, tierFor } from '../ui';
 import { short } from '../chain/useTapes';
 import { usePlayerStats } from '../chain/usePlayerStats';
 import type { Place } from '../ui';
@@ -39,13 +39,19 @@ export default function LeaderboardScreen() {
 
       <Stack gap={space.sm}>
         {board.slice(3).map((row, i) => (
-          <LeaderRow
-            key={row.owner.toBase58()}
-            rank={i + 4}
-            name={short(row.owner)}
-            won={`+${(row.taken / 1e9).toFixed(2)}◎`}
-            wins={`${row.wins}W`}
-          />
+          <Row key={row.owner.toBase58()} align="center" gap={space.sm}>
+            <Stack flex={1}>
+              <LeaderRow
+                rank={i + 4}
+                name={short(row.owner)}
+                won={`+${(row.taken / 1e9).toFixed(2)}◎`}
+                wins={`${row.wins}W`}
+              />
+            </Stack>
+            {/* Derived from the same `wins` the row prints, so the chip and
+                the count can never disagree. */}
+            <TierBadge tier={tierFor(row.wins)} />
+          </Row>
         ))}
       </Stack>
 

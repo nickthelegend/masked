@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { ScrollView, TextInput, type ViewStyle } from 'react-native';
 import Stack from './Stack';
 import Row from './Row';
@@ -70,6 +71,16 @@ export default function MarketPicker({
   maxHeight = 260,
   style,
 }: MarketPickerProps) {
+  /** Tickers claimed by more than one mint in this list. */
+  const duplicated = useMemo(() => {
+    const seen = new Map<string, number>();
+    for (const m of markets) {
+      const k = m.symbol.toUpperCase();
+      seen.set(k, (seen.get(k) ?? 0) + 1);
+    }
+    return new Set([...seen].filter(([, n]) => n > 1).map(([k]) => k));
+  }, [markets]);
+
   return (
     <Stack gap={space.sm} style={style}>
       <MarketTabs tabs={TABS} active={kind} onChange={onKindChange} />
@@ -128,6 +139,7 @@ export default function MarketPicker({
               <MarketRow
                 key={m.mint}
                 {...m}
+                ambiguous={duplicated.has(m.symbol.toUpperCase())}
                 selected={m.mint === selectedMint}
                 onPress={() => onSelect(m)}
               />

@@ -9,6 +9,14 @@ import { border, color, pressedBevel, space } from './theme';
 export interface MarketRowProps {
   mint: string;
   symbol: string;
+  /**
+   * Drawn after the ticker when another row in the same list shares it.
+   *
+   * pump.fun tickers are not unique — four separate WOFI mints sit in the top
+   * six by market cap — so a list keyed on the symbol alone offers four
+   * identical-looking rows that trade completely different tokens.
+   */
+  ambiguous?: boolean;
   name: string;
   imageUri?: string | null;
   /** Already formatted — this component does not know about price scales. */
@@ -31,6 +39,7 @@ export interface MarketRowProps {
 export default function MarketRow({
   mint,
   symbol,
+  ambiguous = false,
   name,
   imageUri,
   price,
@@ -59,7 +68,7 @@ export default function MarketRow({
               {symbol}
             </PixelText>
             <PixelText variant="bodySmall" size={10} color={color.textFaint} numberOfLines={1}>
-              {name}
+              {ambiguous ? `${name} · ${mint.slice(0, 4)}…${mint.slice(-4)}` : name}
             </PixelText>
           </Stack>
 

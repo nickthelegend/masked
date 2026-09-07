@@ -326,21 +326,52 @@ flat.
 
 ---
 
-## Open, not fixed: the crank runs about five times too often
+## Fixed: the crank ran about five times too often
 
-Not a plan item, found while auditing network behaviour. Recording it because
-it is real, measured, and **not resolved**.
+Not a plan item, found while auditing network behaviour. Recorded through two
+sessions as **open** because the cause had not been identified. It has now been
+found, fixed and re-measured in the running app.
 
-**Symptom.** During a live round the price crank effect re-subscribes many times
-a second instead of once for the round, so `livePxFor` goes out at roughly
-1–2 requests a second against a designed 0.2 (`MARK_CRANK_MS = 5000`).
+**Symptom.** During a live round the price crank effect re-subscribed roughly
+once a second instead of once for the round, so `livePxFor` went out at about
+1 request a second against a designed 0.2 (`MARK_CRANK_MS = 5000`), and each
+rebuild also opened a gate websocket.
+
+**The cause.** The crank effect's dependency array still listed `match` — the
+object. `setMatch` runs once a second with a freshly decoded object, so the
+effect tore itself down and rebuilt once a second, and every rebuild ran
+`tick()` immediately before creating an interval that was cleared before it
+could ever fire. The five-second heartbeat never once fired at five seconds.
+
+This is the same defect the doc comment on `matchRef` describes, and the same
+one already fixed in the sibling poll effect at `useDuel.ts:520` — which is
+keyed on `[client, matchKey, phase, meKey]`. The crank was simply never
+converted. The fix is that same dependency list.
+
+**Why it took three sessions.** Every measurement was keyed on the interval's
+*delay*, and two `setInterval(…, 5000)` call sites share it, so the counts
+conflated the crank with the balance poll. Fingerprinting by the callback's
+source text separated them immediately: the lobby, which runs the balance poll
+but not the crank, created **zero** 5s intervals in 25s, which placed the churn
+entirely in the crank. A later measurement that appeared to show a healthy
+0.1/s was itself an artifact — the instrumentation had been installed after the
+duel-screen chunk had already captured `fetch` and `setInterval`, so it saw
+almost nothing. Instrumentation must be installed on a fresh page load, before
+the screen's chunk is fetched.
 
 **Measured, one tab, live round:**
 
-| | 5s timers created | market requests |
-|---|---|---|
-| before any fix | 63 in 25s | 1.4/s |
-| after three identity fixes | 158 in 30s | 2.1/s |
+| | 5s intervals created | poller intervals created | market requests |
+|---|---|---|---|
+| before any fix | 63 in 25s | — | 1.4/s |
+| after three identity fixes | 158 in 30s | — | 2.1/s |
+| instrumented properly, before this fix | 47 sockets in 110s | 31 in 110s | 1.0/s |
+| **after this fix** | **5 in 25s** | **0** | **0.2/s** |
+
+0.2/s is the designed rate exactly — one crank per five seconds. The five
+remaining timers are web3.js websocket heartbeats, one per `crankPrice`
+confirmation; they are opened and closed in pairs (`_wsOnClose` clears the
+heartbeat) and the count is stable across windows rather than growing.
 
 **What was fixed along the way** (all real, all committed):
 
@@ -349,20 +380,13 @@ a second instead of once for the round, so `livePxFor` goes out at roughly
 - The client memo depended on `signTransaction` / `signAllTransactions` /
   `signMessage`, which `useWallet()` re-creates most renders — rebuilding the
   whole `FogduelClient` and its `Connection`s constantly.
-- The crank and balance effects keyed on the `match` and `publicKey` objects;
-  the live poll replaces the match object once a second.
+- The balance effect keyed on the `publicKey` object.
+- **The crank effect keyed on the `match` object** — the one that was actually
+  causing the churn.
 
-**What is still wrong.** After all three, the crank's dependencies are a memo
-and three strings, and it still churns. The remaining cause is not identified,
-and the numbers got worse rather than better across the session, which hints at
-timers accumulating rather than simply re-subscribing. Two `setInterval(…5000)`
-call sites in `useDuel.ts` (the crank and the balance poll) share a delay, so
-any counter keyed on delay alone conflates them — that confounded several
-measurements here and should be the first thing a follow-up separates.
-
-**What it does not affect.** Correctness. Across every round driven after these
-changes: the mark tracks the market, fills execute at exactly the quoted impact
-(1.56% quoted, 1.5625% realised), rounds settle, PnL matches the chain's own
-bps, and all 15 check suites pass. This is load, not behaviour — but it is
-load on two third-party APIs, and it is the likeliest reason Jupiter began
+**What it never affected.** Correctness. Across every round driven during the
+investigation: the mark tracks the market, fills execute at exactly the quoted
+impact (1.56% quoted, 1.5625% realised), rounds settle, PnL matches the chain's
+own bps, and all 15 check suites pass. It was load, not behaviour — and it was
+load on two third-party APIs, which is the likeliest reason Jupiter began
 answering 429 earlier in the build.

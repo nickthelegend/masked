@@ -3,9 +3,9 @@ import { View } from 'react-native';
 import {
   Badge,
   PixelButton,
+  ResultBoard,
   PixelPanel,
   PixelText,
-  PnLOdometer,
   RevealCurtain,
   RoundTimeline,
   Row,
@@ -16,7 +16,8 @@ import {
   solExact,
   space,
 } from '../ui';
-import { marketMove, replayEquity, type TapeState } from '../chain/tape';
+import { carriedSide, marketMove, replayEquity, type TapeState } from '../chain/tape';
+import { TROPHIES_PER_WIN } from './data';
 
 export interface RevealScreenProps {
   won: boolean;
@@ -40,6 +41,8 @@ export interface RevealScreenProps {
   /** Null if it was never readable — see useDuel. The tape supersedes it. */
   opponentFills: number | null;
   opponentName: string;
+  /** The reader's own wallet, shortened, for the board row. */
+  myName?: string;
   /** The record against this opponent, counted off chain. Null while unknown. */
   record?: string | null;
   onRematch: () => void;
@@ -78,6 +81,7 @@ export default function RevealScreen({
   myFills,
   opponentFills,
   opponentName,
+  myName = 'YOU',
   record,
   onRematch,
   onShare,
@@ -145,6 +149,40 @@ export default function RevealScreen({
   const myLeg = tape ? (isPlayerA ? tape.legA : tape.legB) : null;
   const theirLeg = tape ? (isPlayerA ? tape.legB : tape.legA) : null;
 
+  /**
+   * The two standings, best PnL first.
+   *
+   * Ranked on PnL rather than on `won`, and then cross-checked: the program
+   * settles on the same comparison, so if these ever disagreed it would mean
+   * the board was describing a different round than the pot did.
+   */
+  const standings = useMemo(() => {
+    const myFillList = tape ? (isPlayerA ? tape.fillsA : tape.fillsB) : [];
+    const theirFillList = tape ? (isPlayerA ? tape.fillsB : tape.fillsA) : [];
+    const mine = {
+      rank: 0,
+      name: myName,
+      you: true,
+      pnl: myPnl,
+      // Nothing is sealed once the tape is written, so the side is read off it
+      // rather than fogged. Null only while the tape has not arrived.
+      side: tape ? carriedSide(myFillList) : null,
+      token: myLeg ? { mint: myLeg.mint.toBase58(), symbol: myLeg.symbol } : null,
+      liquidated: tape ? (isPlayerA ? tape.liquidatedA : tape.liquidatedB) : false,
+    };
+    const theirs = {
+      rank: 0,
+      name: opponentName.toUpperCase(),
+      you: false,
+      pnl: opponentPnl,
+      side: tape ? carriedSide(theirFillList) : null,
+      token: theirLeg ? { mint: theirLeg.mint.toBase58(), symbol: theirLeg.symbol } : null,
+      liquidated: tape ? (isPlayerA ? tape.liquidatedB : tape.liquidatedA) : false,
+    };
+    const ordered = myPnl >= opponentPnl ? [mine, theirs] : [theirs, mine];
+    return ordered.map((e, i) => ({ ...e, rank: i + 1 }));
+  }, [myPnl, opponentPnl, myLeg, theirLeg, opponentName, myName, tape, isPlayerA]);
+
   return (
     <View>
     <RevealCurtain
@@ -189,22 +227,25 @@ export default function RevealScreen({
         </Stack>
       </PixelPanel>
 
-      {/* Both figures roll up to their settled values as the tape unseals. */}
-      <Row gap={space.sm} align="stretch">
-        <PixelPanel flat accent={color.cyan} flex={1}>
-          <Stack gap={space.xs}>
-            <PixelText variant="bodySmall" color={color.cyan}>YOU</PixelText>
-            <PnLOdometer value={unsealed ? myPnl : 0} size={13} signed />
-            <PixelText variant="bodySmall" color={color.textDim}>{shownMyFills} FILLS</PixelText>
-          </Stack>
-        </PixelPanel>
-        <PixelPanel flat accent={color.magenta} flex={1}>
-          <Stack gap={space.xs}>
-            <PixelText variant="bodySmall" color={color.magenta}>{opponentName.toUpperCase()}</PixelText>
-            <PnLOdometer value={unsealed ? opponentPnl : 0} size={13} signed />
-            <PixelText variant="bodySmall" color={color.textDim}>{shownTheirFills} FILLS</PixelText>
-          </Stack>
-        </PixelPanel>
+      {/* The board. Nothing is fogged here: `settle_match` publishes both legs
+          and both fill lists, so every field the live round refused is now on
+          chain and readable by anyone. Held back until the curtain tears. */}
+      {unsealed ? (
+        <ResultBoard
+          entries={standings}
+          settledAt={startTs + duration}
+          entryFee={sol(stake)}
+          yourRank={won ? 1 : 2}
+          trophies={won ? TROPHIES_PER_WIN : 0}
+          missedBy={won ? null : myPnl - opponentPnl}
+          paid={won ? solExact(pot) : null}
+        />
+      ) : null}
+
+      <Row gap={space.sm} justify="center">
+        <PixelText variant="bodySmall" size={9} color={color.textFaint}>
+          {`YOUR FILLS ${shownMyFills} · THEIRS ${shownTheirFills}`}
+        </PixelText>
       </Row>
 
       {/* One line per market, because there are two of them now. "Both traded a

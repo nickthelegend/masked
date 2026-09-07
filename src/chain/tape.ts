@@ -267,3 +267,20 @@ export function marketMove(
 
   return { openPx, closePx, bps: Math.trunc(((closePx - openPx) / openPx) * 10_000) };
 }
+
+/**
+ * Which way a player was facing when the buzzer went.
+ *
+ * Net signed base across their opening fills only — a `settle` or
+ * `liquidation` fill is the round closing them out, not a direction they
+ * chose, and counting it would report every finished player as flat. This is
+ * the position that actually produced their PnL.
+ */
+export function carriedSide(fills: TapeFill[]): 'long' | 'short' | 'flat' {
+  let net = 0;
+  for (const f of fills) {
+    if (f.side === 'buy') net += f.qty;
+    else if (f.side === 'sell') net -= f.qty;
+  }
+  return net > 0 ? 'long' : net < 0 ? 'short' : 'flat';
+}

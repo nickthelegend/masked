@@ -1,4 +1,20 @@
-import { Badge, MatchRow, Orb, PixelButton, PixelText, Row, Stack, TokenLogo, color, sol, space } from '../ui';
+import {
+  Badge,
+  Box,
+  MatchRow,
+  Orb,
+  PixelButton,
+  PixelText,
+  Row,
+  Stack,
+  TokenLogo,
+  VersusCard,
+  border,
+  color,
+  radius,
+  sol,
+  space,
+} from '../ui';
 import { short } from '../chain/useTapes';
 import { MAX_OPEN_AGE_SECS } from '../chain/units';
 import { useOpenMatches } from '../chain/useOpenMatches';
@@ -42,11 +58,50 @@ export default function MatchmakingScreen({
 
   return (
     <Stack pad={space.lg} gap={space.lg} align="center">
-      <PixelText variant="numeric" size={12} color={color.yellow}>
-        MATCHING...
+      <PixelText variant="h2" size={13} color={color.white}>
+        MATCHMAKING
+      </PixelText>
+      <PixelText variant="tabLabel" size={8} color={color.yellow}>
+        1 VS 1
       </PixelText>
 
-      <Orb size={110} state="fog" />
+      {/* You, and the empty chair. The right-hand card stays a fogged orb
+          until somebody takes it — there is no opponent to name yet, and
+          naming a placeholder is the one thing a matchmaking screen must not
+          do on a game whose whole premise is not knowing who is opposite. */}
+      <Row align="center" gap={space.md} width="100%">
+        <VersusCard name={myAddress ? `${myAddress.slice(0, 6)}…` : 'YOU'} accent={color.cyan} you />
+        <Box
+          width={38}
+          height={38}
+          round={radius.pill}
+          bg={color.red}
+          outline={color.ink}
+          outlineWidth={border.base}
+          align="center"
+          justify="center"
+        >
+          <PixelText variant="h2" size={12} color={color.white}>
+            VS
+          </PixelText>
+        </Box>
+        <Stack flex={1} align="center" gap={space.sm}>
+          <Box
+            pad={space.md}
+            bg={color.panel}
+            round={radius.card}
+            outline={color.panelLight}
+            outlineWidth={border.base}
+            align="center"
+            width="100%"
+          >
+            <Orb size={62} state="fog" />
+          </Box>
+          <PixelText variant="tabLabel" size={8} color={color.textFaint}>
+            WAITING…
+          </PixelText>
+        </Stack>
+      </Row>
 
       {/* The market the player actually picked. This used to print a fixed
           "$FOG" from a demo mint, whatever they had chosen. */}

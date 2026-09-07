@@ -100,6 +100,8 @@ export interface Duel {
   position: { px: number } | null;
   myPnl: number;
   positionLabel: string;
+  /** Which way you are facing, for the chips that draw a side. */
+  mySide: 'long' | 'short' | 'flat';
   fills: Fill[];
   opponentName: string;
   opponentPnl: number;
@@ -129,6 +131,9 @@ export interface Duel {
   sealed: boolean;
   /** Ticker of the market being fought over, as written on chain. */
   market: string;
+  /** Their ticker and mint. Public — see `opponentLeg`. */
+  opponentMarket: string;
+  opponentMarketMint: string;
   /** The mint being traded, for the logo. */
   marketMint: string;
   /** The market's logo, when its feed publishes one. */
@@ -611,7 +616,15 @@ export function useDuel(): Duel {
       ac.abort();
       clearInterval(id);
     };
-  }, [client, match, phase, wallet.publicKey]);
+    // Keyed on strings, for the reason spelled out on `matchRef`: `setMatch`
+    // hands back a freshly decoded object once a second, so listing `match`
+    // here tore this interval down and rebuilt it once a second — and each
+    // rebuild ran `tick()` immediately. That is the same defect the comment
+    // above describes, still live in the effect it was written about: the
+    // five-second heartbeat was really firing about five times a second,
+    // opening a gate websocket per rebuild. `wallet.publicKey` is an object
+    // too, and is captured at setup rather than subscribed to.
+  }, [client, matchKey, phase, meKey]);
 
   /**
    * Settle this player's own abandoned round.
@@ -1413,6 +1426,15 @@ export function useDuel(): Duel {
    */
   /** My side's market. Null in the lobby, where there is no match yet. */
   const myLeg = useMemo(() => legFor(match, wallet.publicKey ?? null), [match, wallet.publicKey]);
+  /**
+   * Their side's market.
+   *
+   * Public, and deliberately so: `join_match` writes the joiner's leg into the
+   * match account on L1, where any RPC can read it. Only the *position* is
+   * sealed. Withholding the ticker here would imply the chain keeps a secret
+   * it does not keep.
+   */
+  const opponentLeg = useMemo(() => legFor(match, opponentKey), [match, opponentKey]);
 
   const sizeNote = useMemo(() => {
     if (!match) return undefined;
@@ -1454,12 +1476,20 @@ export function useDuel(): Duel {
     series,
     equity,
     price,
-    position: myPosition && myPosition.baseQty > 0 ? { px: myPosition.avgPx } : null,
+    position: myPosition && myPosition.baseQty !== 0 ? { px: myPosition.avgPx } : null,
     myPnl,
+    // Both directions. This tested `baseQty > 0`, so every short — the whole
+    // half of the product added in v2 — reported itself as FLAT while it was
+    // open, on the one readout whose job is to say what you are holding.
     positionLabel:
-      myPosition && myPosition.baseQty > 0
-        ? `LONG FROM ${formatSolPrice(myPosition.avgPx)}`
+      myPosition && myPosition.baseQty !== 0
+        ? `${myPosition.baseQty > 0 ? 'LONG' : 'SHORT'} FROM ${formatSolPrice(myPosition.avgPx)}`
         : 'FLAT',
+    mySide: ((myPosition?.baseQty ?? 0) > 0
+      ? 'long'
+      : (myPosition?.baseQty ?? 0) < 0
+        ? 'short'
+        : 'flat') as 'long' | 'short' | 'flat',
     fills,
     // Whichever side of the match is not you. It used to name the joiner and
     // nobody else, so a player who had *joined* someone's match spent the whole
@@ -1486,6 +1516,8 @@ export function useDuel(): Duel {
       ? selectedMarket.imageUri
       : null,
     marketSource: myLeg?.marketType === 'major' ? 'jupiter' : 'pump.fun',
+    opponentMarket: opponentLeg?.symbol || (opponentLeg ? marketLabel(opponentLeg.mint) : ''),
+    opponentMarketMint: opponentLeg?.mint.toBase58() ?? '',
     // In SOL, not USD: the entry, the pot and the PnL are all lamports, so a
     // mark in dollars would be the only number on the screen in a different
     // currency. The picker quotes USD, where market cap is what identifies a

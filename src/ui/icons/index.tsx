@@ -158,6 +158,177 @@ const SOUND_OFF = [
   '............',
 ];
 
+/** A cup with two handles — first place, and the trophy counter in the HUD. */
+const TROPHY = [
+  '............',
+  '..########..',
+  '##.######.##',
+  '##.######.##',
+  '##.######.##',
+  '.#.######.#.',
+  '...######...',
+  '....####....',
+  '.....##.....',
+  '...######...',
+  '..########..',
+  '............',
+];
+
+/** A skull — last place. The counterpart to TROPHY on a result board. */
+const SKULL = [
+  '............',
+  '..########..',
+  '.##########.',
+  '.##########.',
+  '.##..##..##.',
+  '.##..##..##.',
+  '.##########.',
+  '..##.##.##..',
+  '..########..',
+  '..#.#..#.#..',
+  '............',
+  '............',
+];
+
+/** A struck coin — the balance chip. */
+const COIN = [
+  '............',
+  '...######...',
+  '..########..',
+  '.###.##.###.',
+  '.##..##..##.',
+  '.##.###..##.',
+  '.##..###.##.',
+  '.##..##..##.',
+  '.###.##.###.',
+  '..########..',
+  '...######...',
+  '............',
+];
+
+/** A left arrow — back out of a screen. */
+const BACK = [
+  '............',
+  '............',
+  '.....##.....',
+  '....##......',
+  '...##.......',
+  '..##########',
+  '..##########',
+  '...##.......',
+  '....##......',
+  '.....##.....',
+  '............',
+  '............',
+];
+
+/** A plus — top up the balance. */
+const PLUS = [
+  '............',
+  '............',
+  '.....##.....',
+  '.....##.....',
+  '.....##.....',
+  '.##########.',
+  '.##########.',
+  '.....##.....',
+  '.....##.....',
+  '.....##.....',
+  '............',
+  '............',
+];
+
+/** A clock face — the countdown to the buzzer. */
+const CLOCK = [
+  '............',
+  '...######...',
+  '..#......#..',
+  '.#....#...#.',
+  '#.....#....#',
+  '#.....#....#',
+  '#.....####.#',
+  '#..........#',
+  '.#........#.',
+  '..#......#..',
+  '...######...',
+  '............',
+];
+
+/** A filled up-caret — a long. */
+const CARET_UP = [
+  '............',
+  '............',
+  '.....##.....',
+  '....####....',
+  '...######...',
+  '..########..',
+  '.##########.',
+  '############',
+  '............',
+  '............',
+  '............',
+  '............',
+];
+
+/** A filled down-caret — a short. */
+const CARET_DOWN = [
+  '............',
+  '............',
+  '............',
+  '............',
+  '############',
+  '.##########.',
+  '..########..',
+  '...######...',
+  '....####....',
+  '.....##.....',
+  '............',
+  '............',
+];
+
+/** A crown — the tier badge and the match winner. */
+const CROWN = [
+  '............',
+  '............',
+  '#..........#',
+  '#....##....#',
+  '##...##...##',
+  '##.######.##',
+  '############',
+  '############',
+  '#.########.#',
+  '############',
+  '............',
+  '............',
+];
+
+/** A shut padlock — a sealed position. The fog, drawn. */
+const LOCK = [
+  '............',
+  '....####....',
+  '...##..##...',
+  '...##..##...',
+  '.##########.',
+  '.##########.',
+  '.####..####.',
+  '.####..####.',
+  '.##########.',
+  '.##########.',
+  '............',
+  '............',
+];
+
+export const TrophyIcon = make(TROPHY);
+export const SkullIcon = make(SKULL);
+export const CoinIcon = make(COIN);
+export const BackIcon = make(BACK);
+export const PlusIcon = make(PLUS);
+export const ClockIcon = make(CLOCK);
+export const CaretUpIcon = make(CARET_UP);
+export const CaretDownIcon = make(CARET_DOWN);
+export const CrownIcon = make(CROWN);
+export const LockIcon = make(LOCK);
+
 export const FeedIcon = make(FEED);
 export const RankIcon = make(RANK);
 export const DuelIcon = make(DUEL);
@@ -181,6 +352,16 @@ export const ICONS = {
   menu: MenuIcon,
   soundOn: SoundOnIcon,
   soundOff: SoundOffIcon,
+  trophy: TrophyIcon,
+  skull: SkullIcon,
+  coin: CoinIcon,
+  back: BackIcon,
+  plus: PlusIcon,
+  clock: ClockIcon,
+  caretUp: CaretUpIcon,
+  caretDown: CaretDownIcon,
+  crown: CrownIcon,
+  lock: LockIcon,
 } as const;
 
 export type IconName = keyof typeof ICONS;

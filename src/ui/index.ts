@@ -93,3 +93,14 @@ export {
   useSoundEnabled,
   type SoundName,
 } from './sound';
+
+/* arena — the PvP surfaces */
+export { default as HudBar, type HudBarProps } from './HudBar';
+export { default as EndingIn, type EndingInProps } from './EndingIn';
+export { default as VersusCard, type VersusCardProps } from './VersusCard';
+export { default as MatchFound, type MatchFoundProps } from './MatchFound';
+export { default as RankRow, type RankRowProps, type RowSide } from './RankRow';
+export { default as PotentialEarnings, type PotentialEarningsProps } from './PotentialEarnings';
+export { default as ArenaChart, type ArenaChartProps } from './ArenaChart';
+export { default as ResultBoard, type ResultBoardProps, type ResultEntry } from './ResultBoard';
+export { default as TierBadge, type TierBadgeProps, type Tier, TIERS, TIER_AT, tierFor } from './TierBadge';

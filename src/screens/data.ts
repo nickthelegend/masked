@@ -47,6 +47,15 @@ export const ROUND_SECONDS =
 export const RAKE = 0.02;
 
 /**
+ * Trophies a duel is worth.
+ *
+ * A display counter, not a chain value: the program records wins, and this is
+ * the multiplier the arena prints them with. Kept here so the live round and
+ * the result board cannot disagree about what a win pays.
+ */
+export const TROPHIES_PER_WIN = 1000;
+
+/**
  * The round length, written out for prose and for captions.
  *
  * Both derive from ROUND_SECONDS rather than repeating a number. The marketing
