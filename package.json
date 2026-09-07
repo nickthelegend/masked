@@ -38,7 +38,8 @@
     "check:h2h": "tsx scripts/check-h2h.mts",
     "check:race": "tsx scripts/check-race.mts",
     "check:guards": "tsx scripts/check-guards.mts",
-    "check:session": "tsx scripts/check-session.mts"
+    "check:session": "tsx scripts/check-session.mts",
+    "check:short": "tsx scripts/check-short.mts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",
