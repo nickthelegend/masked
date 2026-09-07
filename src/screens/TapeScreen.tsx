@@ -18,7 +18,7 @@ import {
 } from '../ui';
 import { useTape } from '../chain/useTape';
 import { useHeadToHead } from '../chain/useHeadToHead';
-import { fillTokens, fillValue, replayEquity, type TapeFill } from '../chain/tape';
+import { fillTokens, fillValue, marketMove, replayEquity, type TapeFill } from '../chain/tape';
 import { formatSolPrice } from '../chain/units';
 import { short } from '../chain/useTapes';
 
@@ -195,6 +195,15 @@ export default function TapeScreen({ address }: TapeScreenProps) {
             </Stack>
           ))}
         </Row>
+
+        {(() => {
+          const move = marketMove(tape.fillsA, tape.fillsB, data.entry);
+          return move ? (
+            <PixelText variant="bodySmall" size={9} align="center" color={color.textDim}>
+              {`THE MARKET ITSELF MOVED ${move.bps >= 0 ? '+' : ''}${(move.bps / 100).toFixed(2)}% OVER THIS ROUND`}
+            </PixelText>
+          ) : null;
+        })()}
 
         {h2h && h2h.played > 1 ? (
           <PixelText variant="label" size={9} align="center" color={color.yellow}>

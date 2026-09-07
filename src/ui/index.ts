@@ -74,6 +74,7 @@ export {
   type SettleProgressProps,
   type SettleStageView,
 } from './SettleProgress';
+export { default as CommandList, type CommandListProps, type CommandEntry } from './CommandList';
 export {
   default as LifecycleFeed,
   type LifecycleFeedProps,

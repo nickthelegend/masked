@@ -12,6 +12,7 @@ import { PublicKey } from '@solana/web3.js';
 import {
   Badge,
   ConnectWalletButton,
+  CommandList,
   Divider,
   LifecycleFeed,
   LiveDuelRow,
@@ -74,7 +75,7 @@ export default function ProofScreen() {
   // what is true now; this reports how it got that way, which is the half
   // that would otherwise have to be believed.
   const traced = tapes[0] ?? null;
-  const { steps: proofSteps, loaded: proofLoaded } = useDuelProof(
+  const { steps: proofSteps, loaded: proofLoaded, cost: duelCost } = useDuelProof(
     traced ? new PK(traced.match) : null,
     traced?.winner ?? null,
     traced?.loser ?? null
@@ -299,6 +300,33 @@ export default function ProofScreen() {
         emptyLabel="NO SETTLED DUEL TO TRACE YET — PLAY ONE, OR RUN npm run seed"
       />
 
+      {/* What a whole duel costs, summed from the transactions above rather
+          than from a fee table. Only the base layer — the rollup's own fills
+          are cheaper still and are not in that list. */}
+      {duelCost.transactions > 0 ? (
+        <ProofPanel
+          title="WHAT ONE DUEL COSTS"
+          note="Network fees for every base-layer transaction in the duel traced above, read from the transactions themselves."
+          status={{ label: `${duelCost.transactions} TX`, tone: 'live' }}
+          rows={[
+            {
+              label: 'total network fees',
+              value: `${(duelCost.lamports / 1e9).toFixed(6)} SOL`,
+              mono: true,
+            },
+            {
+              label: 'per transaction',
+              value: `${(duelCost.lamports / duelCost.transactions / 1e9).toFixed(6)} SOL`,
+              mono: true,
+            },
+            {
+              label: 'against the pot',
+              value: `${((duelCost.lamports / 1e9 / 0.2) * 100).toFixed(3)}% of a 0.20◎ pot`,
+            },
+          ]}
+        />
+      ) : null}
+
       <TxFeed
         items={entries.map((e) => ({ ...e, url: explorerUrl(e.signature) }))}
         loaded={txLoaded}
@@ -319,12 +347,54 @@ export default function ProofScreen() {
             ? 'This is a TEE validator. Opponent reads are refused at ingress, and the ingress itself is attestable.'
             : 'Reads are gated. The rollup sits behind a query-filtering-service that reads the permission program, and the row above probes it live: a sealed position is refused while an undelegated account on the same rollup is served, so the door is checking the ACL rather than being shut. What is missing is attestation — the gate is a process we run, and only a TEE makes it checkable by someone who does not trust us.'}
         </PixelText>
-        <Row gap={space.sm} wrap>
-          <Badge label="npm run check:gate" tone="quiet" variant="bodySmall" />
-          <Badge label="npm run prove:privacy" tone="quiet" variant="bodySmall" />
-          <Badge label="npm run check:fog" tone="quiet" variant="bodySmall" />
-        </Row>
       </Stack>
+
+      {/* Every claim on this page is reproducible, and the gap between
+          "checkable" and "checked" is usually whether somebody had to retype a
+          command. Each row copies. */}
+      <CommandList
+        subtitle="Every claim above, reproduced from a clean checkout. Tap a row to copy it."
+        commands={[
+          {
+            cmd: 'npm run check:gate',
+            proves:
+              'The read gate refuses a sealed position and serves the same account shape without a permission. The control row is the point — a door shut for everybody is not access control.',
+          },
+          {
+            cmd: 'npm run check:session',
+            proves:
+              'A real Gum session token signing a real fill on the rollup, and refusing to move a position it was not issued for.',
+          },
+          {
+            cmd: 'npm run check:guards',
+            proves:
+              'Every refusal the deployed program makes: self-join, cancel-after-join, settle-before-buzzer, fill-on-undelegated, fill-after-buzzer, join-a-stale-match.',
+          },
+          {
+            cmd: 'npm run check:race',
+            proves:
+              'Two independent clients sealing and settling the same match at once, which is what two people playing actually does.',
+          },
+          {
+            cmd: 'npm run check:tape',
+            proves:
+              "Every settled tape on this cluster replayed onto the chain's own PnL, and the impact previewer checked against every recorded execution price.",
+          },
+          {
+            cmd: 'npm run check:vrf',
+            proves:
+              'The VRF request really lands and the VRF program accepts it — and exactly where it stops, because no oracle here can answer.',
+          },
+          {
+            cmd: 'npm run prove:privacy',
+            proves: 'A whole match walked stage by stage, reporting what each party can read at each point (~31s).',
+          },
+          {
+            cmd: 'cd chain && anchor test --skip-local-validator',
+            proves: '26 on-chain tests, 2 pending. Includes the negative case: a fill that succeeds on the rollup is rejected on L1 while the account is delegated.',
+          },
+        ]}
+      />
 
       <View style={{ height: space.xl }} />
     </ScrollView>

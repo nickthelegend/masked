@@ -15,7 +15,7 @@ import {
   sol,
   space,
 } from '../ui';
-import { replayEquity, type TapeState } from '../chain/tape';
+import { marketMove, replayEquity, type TapeState } from '../chain/tape';
 
 export interface RevealScreenProps {
   won: boolean;
@@ -108,6 +108,16 @@ export default function RevealScreen({
     };
   }, [tape, isPlayerA, entryLamports, startTs]);
 
+  /**
+   * What the token itself did, so the score can be read against something.
+   * Losing 0.4% while the market fell 6% is a good round; the two numbers above
+   * cannot say that on their own.
+   */
+  const move = useMemo(
+    () => (tape ? marketMove(tape.fillsA, tape.fillsB, entryLamports) : null),
+    [tape, entryLamports]
+  );
+
   return (
     <View>
     <RevealCurtain
@@ -169,6 +179,14 @@ export default function RevealScreen({
           </Stack>
         </PixelPanel>
       </Row>
+
+      {move ? (
+        <PixelText variant="bodySmall" size={9} align="center" color={color.textDim}>
+          {`${opponentName.toUpperCase()} AND YOU BOTH TRADED A MARKET THAT MOVED ${
+            move.bps >= 0 ? '+' : ''
+          }${(move.bps / 100).toFixed(2)}%`}
+        </PixelText>
+      ) : null}
 
       {/* The rivalry, recounted from every tape these two wallets share. It is
           the reason to press REMATCH, so it sits directly above it. */}

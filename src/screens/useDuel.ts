@@ -457,6 +457,50 @@ export function useDuel(): Duel {
     };
   }, [client, match, phase, secondsLeft, wallet.publicKey]);
 
+  /**
+   * Settle somebody else's abandoned round.
+   *
+   * Settlement is permissionless once the clock expires, which until now only
+   * `npm run crank` took advantage of — so a player who closed their tab left a
+   * pot escrowed until somebody ran a script. The lobby is the natural place to
+   * do it: it is the one screen with nothing else happening.
+   *
+   * One match per sweep, and only from the lobby, so this can never compete
+   * with the player's own settlement or fire mid-round. A failure is silent by
+   * design: it is somebody else's round, the next sweep will try again, and
+   * there is nothing for this player to act on.
+   */
+  useEffect(() => {
+    if (!client || !wallet.publicKey || phase !== 'lobby') return undefined;
+    let alive = true;
+
+    const sweep = async () => {
+      try {
+        const expired = await client.fetchExpiredMatches();
+        const target = expired.find((m) => m.joiner);
+        if (!alive || !target || !target.joiner) return;
+        await client.commitAndUndelegate(
+          target.address, wallet.publicKey!, target.creator, target.joiner
+        );
+        await client.waitForUndelegation(target.address, target.creator, target.joiner);
+        if (!alive) return;
+        await client.requestSettle(target.address, wallet.publicKey!);
+        await client.settleMatch(
+          target.address, wallet.publicKey!, target.creator, target.joiner
+        );
+      } catch {
+        // Somebody else's round, and very possibly somebody else settling it
+        // at the same moment. Nothing to report.
+      }
+    };
+
+    const id = setInterval(sweep, 20_000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [client, wallet.publicKey, phase]);
+
   /* ----------------------------- settlement ------------------------------ */
 
   /**
@@ -982,24 +1026,14 @@ export function useDuel(): Duel {
         // Taking someone else's match takes their size; show it.
         setStake(m.entry / LAMPORTS_PER_SOL);
 
-        await client!.sealAndDelegateMatch(target, creatorKey, m.joiner, me);
-        if (ACTIVE_CLUSTER.tee) {
-          for (const owner of [creatorKey, m.joiner]) {
-            await client!.initPositionPrivacy(target, owner, me);
-          }
-        }
-        setSealed(await client!.isPositionSealed(target, creatorKey));
-
-        settledRef.current = false;
-        setMatch(m);
-        setSeries([]);
-        setEquity([0]);
-        setSecondsLeft(m.duration);
-        setPrice(await client!.fetchPrice(target, true));
-        setPhase('live');
+        // `beginRound`, not a second copy of it. This block used to repeat the
+        // seal-and-start sequence inline, and the two drifted: the session key
+        // added to `beginRound` was never minted for a joiner, so one side of
+        // every duel silently signed each fill with its wallet.
+        await beginRound(m, creatorKey, m.joiner, me);
       });
     },
-    [guard, client, wallet.publicKey]
+    [guard, client, wallet.publicKey, beginRound]
   );
 
   const cancelMatchByAddress = useCallback(

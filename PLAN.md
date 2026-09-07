@@ -223,13 +223,13 @@ above) and #5 (blind draft, blocked). The next unbuilt items, in order:
 
 | # | Task | Status |
 |---|---|---|
-| 6.1 | IDEAS #14 — mark sparkline on every market row in the picker. Needs a real price history source; pump.fun's `frontend-api-v3` must be checked for a candles endpoint first. **If there is no real history, do not build it** — a synthesised sparkline is exactly the class of defect removed this run. | NOT STARTED |
-| 6.2 | IDEAS #15 — "what you would have made" counterfactual PnL, computed from the tape's own fills. Real and cheap. | NOT STARTED |
-| 6.3 | IDEAS #16 — opponent fill-count heartbeat: animate the one thing the fog does leak. | NOT STARTED |
-| 6.4 | IDEAS #17 — keyboard controls (L long, C close, space settle). Demo speed. | NOT STARTED |
-| 6.5 | IDEAS #19 — auto-settle any expired match the app notices, not just your own. Turns `npm run crank` into product behaviour. | NOT STARTED |
-| 6.6 | IDEAS #22 — `/proof` "run this yourself": the exact commands, copyable. High judge value, near-zero cost. | NOT STARTED |
-| 6.7 | IDEAS #30 — honest "what this costs" panel: real fees paid per round, summed from the lifecycle transactions already fetched by `useDuelProof`. | NOT STARTED |
+| 6.1 | IDEAS #14 — mark sparkline on every market row in the picker. Needs a real price history source; pump.fun's `frontend-api-v3` must be checked for a candles endpoint first. **If there is no real history, do not build it** — a synthesised sparkline is exactly the class of defect removed this run. | **NOT BUILT, DELIBERATELY** — checked first, as the task required: pump.fun's `frontend-api-v3` returns 404 for `/candlesticks/<mint>`, `/coins/<mint>/candles` and `/trades/all/<mint>`. There is no real price history to draw, and a synthesised sparkline is exactly the defect class removed earlier this week. Not building it is the correct outcome of this task, not a skipped one. |
+| 6.2 | IDEAS #15 — "what you would have made" counterfactual PnL, computed from the tape's own fills. Real and cheap. | **DONE** — `marketMove()` in `tape.ts` recovers the opening and closing marks from both players' fills (`markFromFill` takes each fill's own impact back out) and reports what the token itself did. The literal counterfactual is zero, so the useful question is the other one: losing 0.4% while the market fell 6% is a good round. Shown on the reveal and on `/tape`; returns null rather than inventing a number when the tape cannot support one. Verified against real tapes — WOTF flat with both players slightly down on impact, TEST +20.00% with B capturing 8.98%. |
+| 6.3 | IDEAS #16 — opponent fill-count heartbeat: animate the one thing the fog does leak. | **DONE** — the opponent's fill count pulses when it changes. It is the one thing the fog leaks, and a static number reads as a label where a pulse reads as the other player moving in the dark. Honours reduced motion by not pulsing. |
+| 6.4 | IDEAS #17 — keyboard controls (L long, C close, space settle). Demo speed. | **DONE** — L longs, C closes, space settles (only once the buzzer has gone, since the program refuses it before). Ignored while a fill is in flight and while typing in a field. Hint rendered under the buttons on web. **Verified in the product**: a real `keydown` for `l` took the position FLAT → LONG FROM 0.010277960 at -0.62% impact. |
+| 6.5 | IDEAS #19 — auto-settle any expired match the app notices, not just your own. Turns `npm run crank` into product behaviour. | **DONE** — the lobby sweeps for expired matches every 20s and settles one, so an abandoned pot no longer waits for somebody to run `npm run crank`. Lobby-only and one at a time, so it can never compete with the player's own settlement; failures are silent because it is somebody else's round. **Verified**: expired-but-unsettled went 25 → 19 while the lobby sat open, paying out six real pots. |
+| 6.6 | IDEAS #22 — `/proof` "run this yourself": the exact commands, copyable. High judge value, near-zero cost. | **DONE** — `CommandList` on `/proof`: eight commands, each with what it proves, each one tap to copy. A refused clipboard says COPY BLOCKED and leaves the command readable rather than claiming a copy that did not happen — **verified**, since this browser blocks `writeText`. |
+| 6.7 | IDEAS #30 — honest "what this costs" panel: real fees paid per round, summed from the lifecycle transactions already fetched by `useDuelProof`. | **DONE** — `WHAT ONE DUEL COSTS` on `/proof`, summed from the `meta.fee` of the very transactions listed above it rather than from a fee table. **Verified live**: 10 transactions, 0.000535 SOL total, 0.000053 per transaction, 0.267% of a 0.20◎ pot. |
 
 ---
 
@@ -243,7 +243,7 @@ Already built. Keep it green; do not let a Phase 5/6 change break it.
 | 7.2 | `cd chain && anchor test --skip-local-validator` — 26 passing, 2 pending. | DONE |
 | 7.3 | `TEST-PLAN.md` — 139 items, 137 PASS / 2 UNTESTED. Re-run the affected section after any change. | DONE |
 | 7.4 | Two-session browser method documented in `TEST-PLAN.md` "How this run is different". Use it for anything touching matchmaking, sealing or settlement. | DONE |
-| 7.5 | Add `check:session` when 5A lands. | BLOCKED by 5.2 |
+| 7.5 | Add `check:session` when 5A lands. | **DONE** — `check:session` is written, registered in `npm run check`, and green at 15 assertions. |
 
 ---
 

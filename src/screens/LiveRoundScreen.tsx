@@ -1,3 +1,5 @@
+import { useEffect, useRef } from 'react';
+import { Animated, Easing, Platform } from 'react-native';
 import {
   Badge,
   Box,
@@ -22,6 +24,7 @@ import {
   space,
 } from '../ui';
 import type { Fill, PriceSource } from '../ui';
+import { FRAME_MS, USE_NATIVE_DRIVER, useReducedMotion } from '../ui/motion';
 
 export interface LiveRoundScreenProps {
   secondsLeft: number;
@@ -110,6 +113,62 @@ export default function LiveRoundScreen({
   settleStages,
   teeEnforced = false,
 }: LiveRoundScreenProps) {
+  /**
+   * The opponent's fill count, beating when it changes.
+   *
+   * A count is the one thing the fog leaks — you learn *that* they traded and
+   * nothing about what. Left as a static number it reads as a label; pulsed on
+   * change it reads as the other player moving in the dark, which is what it
+   * actually is. Respects reduced motion by simply not pulsing.
+   */
+  const reduced = useReducedMotion();
+  const beat = useRef(new Animated.Value(1)).current;
+  const lastFills = useRef(opponentFills);
+  useEffect(() => {
+    if (opponentFills === lastFills.current) return;
+    lastFills.current = opponentFills;
+    if (reduced) return;
+    Animated.sequence([
+      Animated.timing(beat, { toValue: 1.35, duration: FRAME_MS, easing: Easing.out(Easing.quad), useNativeDriver: USE_NATIVE_DRIVER }),
+      Animated.timing(beat, { toValue: 1, duration: FRAME_MS * 3, easing: Easing.out(Easing.quad), useNativeDriver: USE_NATIVE_DRIVER }),
+    ]).start();
+  }, [opponentFills, reduced, beat]);
+
+  /**
+   * Keyboard: L to long, C to close, space to settle.
+   *
+   * A sixty-second round is short enough that reaching for a mouse costs a
+   * fill, and a demo is easier to narrate with hands on the keys. Ignored while
+   * a fill is in flight, and ignored entirely when the user is typing into
+   * something — a shortcut that fires inside a text field is a bug.
+   */
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return undefined;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || el?.isContentEditable) return;
+      if (busy) return;
+
+      const k = e.key.toLowerCase();
+      if (k === 'l') {
+        e.preventDefault();
+        onLong();
+      } else if (k === 'c') {
+        e.preventDefault();
+        onClose();
+      } else if (e.key === ' ' && secondsLeft <= 0) {
+        // Only once settlement is actually possible; before the buzzer the
+        // program refuses it and the button says so.
+        e.preventDefault();
+        onSkip();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [busy, secondsLeft, onLong, onClose, onSkip]);
+
   const settling = !!settleStages?.some((s) => s.state !== 'waiting');
 
   return (
@@ -169,13 +228,15 @@ export default function LiveRoundScreen({
       <Row gap={space.sm} align="stretch">
         <PnLReadout panel flex={1} label="YOU" value={myPnl} note={positionLabel} />
         <Stack flex={1} gap={space.xs}>
-          <PnLReadout
-            panel
-            label={opponentName.toUpperCase()}
-            fogged
-            note={`FOGGED · ${opponentFills} FILLS`}
-            accent={color.panelLight}
-          />
+          <Animated.View style={{ transform: [{ scale: beat }] }}>
+            <PnLReadout
+              panel
+              label={opponentName.toUpperCase()}
+              fogged
+              note={`FOGGED · ${opponentFills} FILLS`}
+              accent={color.panelLight}
+            />
+          </Animated.View>
           {/* Says exactly what is true: sealed means the ACL is on chain;
               enforced means the rollup will refuse a read against it. */}
           <Badge
@@ -205,6 +266,13 @@ export default function LiveRoundScreen({
         <PixelButton flex={1} tone="primary" label="LONG" padY={16} loading={busy} onPress={onLong} />
         <PixelButton flex={1} tone="danger" label="CLOSE" padY={16} loading={busy} onPress={onClose} />
       </Row>
+
+      {/* Web only, because that is where a keyboard is. */}
+      {Platform.OS === 'web' ? (
+        <PixelText variant="bodySmall" size={8} align="center" color={color.textFaint}>
+          L LONG · C CLOSE · SPACE SETTLE
+        </PixelText>
+      ) : null}
 
       {error ? <Badge label={error.slice(0, 48).toUpperCase()} tone="loss" variant="bodySmall" /> : null}
 

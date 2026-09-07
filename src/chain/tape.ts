@@ -189,3 +189,40 @@ export const fillTokens = (f: TapeFill): number => f.qty / BASE_SCALE;
 
 /** Lamports a fill moved, for display. */
 export const fillValue = (f: TapeFill): number => (f.qty * f.px) / VALUE_DIV;
+
+/**
+ * What the market itself did over the round.
+ *
+ * The literal counterfactual — "what you would have made doing nothing" — is
+ * zero: an untouched position is all quote, and quote does not move. The
+ * question worth answering is the other one. A player who lost 0.4% while the
+ * token fell 6% traded well; the scoreboard alone cannot say that.
+ *
+ * The marks are recovered from the fills of *both* players, because either may
+ * be the one who traded, and a recorded execution price carries that fill's own
+ * impact — `markFromFill` takes it back out. Earliest and latest by timestamp,
+ * so the window is the round rather than one player's activity.
+ *
+ * Returns null when the tape cannot support the claim: fewer than two distinct
+ * marks means there is no move to report, and reporting one anyway would be
+ * inventing the most interesting number on the screen.
+ */
+export function marketMove(
+  fillsA: TapeFill[],
+  fillsB: TapeFill[],
+  entry: number
+): { openPx: number; closePx: number; bps: number } | null {
+  if (entry <= 0) return null;
+  const all = [...fillsA, ...fillsB].sort((x, y) => x.ts - y.ts);
+  if (all.length < 2) return null;
+
+  const first = all[0];
+  const last = all[all.length - 1];
+  if (first.ts === last.ts) return null;
+
+  const openPx = markFromFill(first, entry);
+  const closePx = markFromFill(last, entry);
+  if (openPx <= 0 || closePx <= 0) return null;
+
+  return { openPx, closePx, bps: Math.trunc(((closePx - openPx) / openPx) * 10_000) };
+}
