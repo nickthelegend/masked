@@ -225,6 +225,13 @@ export function useDuel(): Duel {
   const [fillSize, setFillSize] = useState(DEFAULT_FILL_FRACTION);
   const [balance, setBalance] = useState(0);
   const [busy, setBusy] = useState(false);
+  /**
+   * Whether a guarded action is already running.
+   *
+   * Separate from `busy` because `busy` is state and state is asynchronous —
+   * see `guard`. This is the actual lock; `busy` is what the buttons render.
+   */
+  const inFlight = useRef(false);
   // Read back from chain after sealing — never a local optimistic flag.
   const [sealed, setSealed] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -758,6 +765,17 @@ export function useDuel(): Duel {
         toast.error('CONNECT A WALLET', 'Nothing can be signed without one.');
         return;
       }
+
+      // A ref, not the `busy` state, because `busy` cannot stop this.
+      // `setBusy(true)` schedules a render; a second click dispatched in the
+      // same tick — a double-click, a stuck mouse, an impatient judge — runs
+      // before that render lands, sees the button still enabled, and calls
+      // straight through. Pressing LONG twice quickly really did produce two
+      // fills at the same price and the same second, which is the player's
+      // money spent twice. A ref flips synchronously and closes that window.
+      if (inFlight.current) return;
+      inFlight.current = true;
+
       setBusy(true);
       setError(null);
       try {
@@ -770,6 +788,7 @@ export function useDuel(): Duel {
         setError(friendly.title);
         toast.error(friendly.title, friendly.detail);
       } finally {
+        inFlight.current = false;
         setBusy(false);
       }
     },
