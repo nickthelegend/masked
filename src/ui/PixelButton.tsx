@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Pressable, type PressableProps, type ViewStyle } from 'react-native';
+import { forwardRef, useEffect, useState } from 'react';
+import { Pressable, type PressableProps, type View, type ViewStyle } from 'react-native';
 import PixelText from './PixelText';
 import { HIT_SLOP_MIN, PRESS_TRAVEL, bevel as bevelToken, border, color, onInk, radius, space, type as typeTokens } from './theme';
 
@@ -47,7 +47,15 @@ export interface PixelButtonProps extends Omit<PressableProps, 'style' | 'childr
  * translates down by the same 4px, so the face lands exactly where its drop
  * edge was. No opacity fade, no scale spring, no ripple.
  */
-export default function PixelButton({
+/**
+ * Forwards its ref to the underlying Pressable.
+ *
+ * expo-router's `<Link asChild>` clones its child and hands it a ref so it can
+ * attach navigation. A plain function component cannot take one, and React
+ * warned about it on every screen with a Link — including the 404, whose whole
+ * job is to be the page you land on when something has already gone wrong.
+ */
+const PixelButton = forwardRef<View, PixelButtonProps>(function PixelButton({
   label,
   onPress,
   tone = 'primary',
@@ -61,7 +69,7 @@ export default function PixelButton({
   flex,
   style,
   ...rest
-}: PixelButtonProps) {
+}: PixelButtonProps, ref) {
   const t = TONES[tone];
   const inert = disabled || loading;
   const [frame, setFrame] = useState(0);
@@ -74,6 +82,7 @@ export default function PixelButton({
 
   return (
     <Pressable
+      ref={ref}
       onPress={inert ? undefined : onPress}
       disabled={inert}
       accessibilityRole="button"
@@ -108,4 +117,6 @@ export default function PixelButton({
       </PixelText>
     </Pressable>
   );
-}
+});
+
+export default PixelButton;
