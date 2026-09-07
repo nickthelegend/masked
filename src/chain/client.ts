@@ -546,6 +546,36 @@ export class FogduelClient {
   }
 
   /**
+   * Wait until both positions are back under the program on L1.
+   *
+   * `commit_and_undelegate` only *schedules* the commit: the rollup sends it
+   * to the base layer and the ownership flip lands a moment later. Settling
+   * before it does hands `settle_match` accounts still owned by the delegation
+   * program, and Anchor rejects the whole transaction — which is exactly what
+   * the UI did, because this wait existed only inside the scripts.
+   *
+   * Returns false on timeout rather than throwing, so a caller can say
+   * something useful instead of surfacing a raw simulation error.
+   */
+  async waitForUndelegation(
+    match: PublicKey,
+    creator: PublicKey,
+    joiner: PublicKey,
+    timeoutMs = 60_000
+  ): Promise<boolean> {
+    const keys = [positionPda(match, creator), positionPda(match, joiner)];
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const owners = await Promise.all(
+        keys.map(async (k) => (await this.l1.getAccountInfo(k))?.owner)
+      );
+      if (owners.every((o) => o?.equals(this.programId))) return true;
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+    return false;
+  }
+
+  /**
    * Post a mark. `px` is the program's scale — see units.ts.
    *
    * Permissionless on-chain, but rate limited: at most 5% per second. A caller

@@ -8,7 +8,6 @@
 import { Keypair, LAMPORTS_PER_SOL, PublicKey, type Transaction } from '@solana/web3.js';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import { positionPda } from '../src/chain/pdas';
 import { FogduelClient, pnlBps } from '../src/chain/client';
 import { DEMO_MINT } from '../src/chain/market';
 import { CLUSTERS } from '../src/chain/config';
@@ -123,14 +122,8 @@ const wrap = (kp: Keypair) => ({
   await new Promise((r) => setTimeout(r, 13_000));
   await client.commitAndUndelegate(match, creator.publicKey, creator.publicKey, joiner.publicKey);
 
-  let owner = '';
-  for (let i = 0; i < 40; i++) {
-    const info = await client.l1.getAccountInfo(positionPda(match, creator.publicKey));
-    owner = info!.owner.toBase58();
-    if (owner === client.programId.toBase58()) break;
-    await new Promise((r) => setTimeout(r, 1000));
-  }
-  assert.equal(owner, client.programId.toBase58(), 'undelegated back to the program');
+  const home = await client.waitForUndelegation(match, creator.publicKey, joiner.publicKey);
+  assert.ok(home, 'both positions undelegated back to the program');
   const committed = (await client.fetchPosition(match, creator.publicKey, false))!;
   const committedOpp = (await client.fetchPosition(match, joiner.publicKey, false))!;
   assert.equal(committed.fillCount, 1, 'the ER fill survived the commit to L1');

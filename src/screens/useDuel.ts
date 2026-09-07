@@ -263,6 +263,11 @@ export function useDuel(): Duel {
     setBusy(true);
     try {
       await client.commitAndUndelegate(match.address, wallet.publicKey, match.creator, match.joiner);
+      // The commit is scheduled on the rollup and lands on L1 a moment later.
+      // Settling before it does hands settle_match accounts still owned by the
+      // delegation program, and the whole transaction is rejected.
+      const home = await client.waitForUndelegation(match.address, match.creator, match.joiner);
+      if (!home) throw new Error('The rollup did not commit both positions back in time.');
       await client.requestSettle(match.address, wallet.publicKey);
       await client.settleMatch(match.address, wallet.publicKey, match.creator, match.joiner);
 

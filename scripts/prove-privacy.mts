@@ -174,21 +174,10 @@ async function main() {
   await new Promise((r) => setTimeout(r, 16_000));
   const commitSigs = await me.commitAndUndelegate(match, creator.publicKey, creator.publicKey, opponent.publicKey);
   line(`    ${commitSigs.length} commit txs on the rollup, one per position`);
-  // Both positions have to come home, not just yours: settle_match touches
-  // each of them and Anchor checks the owner of every account it is handed.
-  let landed = false;
-  for (let i = 0; i < 60; i++) {
-    const owners = await Promise.all(
-      [myPos, theirPos].map(async (k) => (await rawL1.getAccountInfo(k))?.owner)
-    );
-    if (owners.every((o) => o?.equals(me.programId))) {
-      landed = true;
-      break;
-    }
-    await new Promise((r) => setTimeout(r, 1000));
-  }
-  if (!landed) {
-    line('    undelegation did not land within 60s — the rollup did not commit.');
+  // Both have to come home, not just yours: settle_match touches each of them
+  // and Anchor checks the owner of every account it is handed.
+  if (!(await me.waitForUndelegation(match, creator.publicKey, opponent.publicKey))) {
+    line('    undelegation did not land in time — the rollup did not commit.');
     process.exit(1);
   }
   line('    both positions committed back to L1');

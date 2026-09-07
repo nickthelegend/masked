@@ -108,15 +108,7 @@ async function main() {
     await new Promise((r) => setTimeout(r, 31_000));
 
     await houseClient.commitAndUndelegate(match, house.publicKey, house.publicKey, opponent.publicKey);
-    for (let t = 0; t < 40; t += 1) {
-      const m = await houseClient.fetchMatch(match);
-      const info = await houseClient.l1.getAccountInfo(
-        (await import('../src/chain/pdas')).positionPda(match, house.publicKey)
-      );
-      if (info?.owner.equals(houseClient.programId)) break;
-      void m;
-      await new Promise((r) => setTimeout(r, 1000));
-    }
+    await houseClient.waitForUndelegation(match, house.publicKey, opponent.publicKey);
 
     await houseClient.requestSettle(match, house.publicKey);
     await houseClient.settleMatch(match, house.publicKey, house.publicKey, opponent.publicKey);
