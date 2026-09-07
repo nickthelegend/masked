@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit",
     "check:tokens": "node --no-warnings=MODULE_TYPELESS_PACKAGE_JSON scripts/check-tokens.mjs",
     "check:series": "node --no-warnings=MODULE_TYPELESS_PACKAGE_JSON scripts/check-series.mjs",
-    "check": "npm run typecheck && npm run check:tokens && npm run check:series && npm run check:fog && npm run check:errors && npm run check:preflight",
+    "check": "npm run typecheck && npm run check:tokens && npm run check:series && npm run check:fog && npm run check:errors && npm run check:preflight && npm run check:tape",
     "sync:idl": "node -e \"const fs=require('fs');const i=JSON.parse(fs.readFileSync('chain/target/idl/fogduel.json','utf8'));fs.writeFileSync('src/chain/idl.ts','export const FOGDUEL_IDL = '+JSON.stringify(i,null,2)+';\\n\\nexport default FOGDUEL_IDL;\\n');console.log('idl synced')\"",
     "verify:client": "tsx scripts/verify-client.mts",
     "prove:privacy": "tsx scripts/prove-privacy.mts",
@@ -29,10 +29,12 @@
     "proxy": "node server/market-proxy.mjs",
     "hold": "tsx scripts/hold-live.mts",
     "join": "tsx scripts/join-as.mts",
+    "trade": "tsx scripts/trade-as.mts",
     "check:fog:wire": "tsx scripts/check-fog-wire.mts",
     "state": "tsx scripts/state.mts",
     "crank": "tsx scripts/crank-settle.mts",
-    "check:vrf": "tsx scripts/check-vrf.mts"
+    "check:vrf": "tsx scripts/check-vrf.mts",
+    "check:tape": "tsx scripts/check-tape.mts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",

@@ -21,6 +21,7 @@ import {
 import { FOGDUEL_IDL as idl } from './idl';
 import { ACTIVE_CLUSTER, DELEGATION_PROGRAM_ID, type ClusterConfig } from './config';
 import { feedPda, matchPda, positionPda, statsPda, tapePda, treasuryPda, vaultPda } from './pdas';
+import { toTapeState, type TapeState } from './tape';
 import { authenticate, type MessageSigner } from './erAuth';
 import { VALUE_DIV } from './units';
 
@@ -833,16 +834,24 @@ export class FogduelClient {
     return (await this.fetchPriceFeed(match, fromEr))?.px ?? 0;
   }
 
-  async fetchTape(match: PublicKey) {
-    return this.l1Program.account.tape.fetchNullable(tapePda(match));
+  /**
+   * The public record of a settled duel, decoded.
+   *
+   * Carries both players' real fill lists, which is the only place the
+   * opponent's trading is ever legible — see tape.ts for what can be
+   * reconstructed from them.
+   */
+  async fetchTape(match: PublicKey): Promise<TapeState | null> {
+    const raw = await this.l1Program.account.tape.fetchNullable(tapePda(match));
+    return raw ? toTapeState(raw) : null;
   }
 
   /** All settled tapes, newest first — the feed. */
-  async fetchAllTapes() {
+  async fetchAllTapes(): Promise<TapeState[]> {
     const all = await this.l1Program.account.tape.all();
     return all
-      .map((t: { publicKey: PublicKey; account: Record<string, any> }) => t.account)
-      .sort((a: Record<string, any>, b: Record<string, any>) => b.settledTs.toNumber() - a.settledTs.toNumber());
+      .map((t: { publicKey: PublicKey; account: Record<string, any> }) => toTapeState(t.account))
+      .sort((a: TapeState, b: TapeState) => b.settledTs - a.settledTs);
   }
 
   async balance(owner: PublicKey): Promise<number> {

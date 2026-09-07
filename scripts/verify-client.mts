@@ -137,13 +137,13 @@ const wrap = (kp: Keypair) => ({
   m = (await client.fetchMatch(match))!;
   assert.equal(m.status, 'settled');
   assert.ok(m.winner, 'a winner was recorded');
-  const tape = (await client.fetchTape(match)) as any;
+  const tape = await client.fetchTape(match);
   assert.ok(tape, 'public tape written');
   const after = await client.balance(creator.publicKey);
   console.log('   settled. winner:', m.winner!.toBase58().slice(0, 8) + '…',
               'pnlA(bps):', m.pnlABps, 'pnlB(bps):', m.pnlBBps);
-  console.log('   rake taken:', tape.rake.toNumber() / LAMPORTS_PER_SOL, 'SOL',
-              '| payout:', tape.potPaid.toNumber() / LAMPORTS_PER_SOL, 'SOL');
+  console.log('   rake taken:', tape!.rake / LAMPORTS_PER_SOL, 'SOL',
+              '| payout:', tape!.potPaid / LAMPORTS_PER_SOL, 'SOL');
   console.log('   creator balance delta:', ((after - before) / LAMPORTS_PER_SOL).toFixed(4), 'SOL');
 
   // The client's PnL must equal the chain's, or the screen shows one winner

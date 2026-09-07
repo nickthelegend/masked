@@ -11,7 +11,7 @@
  *
  *   npm run prove:privacy
  */
-import { Keypair, LAMPORTS_PER_SOL, PublicKey, Connection, type Transaction } from '@solana/web3.js';
+import { Keypair, LAMPORTS_PER_SOL, Connection, type Transaction } from '@solana/web3.js';
 import { readFileSync } from 'node:fs';
 import { permissionPdaFromAccount } from '@magicblock-labs/ephemeral-rollups-sdk';
 import { FogduelClient } from '../src/chain/client';
@@ -192,11 +192,11 @@ async function main() {
   const theirsAfter = await me.fetchPosition(match, opponent.publicKey, false);
   line(`  their position now readable ........... ${yes(!!theirsAfter)}` +
        (theirsAfter ? `  (fills=${theirsAfter.fillCount})` : ''));
-  const tape = (await me.fetchTape(match)) as { winner: PublicKey; potPaid: { toNumber(): number } } | null;
+  const tape = await me.fetchTape(match);
   line(`  public tape written ................... ${yes(!!tape)}`);
   line(`  winner ................................ ${after.winner?.toBase58()}`);
   line(`  pnl  you=${(after.pnlABps / 100).toFixed(2)}%  them=${(after.pnlBBps / 100).toFixed(2)}%`);
-  line(`  paid .................................. ${tape ? tape.potPaid.toNumber() / LAMPORTS_PER_SOL : 0} SOL`);
+  line(`  paid .................................. ${tape ? tape.potPaid / LAMPORTS_PER_SOL : 0} SOL`);
   rule();
   line('  Private during the fight. Public after.');
   rule();

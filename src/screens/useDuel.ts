@@ -24,6 +24,7 @@ import { FOGDUEL_PROGRAM_ID } from '../chain/config';
 import { assertFogIntact } from '../chain/fog';
 import { FogduelClient, pnlBps, type MatchState, type PositionState } from '../chain/client';
 import { formatSolPrice } from '../chain/units';
+import type { TapeState } from '../chain/tape';
 import { livePxFor, type TradableMarket } from '../chain/markets';
 import { ACTIVE_CLUSTER } from '../chain/config';
 import { DEMO_MINT, marketLabel } from '../chain/market';
@@ -99,6 +100,15 @@ export interface Duel {
   lastFill: LastFill | null;
   /** What settlement is doing right now. */
   settleStages: SettleStage[];
+  /** The public tape once the round has settled, with both real fill lists. */
+  tape: TapeState | null;
+  /** Whether you are the tape's player A — which fill list is yours. */
+  isPlayerA: boolean;
+  /** Per-player entry in lamports, which the tape replay starts from. */
+  entryLamports: number;
+  /** When the round went live and how long it ran, for the timeline axis. */
+  startTs: number;
+  duration: number;
   /** The market the next duel will be opened on, chosen in the lobby. */
   selectedMarket: TradableMarket | null;
   selectMarket: (m: TradableMarket) => void;
@@ -232,6 +242,14 @@ export function useDuel(): Duel {
   const [settleStages, setSettleStages] = useState<SettleStage[]>(() =>
     SETTLE_STAGES.map((x) => ({ ...x }))
   );
+  /**
+   * The settled tape, which is where both players' real fills live.
+   *
+   * The reveal used to draw the opponent's round from a seeded random walk
+   * pinned to their final PnL. The chain has had the actual fills all along —
+   * `settle_match` writes both lists into the Tape — so the reveal reads them.
+   */
+  const [tape, setTape] = useState<TapeState | null>(null);
 
   const noteFill = useCallback(
     (position: PositionState, markBefore: number, side: 'buy' | 'sell') => {
@@ -410,12 +428,14 @@ export function useDuel(): Duel {
       await client.settleMatch(match.address, wallet.publicKey, match.creator, match.joiner);
       step('settle', 'done', 'pot paid, tape written');
 
-      const [m, mine, theirs] = await Promise.all([
+      const [m, mine, theirs, settledTape] = await Promise.all([
         client.fetchMatch(match.address),
         client.fetchPosition(match.address, wallet.publicKey, false),
         client.fetchPosition(match.address, match.joiner.equals(wallet.publicKey) ? match.creator : match.joiner, false),
+        client.fetchTape(match.address),
       ]);
       if (m) setMatch(m);
+      setTape(settledTape);
       if (mine) setMyPosition(mine);
       // After settlement the tape is public, so reading the opponent is
       // legitimate. Routed through the guard so the rule is enforced in one
@@ -474,6 +494,7 @@ export function useDuel(): Duel {
       settledRef.current = false;
       settleAttempts.current = 0;
       setLastFill(null);
+      setTape(null);
       setSettleStages(SETTLE_STAGES.map((x) => ({ ...x })));
       setMatch(m);
       setSeries([]);
@@ -890,6 +911,11 @@ export function useDuel(): Duel {
     priceLabel: `${formatSolPrice(price)}◎`,
     lastFill,
     settleStages,
+    tape,
+    isPlayerA: !!(match && wallet.publicKey && match.creator.equals(wallet.publicKey)),
+    entryLamports: match?.entry ?? 0,
+    startTs: match?.startTs ?? 0,
+    duration: match?.duration ?? 0,
     selectedMarket,
     selectMarket: setSelectedMarket,
     teeEnforced: ACTIVE_CLUSTER.tee,

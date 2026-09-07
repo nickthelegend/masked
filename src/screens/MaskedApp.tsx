@@ -149,7 +149,11 @@ export default function MaskedApp() {
                 won={duel.won}
                 pot={duel.pot}
                 stake={duel.entrySol}
-                equity={duel.equity}
+                tape={duel.tape}
+                isPlayerA={duel.isPlayerA}
+                entryLamports={duel.entryLamports}
+                startTs={duel.startTs}
+                duration={duel.duration}
                 myPnl={duel.myPnl}
                 opponentPnl={duel.opponentPnl}
                 myFills={duel.fills.length}

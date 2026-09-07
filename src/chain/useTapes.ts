@@ -12,6 +12,7 @@ import { FOGDUEL_IDL } from './idl';
 import { ACTIVE_CLUSTER } from './config';
 import { PRICE_SCALE } from './client';
 import { withDeadline } from './rpcTimeout';
+import { replayEquity, toTapeState, type TapeState } from './tape';
 
 export interface TapeSummary {
   match: string;
@@ -29,14 +30,6 @@ export interface TapeSummary {
   loserSeries: number[];
 }
 
-/** A zero-padded on-chain string back to a JS one. */
-const decodeFixed = (bytes: number[] | Uint8Array | undefined): string => {
-  if (!bytes) return '';
-  const arr = Array.from(bytes);
-  const end = arr.indexOf(0);
-  return new TextDecoder().decode(new Uint8Array(end === -1 ? arr : arr.slice(0, end)));
-};
-
 const readOnlyWallet = {
   publicKey: null,
   signTransaction: async <T,>(t: T) => t,
@@ -44,21 +37,23 @@ const readOnlyWallet = {
 };
 
 /**
- * Turn a fill list into a monotonically-timed equity curve for the sparkline.
- * Both sides are returned on the same footing so `TapeChart` can put them on
- * one shared scale.
+ * The equity curve a fill list actually produced, as percentages.
+ *
+ * This used to interpolate: it took the fill *count*, ignored every quantity
+ * and price on the tape, and walked a straight line to the settled figure. The
+ * shape was decoration — a four-fill round that was down 8% before recovering
+ * drew as a clean ramp. `replayEquity` recomputes the position the same way
+ * the program did, so each point is where that player really stood.
+ *
+ * Needs the entry, which is on the Match rather than the Tape; a tape whose
+ * match has been closed out gets the two points that are still certain, its
+ * start and its settled result, and nothing invented between them.
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-const curve = (fills: any[], finalBps: number): number[] => {
+const curve = (fills: TapeState['fillsA'], finalBps: number, entry: number): number[] => {
   if (!fills || fills.length === 0) return [0, finalBps / 100];
-  const points = [0];
-  const sorted = [...fills].sort((a, b) => a.ts.toNumber() - b.ts.toNumber());
-  sorted.forEach((_, i) => {
-    // Interpolate toward the settled result so the curve always ends on the
-    // number printed beside it.
-    points.push(((finalBps / 100) * (i + 1)) / sorted.length);
-  });
-  return points;
+  if (entry <= 0) return [0, finalBps / 100];
+  return replayEquity(fills, entry).map((p) => p.bps / 100);
 };
 
 export function useTapes(pollMs = 10_000) {
@@ -73,28 +68,38 @@ export function useTapes(pollMs = 10_000) {
         const connection = new Connection(ACTIVE_CLUSTER.l1, 'confirmed');
         const provider = new AnchorProvider(connection, readOnlyWallet as never, { commitment: 'confirmed' });
         const program = new Program(FOGDUEL_IDL as Idl, provider) as any;
-        const all = (await withDeadline(program.account.tape.all(), 'the base layer')) as any[];
+        // The entry lives on the Match, not the Tape, and the replay needs it.
+        // One extra call for the whole page rather than one per row.
+        const [all, matches] = (await withDeadline(
+          Promise.all([program.account.tape.all(), program.account.match.all()]),
+          'the base layer'
+        )) as [any[], any[]];
         if (!alive) return;
+
+        const entryOf = new Map<string, number>(
+          matches.map((m: any) => [m.publicKey.toBase58(), m.account.entry.toNumber()])
+        );
 
         const mapped: TapeSummary[] = all
           .map((t: any) => {
-            const a = t.account;
+            const a = toTapeState(t.account);
             const winnerIsA = a.winner.equals(a.playerA);
-            const wBps = winnerIsA ? a.pnlABps.toNumber() : a.pnlBBps.toNumber();
-            const lBps = winnerIsA ? a.pnlBBps.toNumber() : a.pnlABps.toNumber();
+            const wBps = winnerIsA ? a.pnlABps : a.pnlBBps;
+            const lBps = winnerIsA ? a.pnlBBps : a.pnlABps;
+            const entry = entryOf.get(a.match.toBase58()) ?? 0;
             return {
-              match: a.matchKey.toBase58(),
-              symbol: decodeFixed(a.symbol),
+              match: a.match.toBase58(),
+              symbol: a.symbol,
               mint: a.mint,
               winner: a.winner,
               loser: winnerIsA ? a.playerB : a.playerA,
               winnerPnlBps: wBps,
               loserPnlBps: lBps,
-              potPaid: a.potPaid.toNumber(),
-              rake: a.rake.toNumber(),
-              settledTs: a.settledTs.toNumber(),
-              winnerSeries: curve(winnerIsA ? a.fillsA : a.fillsB, wBps),
-              loserSeries: curve(winnerIsA ? a.fillsB : a.fillsA, lBps),
+              potPaid: a.potPaid,
+              rake: a.rake,
+              settledTs: a.settledTs,
+              winnerSeries: curve(winnerIsA ? a.fillsA : a.fillsB, wBps, entry),
+              loserSeries: curve(winnerIsA ? a.fillsB : a.fillsA, lBps, entry),
             };
           })
           .sort((x: TapeSummary, y: TapeSummary) => y.settledTs - x.settledTs);

@@ -1,0 +1,191 @@
+/**
+ * The public tape, and what can honestly be reconstructed from it.
+ *
+ * `settle_match` writes a `Tape` holding both players' fill lists — up to
+ * `MAX_FILLS` each of `{ side, qty, px, ts }`. That account is the public half
+ * of "private during the fight, public after": it is world-readable forever,
+ * and it is the only place the opponent's trading is ever legible.
+ *
+ * Everything in this module is derived from those fills by replaying the same
+ * arithmetic the program used to produce them. Nothing here interpolates,
+ * seeds a generator, or invents a shape — if a number cannot be recovered from
+ * the tape it is not returned.
+ */
+import { PublicKey } from '@solana/web3.js';
+import { BASE_SCALE, VALUE_DIV } from './units';
+
+/** Mirrors `BOOK_DEPTH` in state.rs. Needed to undo a fill's own impact. */
+export const BOOK_DEPTH = 64;
+/** Mirrors `MAX_FILLS` in state.rs. */
+export const MAX_FILLS = 16;
+
+export type FillSide = 'buy' | 'sell' | 'settle';
+
+/** One fill, exactly as the program stored it. */
+export interface TapeFill {
+  side: FillSide;
+  /** Base filled, x BASE_SCALE. For every side — a buy records what it got,
+      not what it spent, because `apply_fill` overwrites `qty` with the fill. */
+  qty: number;
+  /** Execution price: lamports per token x PRICE_SCALE, impact included. */
+  px: number;
+  /** Unix seconds, from the chain's clock. */
+  ts: number;
+}
+
+export interface TapeState {
+  match: PublicKey;
+  mint: PublicKey;
+  symbol: string;
+  playerA: PublicKey;
+  playerB: PublicKey;
+  pnlABps: number;
+  pnlBBps: number;
+  winner: PublicKey;
+  potPaid: number;
+  rake: number;
+  settledTs: number;
+  fillsA: TapeFill[];
+  fillsB: TapeFill[];
+}
+
+/** A zero-padded on-chain string back to a JS one. */
+export const decodeFixed = (bytes: number[] | Uint8Array | undefined): string => {
+  if (!bytes) return '';
+  const arr = Array.from(bytes);
+  const end = arr.indexOf(0);
+  return new TextDecoder().decode(new Uint8Array(end === -1 ? arr : arr.slice(0, end)));
+};
+
+/* eslint-disable @typescript-eslint/no-explicit-any -- Anchor's account
+   namespace is dynamically typed; every field is narrowed as it is read. */
+
+const num = (v: any): number => (typeof v === 'number' ? v : v?.toNumber?.() ?? 0);
+
+const toFill = (f: any): TapeFill => ({
+  side: Object.keys(f.side)[0] as FillSide,
+  qty: num(f.qty),
+  px: num(f.px),
+  ts: num(f.ts),
+});
+
+/** Decode a raw `Tape` account. */
+export function toTapeState(raw: any): TapeState {
+  return {
+    match: raw.matchKey,
+    mint: raw.mint,
+    symbol: decodeFixed(raw.symbol),
+    playerA: raw.playerA,
+    playerB: raw.playerB,
+    pnlABps: num(raw.pnlABps),
+    pnlBBps: num(raw.pnlBBps),
+    winner: raw.winner,
+    potPaid: num(raw.potPaid),
+    rake: num(raw.rake),
+    settledTs: num(raw.settledTs),
+    fillsA: (raw.fillsA ?? []).map(toFill),
+    fillsB: (raw.fillsB ?? []).map(toFill),
+  };
+}
+
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+/**
+ * The mark the book was re-pegged to, backed out of a fill.
+ *
+ * A recorded `px` is the *execution* price — it already carries the fill's own
+ * impact, so it is not the market. But `apply_fill` re-pegs to the mark first
+ * and the curve's depth is fixed at `entry * BOOK_DEPTH`, which leaves the
+ * relationship invertible.
+ *
+ * For a buy of `value` lamports against quote reserves `Q`:
+ *   base_out = base_v * value / (Q + value),  base_v = Q * VALUE_DIV / mark
+ *   px       = value * VALUE_DIV / base_out
+ * so px = mark * (Q + value) / Q, and the mark falls straight out.
+ *
+ * For a sell of `qty` base:
+ *   px = Q * VALUE_DIV / (Q * VALUE_DIV / mark + qty)
+ * which inverts the same way. A fill that would divide by zero — only possible
+ * from a corrupt tape — returns the execution price rather than an infinity.
+ */
+export function markFromFill(fill: TapeFill, entry: number): number {
+  const Q = entry * BOOK_DEPTH;
+  if (Q <= 0 || fill.px <= 0 || fill.qty <= 0) return fill.px;
+  const value = (fill.qty * fill.px) / VALUE_DIV;
+  if (fill.side === 'buy') {
+    if (Q + value === 0) return fill.px;
+    return (fill.px * Q) / (Q + value);
+  }
+  const inv = (Q * VALUE_DIV) / fill.px - fill.qty;
+  if (inv <= 0) return fill.px;
+  return (Q * VALUE_DIV) / inv;
+}
+
+/** One moment on a player's reconstructed round. */
+export interface EquityPoint {
+  ts: number;
+  /** Lamports held as quote. */
+  quote: number;
+  /** Base held, x BASE_SCALE. */
+  base: number;
+  /** Mark-to-market equity in lamports, at the mark behind this fill. */
+  equity: number;
+  /** Equity against the entry, in basis points — the chain's own measure. */
+  bps: number;
+  /** The fill that produced this point; null for the opening point. */
+  fill: TapeFill | null;
+}
+
+/**
+ * Replay a fill list into the equity curve it actually produced.
+ *
+ * The position starts holding the entry as quote and nothing as base, and each
+ * fill moves exactly `qty * px / VALUE_DIV` lamports across — the same product
+ * the program computed to derive that `px` in the first place. So this is a
+ * reconstruction, not an estimate: the final point lands on the chain's own
+ * `pnl_*_bps` because a settled position is all quote and no base, and
+ * `pnl_bps` of an all-quote position is the same division done here.
+ *
+ * Between fills there is nothing. The tape samples equity when a player traded
+ * and at the buzzer, and no on-chain record exists of where the mark sat in
+ * between — so no point is drawn there. A curve that filled that in would be
+ * telling a story the chain cannot support.
+ *
+ * `startTs` is when the round went live, and is what the opening point is
+ * stamped with. Without it a player who never traded opened at unix epoch
+ * zero, and any axis drawn across both players collapsed to its right edge.
+ */
+export function replayEquity(fills: TapeFill[], entry: number, startTs?: number): EquityPoint[] {
+  const sorted = [...fills].sort((a, b) => a.ts - b.ts);
+  const start = startTs ?? sorted[0]?.ts ?? 0;
+  let quote = entry;
+  let base = 0;
+
+  const bpsOf = (equity: number) => (entry === 0 ? 0 : Math.trunc(((equity - entry) * 10_000) / entry));
+
+  const points: EquityPoint[] = [
+    { ts: start, quote, base, equity: entry, bps: 0, fill: null },
+  ];
+
+  for (const f of sorted) {
+    const value = (f.qty * f.px) / VALUE_DIV;
+    if (f.side === 'buy') {
+      quote -= value;
+      base += f.qty;
+    } else {
+      quote += value;
+      base -= f.qty;
+    }
+    const mark = markFromFill(f, entry);
+    const equity = quote + (base * mark) / VALUE_DIV;
+    points.push({ ts: f.ts, quote, base, equity, bps: bpsOf(equity), fill: f });
+  }
+
+  return points;
+}
+
+/** Whole tokens a fill moved, for display. */
+export const fillTokens = (f: TapeFill): number => f.qty / BASE_SCALE;
+
+/** Lamports a fill moved, for display. */
+export const fillValue = (f: TapeFill): number => (f.qty * f.px) / VALUE_DIV;

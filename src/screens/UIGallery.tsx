@@ -53,10 +53,12 @@ import {
   MarketHeader,
   FillReceipt,
   SettleProgress,
+  RoundTimeline,
   LiveDuelRow,
   type MarketKindKey,
   type PickableMarket,
 } from '../ui';
+import { replayEquity, type TapeFill } from '../chain/tape';
 
 /**
  * Fixed rows, so the gallery renders the same thing every time.
@@ -89,6 +91,29 @@ const GALLERY_MARKETS: PickableMarket[] = [
     cap: '$806.1M',
     source: 'pump.fun',
   },
+];
+
+/**
+ * A real settled round, frozen for the catalogue.
+ *
+ * Copied verbatim off tape `8aWVZV29…` on the local cluster — the same
+ * `{ side, qty, px, ts }` records `settle_match` wrote, in the chain's units
+ * (`qty` is base x BASE_SCALE, `px` is lamports per token x PRICE_SCALE). It
+ * is frozen rather than fetched because a component catalogue that redrew on
+ * every reload could not show a visual regression, and it is real rather than
+ * invented because the shape is the thing being catalogued: both players dip
+ * below break-even on their own fill's impact before the price runs.
+ */
+const GALLERY_ENTRY = 50_000_000;
+const GALLERY_START = 1_788_743_559;
+const GALLERY_DURATION = 30;
+const GALLERY_FILLS_A: TapeFill[] = [
+  { side: 'buy', qty: 2_701_268, px: 8_329_421_590_156, ts: 1_788_743_563 },
+  { side: 'settle', qty: 2_701_268, px: 9_680_339_011_160, ts: 1_788_743_601 },
+];
+const GALLERY_FILLS_B: TapeFill[] = [
+  { side: 'buy', qty: 1_205_239, px: 8_297_109_535_950, ts: 1_788_743_563 },
+  { side: 'settle', qty: 1_205_239, px: 9_724_348_448_730, ts: 1_788_743_601 },
 ];
 
 const TONES: ButtonTone[] = ['primary', 'danger', 'gold', 'quiet', 'info'];
@@ -538,6 +563,20 @@ export default function UIGallery() {
               { id: 'undelegate', label: 'UNDELEGATE', note: 'the rollup did not commit in time', state: 'failed' },
               { id: 'settle', label: 'SETTLE', note: 'PnL compared, pot paid, tape written', state: 'waiting' },
             ]}
+          />
+        </Stack>
+      </Section>
+
+      <Section title="ROUNDTIMELINE" note="both players' fills on one time axis">
+        <Stack gap={space.md}>
+          {/* Fixed fills, run through the same `replayEquity` the reveal uses,
+              so what the catalogue draws is the real reconstruction and not a
+              hand-drawn shape that happens to look like one. */}
+          <RoundTimeline
+            you={{ label: 'YOU', points: replayEquity(GALLERY_FILLS_A, GALLERY_ENTRY, GALLERY_START), tone: color.cyan }}
+            opponent={{ label: 'RUGSTOP', points: replayEquity(GALLERY_FILLS_B, GALLERY_ENTRY, GALLERY_START), tone: color.magenta }}
+            startTs={GALLERY_START}
+            duration={GALLERY_DURATION}
           />
         </Stack>
       </Section>
