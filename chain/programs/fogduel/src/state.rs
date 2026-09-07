@@ -96,6 +96,10 @@ pub enum Side {
     Sell,
     /// Written by settlement when an open position is closed at the buzzer.
     Settle,
+    /// Written when a position was force-closed for running out of equity.
+    /// Distinct from `Settle` so the tape says *why* the position ended, and
+    /// so the reveal can show a blow-up as the event it was.
+    Liquidation,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, InitSpace)]
@@ -108,14 +112,35 @@ pub struct Fill {
     pub ts: i64,
 }
 
+/// One player's chosen market.
+///
+/// A duel used to be two players on one token. It is now two players on two
+/// tokens, compared on PnL — so everything that described "the market" has to
+/// be said twice, once per side.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, Default, InitSpace)]
+pub struct Leg {
+    /// The token this player is trading. Informational for settlement —
+    /// positions are virtual inventory, so no SPL transfer happens mid-round.
+    pub mint: Pubkey,
+    /// Ticker, zero-padded. Display only; the mint is the identity.
+    pub symbol: [u8; SYMBOL_LEN],
+    /// Token name, zero-padded.
+    pub name: [u8; NAME_LEN],
+    /// Which feed prices it, which decides how the mark is produced.
+    pub market_type: MarketType,
+    /// The mark this player's round opened on, and their book was seeded at.
+    pub start_px: u64,
+}
+
 #[account]
 #[derive(InitSpace)]
 pub struct Match {
     pub creator: Pubkey,
     pub joiner: Option<Pubkey>,
-    /// The token being traded. Informational for the demo — positions are
-    /// virtual inventory, so no SPL transfer happens mid-round.
-    pub mint: Pubkey,
+    /// The creator's market. Set at `create_match`.
+    pub leg_a: Leg,
+    /// The joiner's market. Zeroed until somebody joins and names their own.
+    pub leg_b: Leg,
     pub match_id: u64,
     /// When the match was opened. `start_ts` is when it went live, which is a
     /// different moment and is zero until somebody joins — so "opened 3m ago"
@@ -132,12 +157,6 @@ pub struct Match {
     pub winner: Option<Pubkey>,
     pub pnl_a_bps: i64,
     pub pnl_b_bps: i64,
-    /// Meme or Major. Decides how the mark is produced at settlement.
-    pub market_type: MarketType,
-    /// Ticker, zero-padded. Display only; the mint is the identity.
-    pub symbol: [u8; SYMBOL_LEN],
-    /// Token name, zero-padded.
-    pub name: [u8; NAME_LEN],
     pub bump: u8,
 }
 
@@ -250,6 +269,25 @@ impl Book {
     }
 
     /// Quote received for selling `base_in`. Moves the curve the other way.
+    /// Quote needed to take exactly `base_out` off the curve. Moves it.
+    ///
+    /// The mirror of `sell`, and needed because closing a short buys a known
+    /// quantity of base rather than spending a known quantity of quote. Doing
+    /// it by guessing a quote amount and checking what came back would leave
+    /// dust on a position that is supposed to end at exactly zero.
+    pub fn buy_base(&mut self, base_out: u64) -> Option<u64> {
+        let k = self.k();
+        let new_base = (self.virtual_base as u128).checked_sub(base_out as u128)?;
+        if new_base == 0 {
+            return None;
+        }
+        let new_quote = k.checked_div(new_base)?;
+        let quote_in = new_quote.checked_sub(self.virtual_quote as u128)?;
+        self.virtual_base = new_base as u64;
+        self.virtual_quote = new_quote as u64;
+        Some(quote_in as u64)
+    }
+
     pub fn sell(&mut self, base_in: u64) -> Option<u64> {
         let quote_out = self.quote_out_for(base_in)?;
         let k = self.k();
@@ -357,6 +395,27 @@ pub struct Position {
     pub bump: u8,
 }
 
+/// What the whole world may know about a round in progress.
+///
+/// Every Position is sealed by an ACL, which is the point of the product — so
+/// there was nowhere to publish a fact that both players are *supposed* to
+/// see. A liquidation is exactly that fact: a blow-up is announced, by
+/// decision, even though position contents never are.
+///
+/// Deliberately carries no permission account. It is delegated to the rollup so
+/// `liquidate` can write it, and served to anyone who asks — the same shape as
+/// the unsealed control account `check:gate` probes to show that the gate
+/// discriminates rather than simply refusing everything.
+#[account]
+#[derive(InitSpace)]
+pub struct RoundStatus {
+    pub match_key: Pubkey,
+    /// Set when that side was force-closed for running out of equity.
+    pub liquidated_a: bool,
+    pub liquidated_b: bool,
+    pub bump: u8,
+}
+
 /// Escrow. A program-owned account so settlement can move lamports out of it
 /// by direct mutation; a system-owned PDA could not.
 #[account]
@@ -373,12 +432,21 @@ pub struct Treasury {
     pub bump: u8,
 }
 
-/// The mark price both players trade against. One feed per match, so neither
-/// side can be quoted a different price than the other.
+/// The mark one player trades against.
+///
+/// There used to be a single feed per match, so that neither side could be
+/// quoted a different price than the other. That guarantee only meant anything
+/// while both sides traded the same token; now each player brings their own
+/// market, so there is one feed per player, seeded `[b"feed", match, owner]`.
+/// The protection that mattered survives in a stronger form: a player's fills
+/// are priced by the feed for the token they actually chose, and nothing else
+/// can write it.
 #[account]
 #[derive(InitSpace)]
 pub struct PriceFeed {
     pub match_key: Pubkey,
+    /// Which player's market this prices.
+    pub owner: Pubkey,
     /// Scaled by PRICE_SCALE.
     pub px: u64,
     pub updated_ts: i64,
@@ -391,12 +459,14 @@ pub struct PriceFeed {
 #[derive(InitSpace)]
 pub struct Tape {
     pub match_key: Pubkey,
-    /// What was traded. The tape is the public record of a duel, and a record
-    /// that does not say which market it was is not much of a record — the
-    /// feed had to fall back to naming every past duel after a demo mint.
-    pub mint: Pubkey,
-    pub symbol: [u8; SYMBOL_LEN],
-    pub market_type: MarketType,
+    /// What each side traded. The tape is the public record of a duel, and a
+    /// record that does not say which markets it was is not much of a record.
+    /// Two legs now, because the players no longer share one.
+    pub leg_a: Leg,
+    pub leg_b: Leg,
+    /// Whether either side ended by being force-closed rather than by trading.
+    pub liquidated_a: bool,
+    pub liquidated_b: bool,
     pub player_a: Pubkey,
     pub player_b: Pubkey,
     pub pnl_a_bps: i64,
@@ -417,6 +487,83 @@ impl Position {
     pub fn equity(&self, mark_px: u64) -> i128 {
         let base_value = (self.base_qty as i128) * (mark_px as i128) / VALUE_DIV;
         (self.quote_balance as i128) + base_value
+    }
+
+    /// Fold a filled quantity into the position, in either direction.
+    ///
+    /// `signed_base` is what the fill adds to `base_qty`: positive for a buy,
+    /// negative for a sell. This is one function rather than two arms because
+    /// a sell that crosses zero is a close *and* an open, and so is a buy —
+    /// writing that twice is how the two directions drift apart.
+    ///
+    /// Anything that reduces the existing position realises PnL against
+    /// `avg_px`; anything beyond that opens the other way at the execution
+    /// price. A short's PnL is the mirror of a long's, which falls out of the
+    /// signed arithmetic rather than needing its own case.
+    pub fn apply_signed(&mut self, signed_base: i128, exec_px: u64, quote_delta: i128) {
+        let old = self.base_qty as i128;
+        let new = old + signed_base;
+
+        // How much of this fill closes what was already open.
+        let closing = if old == 0 || (old > 0) == (signed_base > 0) {
+            0
+        } else if signed_base.abs() >= old.abs() {
+            old.abs()
+        } else {
+            signed_base.abs()
+        };
+
+        if closing > 0 {
+            // Long: gain when exec is above the average paid. Short: the
+            // reverse. `old.signum()` carries that without a branch.
+            let per_unit = (exec_px as i128) - (self.avg_px as i128);
+            self.realized += ((closing * per_unit * old.signum()) / VALUE_DIV) as i64;
+        }
+
+        self.avg_px = if new == 0 {
+            0
+        } else if closing > 0 && signed_base.abs() > closing {
+            // Crossed through zero: what is open now was opened at this price.
+            exec_px
+        } else if (old > 0) == (new > 0) && closing == 0 {
+            // Added to the same side: volume-weighted average.
+            let prev = old.abs() * (self.avg_px as i128);
+            let add = signed_base.abs() * (exec_px as i128);
+            (((prev + add) / new.abs()).max(0)) as u64
+        } else {
+            self.avg_px
+        };
+
+        self.base_qty = new as i64;
+        self.quote_balance += quote_delta as i64;
+    }
+
+    /// Out of money at this mark.
+    ///
+    /// Equity is `quote + base * mark`, which is already signed, so it reads a
+    /// short correctly: selling base raises quote and drives base negative, and
+    /// a mark moving up then eats the difference. At or below zero the player
+    /// has nothing left to lose with, and the round is over for them.
+    pub fn is_underwater(&self, mark_px: u64) -> bool {
+        self.equity(mark_px) <= 0
+    }
+
+    /// The largest base position, either direction, this equity can carry.
+    ///
+    /// One times collateral. The user asked for realistic shorts, and the
+    /// realistic part is that you can be wiped out — not that you can lose more
+    /// than you brought. Capping notional at equity means a short is fully
+    /// liquidated by roughly a doubling of the mark, and a duel can never owe
+    /// out more than the pot escrowed for it.
+    pub fn max_base_at(&self, mark_px: u64) -> i128 {
+        if mark_px == 0 {
+            return 0;
+        }
+        let eq = self.equity(mark_px);
+        if eq <= 0 {
+            return 0;
+        }
+        eq * VALUE_DIV / (mark_px as i128)
     }
 
     /// PnL against the starting quote balance, in basis points.

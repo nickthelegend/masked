@@ -85,7 +85,16 @@ pub mod fogduel {
         let m = &mut ctx.accounts.match_account;
         m.creator = ctx.accounts.creator.key();
         m.joiner = None;
-        m.mint = mint;
+        // The creator's market. The joiner names their own when they join —
+        // a duel is two players on two tokens, compared on PnL.
+        m.leg_a = Leg {
+            mint,
+            symbol: pad::<SYMBOL_LEN>(&symbol),
+            name: pad::<NAME_LEN>(&name),
+            market_type,
+            start_px,
+        };
+        m.leg_b = Leg::default();
         m.match_id = match_id;
         m.created_ts = Clock::get()?.unix_timestamp;
         m.start_ts = 0;
@@ -96,9 +105,6 @@ pub mod fogduel {
         m.winner = None;
         m.pnl_a_bps = 0;
         m.pnl_b_bps = 0;
-        m.market_type = market_type;
-        m.symbol = pad::<SYMBOL_LEN>(&symbol);
-        m.name = pad::<NAME_LEN>(&name);
         m.bump = ctx.bumps.match_account;
 
         let vault = &mut ctx.accounts.vault;
@@ -107,10 +113,18 @@ pub mod fogduel {
 
         let feed = &mut ctx.accounts.price_feed;
         feed.match_key = m.key();
+        feed.owner = ctx.accounts.creator.key();
         feed.px = start_px;
         feed.updated_ts = Clock::get()?.unix_timestamp;
         feed.authority = ctx.accounts.creator.key();
         feed.bump = ctx.bumps.price_feed;
+
+        // Public for the whole round, unlike everything else about a position.
+        let status = &mut ctx.accounts.round_status;
+        status.match_key = m.key();
+        status.liquidated_a = false;
+        status.liquidated_b = false;
+        status.bump = ctx.bumps.round_status;
 
         // Escrow the creator's entry.
         system_program::transfer(
@@ -131,7 +145,15 @@ pub mod fogduel {
 
     /// Join an open match. Escrows the joiner's entry, starts the clock, and
     /// seeds both positions with their virtual quote balance.
-    pub fn join_match(ctx: Context<JoinMatch>) -> Result<()> {
+    pub fn join_match(
+        ctx: Context<JoinMatch>,
+        mint: Pubkey,
+        start_px: u64,
+        market_type: MarketType,
+        symbol: String,
+        name: String,
+    ) -> Result<()> {
+        require!(start_px > 0, FogError::InvalidPrice);
         let entry = ctx.accounts.match_account.entry;
         require!(
             ctx.accounts.match_account.status == MatchStatus::Open,
@@ -143,11 +165,13 @@ pub mod fogduel {
             FogError::SelfJoin
         );
 
-        // Both books are seeded from the mid snapshotted at *create* time, so a
-        // match that has sat on the book while the market moved would hand its
-        // joiner a position priced at a number that is no longer true, and the
-        // rate-limited crank would then correct it onto them mid-round. See
-        // MAX_OPEN_AGE.
+        // The creator's book is seeded from the mid snapshotted at *create*
+        // time, so a match that has sat on the book while the market moved
+        // would hand its creator a position priced at a number that is no
+        // longer true, and the rate-limited crank would then correct it onto
+        // them mid-round. The joiner brings a mark taken just now, so only the
+        // creator's side is exposed to this — which is what MAX_OPEN_AGE
+        // bounds.
         let joined_at = Clock::get()?.unix_timestamp;
         require!(
             joined_at - ctx.accounts.match_account.created_ts <= MAX_OPEN_AGE,
@@ -173,6 +197,17 @@ pub mod fogduel {
         // the opponent exactly the information the fog exists to hide.
         let quote = entry as i64;
 
+        // The joiner's own feed, opened at the mark they just read.
+        let feed_b = &mut ctx.accounts.price_feed_b;
+        feed_b.match_key = match_key;
+        feed_b.owner = ctx.accounts.joiner.key();
+        feed_b.px = start_px;
+        feed_b.updated_ts = now;
+        feed_b.authority = ctx.accounts.joiner.key();
+        feed_b.bump = ctx.bumps.price_feed_b;
+
+        let px_a = ctx.accounts.price_feed.px;
+
         let pa = &mut ctx.accounts.position_a;
         pa.owner = ctx.accounts.match_account.creator;
         pa.match_key = match_key;
@@ -180,16 +215,15 @@ pub mod fogduel {
         pa.base_qty = 0;
         pa.avg_px = 0;
         pa.realized = 0;
-        pa.last_px = ctx.accounts.price_feed.px;
+        pa.last_px = px_a;
         pa.fill_count = 0;
         pa.fills = Vec::new();
         pa.bump = ctx.bumps.position_a;
-        // Each side gets its own book, seeded identically from the snapshot mid
-        // taken at create time. Identical, but separate: one shared curve would
-        // publish each player's flow to the other through the mark.
-        pa.book
-            .seed(entry, ctx.accounts.price_feed.px)
-            .ok_or(FogError::InvalidPrice)?;
+        // Each side gets its own book, seeded at the mark of the token that
+        // side actually chose. Separate curves, because one shared curve would
+        // publish each player's flow to the other through the mark — and now
+        // they are not even denominated in the same token.
+        pa.book.seed(entry, px_a).ok_or(FogError::InvalidPrice)?;
 
         let pb = &mut ctx.accounts.position_b;
         pb.owner = ctx.accounts.joiner.key();
@@ -198,13 +232,11 @@ pub mod fogduel {
         pb.base_qty = 0;
         pb.avg_px = 0;
         pb.realized = 0;
-        pb.last_px = ctx.accounts.price_feed.px;
+        pb.last_px = start_px;
         pb.fill_count = 0;
         pb.fills = Vec::new();
         pb.bump = ctx.bumps.position_b;
-        pb.book
-            .seed(entry, ctx.accounts.price_feed.px)
-            .ok_or(FogError::InvalidPrice)?;
+        pb.book.seed(entry, start_px).ok_or(FogError::InvalidPrice)?;
 
         // Pre-fund for ephemeral-permission rent on the ER. See the constant.
         for target in [pa.to_account_info(), pb.to_account_info()] {
@@ -222,6 +254,13 @@ pub mod fogduel {
 
         let m = &mut ctx.accounts.match_account;
         m.joiner = Some(ctx.accounts.joiner.key());
+        m.leg_b = Leg {
+            mint,
+            symbol: pad::<SYMBOL_LEN>(&symbol),
+            name: pad::<NAME_LEN>(&name),
+            market_type,
+            start_px,
+        };
         m.start_ts = now;
         m.pot = entry.checked_mul(2).ok_or(FogError::MathOverflow)?;
         m.status = MatchStatus::Live;
@@ -254,10 +293,13 @@ pub mod fogduel {
         Ok(())
     }
 
-    /// Post a new mark.
+    /// Post a new mark for one player's market.
     ///
-    /// One feed per match, so both players are always quoted the same price —
-    /// an asymmetric feed would be an exploit on its own.
+    /// One feed per player, because the two sides no longer trade the same
+    /// token. The symmetry that used to matter — neither side quoted a
+    /// different price than the other — is replaced by a narrower guarantee
+    /// that still bites: a player's fills are priced by the feed for the token
+    /// they chose, and that feed is rate-limited like any other.
     ///
     /// Permissionless. The obvious alternative, letting only the creator post,
     /// is worse: it hands one player the power to time the mark against the
@@ -269,7 +311,7 @@ pub mod fogduel {
     /// This is a stand-in for an oracle, and it is the one place where the
     /// round trusts something off-chain. For a major, the replacement is a
     /// Pyth price update, which is signed and needs no rate limit.
-    pub fn push_price(ctx: Context<PushPrice>, px: u64) -> Result<()> {
+    pub fn push_price(ctx: Context<PushPrice>, px: u64, owner: Pubkey) -> Result<()> {
         require!(px > 0, FogError::InvalidPrice);
 
         let m = &ctx.accounts.match_account;
@@ -342,47 +384,115 @@ pub mod fogduel {
         // Every fill goes through that private book. Nothing is routed to a
         // public venue: a swap print would leak the wallet, the mint and the
         // size, which is the whole thing the fog protects.
-        let (filled_qty, notional, px) = match side {
+        let (filled_qty, px) = match side {
             Side::Buy => {
-                // `qty` is the quote the player is spending.
+                // `qty` is the quote the player is spending — to open a long,
+                // or to buy back a short.
                 let quote_in = qty;
                 require!(pos.quote_balance >= quote_in as i64, FogError::InsufficientQuote);
                 let base_out = pos.book.buy(quote_in).ok_or(FogError::MathOverflow)?;
                 require!(base_out > 0, FogError::ZeroQuantity);
 
                 let exec_px = (((quote_in as i128) * VALUE_DIV) / (base_out as i128)) as u64;
-                let prev_notional = (pos.base_qty as i128) * (pos.avg_px as i128);
-                let add_notional = (base_out as i128) * (exec_px as i128);
-                let new_qty = (pos.base_qty as i128) + (base_out as i128);
-                pos.avg_px = if new_qty == 0 { 0 } else { ((prev_notional + add_notional) / new_qty) as u64 };
-                pos.quote_balance -= quote_in as i64;
-                pos.base_qty = new_qty as i64;
-                (base_out, quote_in as i64, exec_px)
+                pos.apply_signed(base_out as i128, exec_px, -(quote_in as i128));
+                (base_out, exec_px)
             }
-            Side::Sell | Side::Settle => {
-                // `qty` is the base the player is selling.
-                require!(pos.base_qty >= qty as i64, FogError::InsufficientBase);
+            Side::Sell | Side::Settle | Side::Liquidation => {
+                // `qty` is the base the player is selling. It no longer has to
+                // be base they hold: selling past zero opens a short, which is
+                // the whole point of having a second direction. What stops it
+                // running away is the margin check below, not an inventory
+                // check here.
                 let quote_out = pos.book.sell(qty).ok_or(FogError::MathOverflow)?;
                 require!(quote_out > 0, FogError::ZeroQuantity);
 
                 let exec_px = (((quote_out as i128) * VALUE_DIV) / (qty as i128)) as u64;
-                let cost = ((qty as i128) * (pos.avg_px as i128) / VALUE_DIV) as i64;
-                pos.realized += (quote_out as i64) - cost;
-                pos.quote_balance += quote_out as i64;
-                pos.base_qty -= qty as i64;
-                if pos.base_qty == 0 {
-                    pos.avg_px = 0;
-                }
-                (qty, quote_out as i64, exec_px)
+                pos.apply_signed(-(qty as i128), exec_px, quote_out as i128);
+                (qty, exec_px)
             }
         };
-        let _ = notional;
         let qty = filled_qty;
+
+        // One times collateral, either direction.
+        //
+        // A short can lose more than it stakes, so something has to bound it.
+        // Capping notional at equity means the worst case is exactly the entry
+        // — a duel can never owe out more than the pot escrowed for it — and a
+        // maximum short is wiped by roughly a doubling of the mark, which is a
+        // real risk rather than a theoretical one.
+        //
+        // Settlement and liquidation are exempt: both only ever reduce a
+        // position, and refusing to let a blown-up player close would trap
+        // them in it.
+        if matches!(side, Side::Buy | Side::Sell) {
+            let open = (pos.base_qty as i128).abs();
+            require!(open <= pos.max_base_at(mark), FogError::InsufficientQuote);
+        }
 
         pos.last_px = px;
         pos.push_fill(Fill { side, qty, px, ts: now });
 
         msg!("fill side={:?} qty={} px={}", side, qty, px);
+        Ok(())
+    }
+
+    /// Force-close a position that has run out of equity, and say so publicly.
+    ///
+    /// Runs on the rollup, because that is where the position lives. The mark
+    /// is written on L1 but the rollup carries a readable clone of the feed, so
+    /// both halves of the question — what is this worth, and what does the
+    /// player hold — are answerable here and nowhere else.
+    ///
+    /// Permissionless, like settlement: a player would never call it on
+    /// themselves, and an opponent has every reason to. Calling it on a
+    /// position that is solvent does nothing, so there is no grief in trying.
+    ///
+    /// The result is announced in `RoundStatus`, which carries no ACL. That is
+    /// a deliberate hole in the fog and the only one: position *contents* stay
+    /// sealed, but the fact that a side blew up is public the moment it does.
+    pub fn liquidate(ctx: Context<Liquidate>, owner: Pubkey) -> Result<()> {
+        let m = &ctx.accounts.match_account;
+        require!(m.status == MatchStatus::Live, FogError::MatchNotLive);
+        let now = Clock::get()?.unix_timestamp;
+        require!(now < m.start_ts + m.duration, FogError::MatchExpired);
+
+        let mark = ctx.accounts.price_feed.px;
+        require!(mark > 0, FogError::InvalidPrice);
+
+        let entry = m.entry;
+        let is_creator = owner == m.creator;
+        let pos = &mut ctx.accounts.position;
+        require_keys_eq!(pos.owner, owner, FogError::NotAParticipant);
+
+        // Solvent, or holding nothing. Not an error — the crank calls this
+        // blind on both sides every few seconds.
+        if pos.base_qty == 0 || !pos.is_underwater(mark) {
+            return Ok(());
+        }
+
+        // Record it as an execution at the mark, so the tape says what the
+        // position was and when it went, rather than just showing a hole.
+        pos.book.repeg(entry, mark).ok_or(FogError::InvalidPrice)?;
+        let qty = (pos.base_qty as i128).unsigned_abs() as u64;
+        pos.push_fill(Fill { side: Side::Liquidation, qty, px: mark, ts: now });
+        pos.fill_count = pos.fill_count.saturating_add(1);
+
+        // Equity was already at or below zero. Closing it out leaves exactly
+        // nothing, which is -100% and cannot go further: the entry is the most
+        // anyone can lose, and the pot always covers the payout.
+        pos.base_qty = 0;
+        pos.avg_px = 0;
+        pos.quote_balance = 0;
+        pos.last_px = mark;
+
+        let status = &mut ctx.accounts.round_status;
+        if is_creator {
+            status.liquidated_a = true;
+        } else {
+            status.liquidated_b = true;
+        }
+
+        msg!("liquidated owner={} at px={}", owner, mark);
         Ok(())
     }
 
@@ -412,8 +522,12 @@ pub mod fogduel {
         // differs between a meme and a major is only where that price came
         // from off-chain — a bonding curve or an oracle — not how the round is
         // scored.
-        let mark = ctx.accounts.price_feed.px;
-        require!(mark > 0, FogError::InvalidPrice);
+        // One mark per side, because the two sides are no longer trading the
+        // same token. Each position is valued against the feed for the market
+        // its owner actually chose.
+        let mark_a = ctx.accounts.price_feed.px;
+        let mark_b = ctx.accounts.price_feed_b.px;
+        require!(mark_a > 0 && mark_b > 0, FogError::InvalidPrice);
 
         // An open position settles into realized PnL at the buzzer, and that
         // shows on the tape as a SETTLE fill. Mirrors the UI's long-standing
@@ -423,22 +537,31 @@ pub mod fogduel {
         // book, re-pegged to the final mark: the mid alone would ignore the
         // impact of getting out, which is real money on a size that took real
         // money to put on.
-        for pos in [
-            &mut ctx.accounts.position_a,
-            &mut ctx.accounts.position_b,
+        //
+        // Either direction closes here. A short is bought back rather than
+        // sold, so the signed quantity — not its magnitude — decides which way
+        // the book is crossed.
+        let entry_lamports = ctx.accounts.match_account.entry;
+        for (pos, mark) in [
+            (&mut ctx.accounts.position_a, mark_a),
+            (&mut ctx.accounts.position_b, mark_b),
         ] {
-            if pos.base_qty > 0 {
-                let qty = pos.base_qty as u64;
-                pos.book
-            .repeg(ctx.accounts.match_account.entry, mark)
-            .ok_or(FogError::InvalidPrice)?;
-                let proceeds = pos.book.sell(qty).ok_or(FogError::MathOverflow)? as i64;
-                let px = (((proceeds as i128) * VALUE_DIV) / (qty as i128)) as u64;
-                let cost = ((qty as i128) * (pos.avg_px as i128) / VALUE_DIV) as i64;
-                pos.realized += proceeds - cost;
-                pos.quote_balance += proceeds;
-                pos.base_qty = 0;
-                pos.avg_px = 0;
+            if pos.base_qty != 0 {
+                let signed = pos.base_qty as i128;
+                let qty = signed.unsigned_abs() as u64;
+                pos.book.repeg(entry_lamports, mark).ok_or(FogError::InvalidPrice)?;
+                let (px, quote_delta) = if signed > 0 {
+                    let proceeds = pos.book.sell(qty).ok_or(FogError::MathOverflow)?;
+                    let px = (((proceeds as i128) * VALUE_DIV) / (qty as i128)) as u64;
+                    (px, proceeds as i128)
+                } else {
+                    // Buying back a short: what it costs to close, on this
+                    // player's own curve, impact included.
+                    let cost = pos.book.buy_base(qty).ok_or(FogError::MathOverflow)?;
+                    let px = (((cost as i128) * VALUE_DIV) / (qty as i128)) as u64;
+                    (px, -(cost as i128))
+                };
+                pos.apply_signed(-signed, px, quote_delta);
                 pos.push_fill(Fill { side: Side::Settle, qty, px, ts: now });
                 pos.last_px = px;
             } else {
@@ -446,8 +569,8 @@ pub mod fogduel {
             }
         }
 
-        let pnl_a = ctx.accounts.position_a.pnl_bps(mark, start_quote);
-        let pnl_b = ctx.accounts.position_b.pnl_bps(mark, start_quote);
+        let pnl_a = ctx.accounts.position_a.pnl_bps(mark_a, start_quote);
+        let pnl_b = ctx.accounts.position_b.pnl_bps(mark_b, start_quote);
 
         // Deterministic tie-break: a draw goes to the creator. Documented, and
         // the client mirrors it — a client-side ">=" would silently favour
@@ -483,9 +606,10 @@ pub mod fogduel {
 
         let tape = &mut ctx.accounts.tape;
         tape.match_key = ctx.accounts.match_account.key();
-        tape.mint = ctx.accounts.match_account.mint;
-        tape.symbol = ctx.accounts.match_account.symbol;
-        tape.market_type = ctx.accounts.match_account.market_type;
+        tape.leg_a = ctx.accounts.match_account.leg_a;
+        tape.leg_b = ctx.accounts.match_account.leg_b;
+        tape.liquidated_a = ctx.accounts.round_status.liquidated_a;
+        tape.liquidated_b = ctx.accounts.round_status.liquidated_b;
         tape.player_a = creator;
         tape.player_b = joiner;
         tape.pnl_a_bps = pnl_a;
@@ -635,6 +759,30 @@ pub mod fogduel {
         Ok(())
     }
 
+    /// Delegate the public round status to the rollup.
+    ///
+    /// `liquidate` runs on the rollup, because that is where positions live,
+    /// so the account it announces into has to be writable there too. Unlike a
+    /// position this one is never given a permission, so it stays readable by
+    /// everyone — which is the entire reason it exists.
+    pub fn delegate_status_to_er(
+        ctx: Context<DelegateStatusToEr>,
+        validator: Option<Pubkey>,
+        commit_frequency_ms: u32,
+    ) -> Result<()> {
+        let match_key = ctx.accounts.match_account.key();
+        ctx.accounts.delegate_round_status(
+            &ctx.accounts.payer,
+            &[b"status", match_key.as_ref()],
+            DelegateConfig {
+                commit_frequency_ms,
+                validator,
+            },
+        )?;
+        msg!("round status delegated validator={:?}", validator);
+        Ok(())
+    }
+
     /* -------------------- MagicBlock: PER (the product) -------------------- */
 
     /// Mark a delegated `Position` private on the ER.
@@ -775,6 +923,23 @@ pub mod fogduel {
         )?;
         Ok(())
     }
+
+    /// Bring the public round status back from the rollup.
+    ///
+    /// `settle_match` runs on L1 and reads the liquidation flags off this
+    /// account to write them onto the tape. A delegated account is owned by the
+    /// delegation program on L1, so without this the settle transaction would
+    /// be rejected before it read anything.
+    pub fn commit_and_undelegate_status(ctx: Context<CommitAndUndelegateStatus>) -> Result<()> {
+        commit_and_undelegate_accounts(
+            &ctx.accounts.payer.to_account_info(),
+            vec![&ctx.accounts.round_status.to_account_info()],
+            &ctx.accounts.magic_context,
+            &ctx.accounts.magic_program,
+            None,
+        )?;
+        Ok(())
+    }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -805,14 +970,26 @@ pub struct CreateMatch<'info> {
     )]
     pub vault: Account<'info, Vault>,
 
+    /// The creator's feed. One per player now, so it is seeded by owner.
     #[account(
         init,
         payer = creator,
         space = 8 + PriceFeed::INIT_SPACE,
-        seeds = [b"feed", match_account.key().as_ref()],
+        seeds = [b"feed", match_account.key().as_ref(), creator.key().as_ref()],
         bump
     )]
     pub price_feed: Account<'info, PriceFeed>,
+
+    /// Deliberately unsealed: this is the one thing about a live round that is
+    /// public. See `RoundStatus`.
+    #[account(
+        init,
+        payer = creator,
+        space = 8 + RoundStatus::INIT_SPACE,
+        seeds = [b"status", match_account.key().as_ref()],
+        bump
+    )]
+    pub round_status: Account<'info, RoundStatus>,
 
     pub system_program: Program<'info, System>,
 }
@@ -828,8 +1005,19 @@ pub struct JoinMatch<'info> {
     #[account(mut, seeds = [b"vault", match_account.key().as_ref()], bump = vault.bump)]
     pub vault: Account<'info, Vault>,
 
-    #[account(seeds = [b"feed", match_account.key().as_ref()], bump = price_feed.bump)]
+    /// The creator's feed, opened at create time.
+    #[account(seeds = [b"feed", match_account.key().as_ref(), match_account.creator.as_ref()], bump = price_feed.bump)]
     pub price_feed: Account<'info, PriceFeed>,
+
+    /// The joiner's own feed, for the token they are bringing.
+    #[account(
+        init,
+        payer = joiner,
+        space = 8 + PriceFeed::INIT_SPACE,
+        seeds = [b"feed", match_account.key().as_ref(), joiner.key().as_ref()],
+        bump
+    )]
+    pub price_feed_b: Account<'info, PriceFeed>,
 
     #[account(
         init,
@@ -865,6 +1053,7 @@ pub struct CancelMatch<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(px: u64, owner: Pubkey)]
 pub struct PushPrice<'info> {
     /// Anyone. Deliberately not checked against `price_feed.authority`: see
     /// `push_price`. Signing is only so somebody pays the fee.
@@ -873,7 +1062,12 @@ pub struct PushPrice<'info> {
     #[account(seeds = [b"match", match_account.creator.as_ref(), &match_account.match_id.to_le_bytes()], bump = match_account.bump)]
     pub match_account: Account<'info, Match>,
 
-    #[account(mut, seeds = [b"feed", match_account.key().as_ref()], bump = price_feed.bump)]
+    #[account(
+        mut,
+        seeds = [b"feed", match_account.key().as_ref(), owner.as_ref()],
+        bump = price_feed.bump,
+        constraint = price_feed.owner == owner @ FogError::NotAParticipant,
+    )]
     pub price_feed: Account<'info, PriceFeed>,
 }
 
@@ -886,7 +1080,11 @@ pub struct ApplyFill<'info> {
     #[account(seeds = [b"match", match_account.creator.as_ref(), &match_account.match_id.to_le_bytes()], bump = match_account.bump)]
     pub match_account: Box<Account<'info, Match>>,
 
-    #[account(seeds = [b"feed", match_account.key().as_ref()], bump = price_feed.bump)]
+    #[account(
+        seeds = [b"feed", match_account.key().as_ref(), owner.as_ref()],
+        bump = price_feed.bump,
+        constraint = price_feed.owner == owner @ FogError::NotAParticipant,
+    )]
     pub price_feed: Box<Account<'info, PriceFeed>>,
 
     /// The position being filled — and, inside it, that player's own private
@@ -911,6 +1109,34 @@ pub struct ApplyFill<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(owner: Pubkey)]
+pub struct Liquidate<'info> {
+    /// Anyone. They pay the fee and get nothing for it but the outcome.
+    pub cranker: Signer<'info>,
+
+    #[account(seeds = [b"match", match_account.creator.as_ref(), &match_account.match_id.to_le_bytes()], bump = match_account.bump)]
+    pub match_account: Box<Account<'info, Match>>,
+
+    #[account(
+        seeds = [b"feed", match_account.key().as_ref(), owner.as_ref()],
+        bump = price_feed.bump,
+        constraint = price_feed.owner == owner @ FogError::NotAParticipant,
+    )]
+    pub price_feed: Box<Account<'info, PriceFeed>>,
+
+    #[account(
+        mut,
+        seeds = [b"position", match_account.key().as_ref(), owner.as_ref()],
+        bump = position.bump,
+    )]
+    pub position: Box<Account<'info, Position>>,
+
+    /// Unsealed on purpose. See `RoundStatus`.
+    #[account(mut, seeds = [b"status", match_account.key().as_ref()], bump = round_status.bump)]
+    pub round_status: Box<Account<'info, RoundStatus>>,
+}
+
+#[derive(Accounts)]
 pub struct RequestSettle<'info> {
     /// Permissionless — anyone may trigger settlement once the clock expires.
     pub cranker: Signer<'info>,
@@ -930,8 +1156,19 @@ pub struct SettleMatch<'info> {
     #[account(mut, seeds = [b"vault", match_account.key().as_ref()], bump = vault.bump)]
     pub vault: Box<Account<'info, Vault>>,
 
-    #[account(seeds = [b"feed", match_account.key().as_ref()], bump = price_feed.bump)]
+    /// The creator's market, for valuing the creator's position.
+    #[account(seeds = [b"feed", match_account.key().as_ref(), match_account.creator.as_ref()], bump = price_feed.bump)]
     pub price_feed: Box<Account<'info, PriceFeed>>,
+
+    /// The joiner's market. A different token, so a different mark.
+    #[account(seeds = [b"feed", match_account.key().as_ref(), position_b.owner.as_ref()], bump = price_feed_b.bump)]
+    pub price_feed_b: Box<Account<'info, PriceFeed>>,
+
+    /// Read here only to copy the liquidation flags onto the tape, so the
+    /// permanent record says whether a side was closed out or traded to the
+    /// buzzer.
+    #[account(seeds = [b"status", match_account.key().as_ref()], bump = round_status.bump)]
+    pub round_status: Box<Account<'info, RoundStatus>>,
 
     #[account(mut, seeds = [b"position", match_account.key().as_ref(), match_account.creator.as_ref()], bump = position_a.bump)]
     pub position_a: Box<Account<'info, Position>>,
@@ -1054,6 +1291,21 @@ pub struct DelegatePositionToEr<'info> {
     pub position: AccountInfo<'info>,
 }
 
+#[delegate]
+#[derive(Accounts)]
+pub struct DelegateStatusToEr<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    #[account(seeds = [b"match", match_account.creator.as_ref(), &match_account.match_id.to_le_bytes()], bump = match_account.bump)]
+    pub match_account: Account<'info, Match>,
+
+    /// CHECK: seeds are asserted here; ownership moves to the delegation
+    /// program, so this cannot stay a typed `Account`.
+    #[account(mut, del, seeds = [b"status", match_account.key().as_ref()], bump)]
+    pub round_status: AccountInfo<'info>,
+}
+
 #[derive(Accounts)]
 #[instruction(owner: Pubkey)]
 pub struct InitPositionPrivacy<'info> {
@@ -1092,6 +1344,16 @@ pub struct CommitAndUndelegatePosition<'info> {
 
     #[account(mut)]
     pub position: Account<'info, Position>,
+}
+
+#[commit]
+#[derive(Accounts)]
+pub struct CommitAndUndelegateStatus<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    #[account(mut)]
+    pub round_status: Account<'info, RoundStatus>,
 }
 
 #[delegate]
