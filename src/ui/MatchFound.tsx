@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import Stack from './Stack';
 import Row from './Row';
@@ -45,19 +45,32 @@ export default function MatchFound({
 }: MatchFoundProps) {
   const [left, setLeft] = useState(hold);
 
+  /**
+   * The dismiss callback, held in a ref so it is not a dependency.
+   *
+   * Callers pass an inline arrow, so its identity changes on every render —
+   * and this screen re-renders about once a second, because the match poll
+   * replaces the match object at that rate. As a dependency it tore down the
+   * one-second interval and built a new one before the old could ever fire,
+   * so the countdown never counted and the card never dismissed itself: it sat
+   * over a live round, reading `TRADE NOW (4)`, until it was tapped.
+   */
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
+
   useEffect(() => {
     const id = setInterval(() => {
       setLeft((n) => {
         if (n <= 1) {
           clearInterval(id);
-          onDone();
+          onDoneRef.current();
           return 0;
         }
         return n - 1;
       });
     }, 1000);
     return () => clearInterval(id);
-  }, [onDone]);
+  }, []);
 
   const mins = Math.round(duration / 60);
 

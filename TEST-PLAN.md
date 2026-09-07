@@ -390,3 +390,75 @@ impact (1.56% quoted, 1.5625% realised), rounds settle, PnL matches the chain's
 own bps, and all 15 check suites pass. It was load, not behaviour — and it was
 load on two third-party APIs, which is the likeliest reason Jupiter began
 answering 429 earlier in the build.
+
+---
+
+## T — the arcade PvP surfaces
+
+Twenty items covering the screens rebuilt to the arcade reference: a HUD with
+two counters, a lock-in card, the round drawn as a percentage arena with a
+standings board, a result board, and a tier ladder. Every one of them has to
+hold the fog rule as well as look right, which is where most of these items
+actually bite.
+
+| # | What | Correct means |
+|---|---|---|
+| T1 | HUD balance | Reads the wallet's real SOL to 2dp and moves when a fill settles |
+| T2 | HUD trophies | Equals `wins` on this wallet's on-chain player account, not a local tally |
+| T3 | HUD back plate | Returns to the feed; the plate dims when it has no action |
+| T4 | Match-found card | Fires once per duel, names both wallets and both tickers, dismisses on TRADE NOW or after 4s |
+| T5 | Match-found honesty | Says the round is LIVE NOW — never counts down to a start that already happened |
+| T6 | Match-found on reload | Does **not** re-show when a round already in progress is reopened (>20s elapsed) |
+| T7 | Countdown | `ENDING IN hh:mm:ss`, turns red and pulses inside the last 15s |
+| T8 | Arena axis | Six labels, symmetric about zero, enough decimals to separate adjacent gridlines |
+| T9 | Arena curve | Plots **PnL percent**, not the price tape; one series only |
+| T10 | Arena puck | Rides the leading edge, tagged with the live PnL, clamped inside the card |
+| T11 | Potential earnings | Pot net of rake; identical all round; never derived from the opponent |
+| T12 | Live standings rank | Both rows show `#?` — a rank needs both PnLs and one is sealed |
+| T13 | Live opponent PnL | Fog bar and the word FOGGED. Never `0.00%` |
+| T14 | Live opponent side | Padlock and SEALED. Never a direction |
+| T15 | Live opponent token | **Shown** — each leg is in the match account on L1, so hiding it would imply a secret the chain does not keep |
+| T16 | Your side chip | `▲ LONG` / `▼ SHORT` / `FLAT`, matching the position on chain |
+| T17 | Result board | 1V1, settle date, entry fee, both rows ranked by PnL, trophy on #1 and skull on last |
+| T18 | Result sides | Read off the tape via `carriedSide` — opening fills only, so a buzzer close does not report everyone flat |
+| T19 | Result headline | `YOU TOOK THE POT` or `OOF… SO CLOSE` with the exact gap in percentage points |
+| T20 | Tier ladder | Five tiers derived from the same on-chain `wins` the HUD prints |
+
+**Executed** against the running app across four duels, two wallets, two
+origins. T1–T20 **P**, with the defects below found and fixed in the same run.
+
+### Found while executing T
+
+Four defects, all in the running app, all fixed and re-verified:
+
+1. **Every MAX short was refused.** `apply_fill` caps a position at one times
+   collateral against post-fill equity. A long lands exactly on that cap; a
+   short pays its impact immediately, so sizing one at full equity overshoots
+   by exactly its own impact and comes back `NOT ENOUGH QUOTE`. Half the
+   product could not be traded at maximum size. `maxShortNotional` now solves
+   the cap in closed form. Re-verified live: quoted 1.52%, filled 1.5158%.
+
+2. **A short displayed as FLAT.** `positionLabel` tested `baseQty > 0`, so an
+   open short read as flat on the one line whose job is to say what you hold.
+
+3. **The reveal curtain tore itself open again on every render**, its effect
+   keyed on an inline `onDone`. Held in a ref now, and unmounted once torn.
+
+4. **The curtain froze across the screen when the tab was in the background.**
+   JS-driven `Animated` runs on `requestAnimationFrame`, which browsers do not
+   fire in a hidden tab, so the bands stopped at the sequence's first stop —
+   opaque, at full opacity, with the headline printed over the result board.
+   The completion timer now lands `progress` at 1 explicitly and unmounts the
+   curtain, so the visual state does not depend on anyone watching. The same
+   inspection found the curtain painting *underneath* the board it is meant to
+   hide — two positioned siblings paint in document order — so the one piece of
+   theatre in the app had never actually played. It has a `zIndex` now.
+
+### Not built, and why
+
+The reference set includes a **squad / RUSH mode**: three or more players, five
+tokens per squad, a shared prize ladder. The deployed program is a two-wallet
+duel — one `Leg` per player, one pot, one winner — so a squad screen would be a
+front end for instructions that do not exist. Building it would mean either
+mocking the mode or rewriting and redeploying the program, and this document
+does not mark mocked features as done.

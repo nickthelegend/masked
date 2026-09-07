@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, View, useWindowDimensions } from 'react-native';
 import PixelText from './PixelText';
 import Stack from './Stack';
@@ -49,6 +49,15 @@ export default function RevealCurtain({ active, label = 'TAPE UNSEALED', sublabe
    * content nobody was looking at. It covers a window's worth, from the top.
    */
   const { height: windowHeight } = useWindowDimensions();
+  /**
+   * Torn and gone.
+   *
+   * The curtain is fourteen opaque bands and a headline; once the tear is over
+   * there is no reason for any of it to stay in the tree, and leaving it there
+   * is what let a frozen animation keep painting. Unmounting is the only state
+   * that cannot be stuck in.
+   */
+  const [torn, setTorn] = useState(false);
 
   useEffect(() => {
     if (!active) {
@@ -62,6 +71,7 @@ export default function RevealCurtain({ active, label = 'TAPE UNSEALED', sublabe
     if (reduced) {
       done.current = true;
       onDoneRef.current?.();
+      setTorn(true);
       return undefined;
     }
     const anim = Animated.sequence([
@@ -78,7 +88,16 @@ export default function RevealCurtain({ active, label = 'TAPE UNSEALED', sublabe
     const timer = setTimeout(() => {
       if (!done.current) {
         done.current = true;
+        // Land the animation explicitly before finishing. JS-driven Animated
+        // runs on requestAnimationFrame, which a browser does not fire while
+        // the tab is in the background — so the bands can still be sitting at
+        // the sequence's first stop, fully opaque, when the timer says the
+        // tear is over. Switching tabs during a reveal left them frozen across
+        // the screen with the headline printed over the result board. The
+        // visual state must not depend on whether anyone was watching.
+        progress.setValue(1);
         onDoneRef.current?.();
+        setTorn(true);
       }
     }, TOTAL_MS);
 
@@ -88,13 +107,23 @@ export default function RevealCurtain({ active, label = 'TAPE UNSEALED', sublabe
     };
   }, [active, reduced, progress]);
 
-  if (!active || reduced) return null;
+  if (!active || reduced || torn) return null;
 
   return (
     <View
       style={[
         StyleSheet.absoluteFill,
-        { pointerEvents: 'none', bottom: undefined, height: windowHeight },
+        {
+          pointerEvents: 'none',
+          bottom: undefined,
+          height: windowHeight,
+          // Above the reveal it is covering. It is the first child of that
+          // screen, and two positioned siblings paint in document order, so
+          // without this the bands sat *behind* the result board and the tear
+          // played where nobody could see it — the one piece of theatre in the
+          // app, drawn underneath the thing it is supposed to be hiding.
+          zIndex: 30,
+        },
       ]}
     >
       {Array.from({ length: BARS }).map((_, i) => {
