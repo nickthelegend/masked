@@ -816,8 +816,15 @@ export function useDuel(): Duel {
         await checkProgram(FOGDUEL_PROGRAM_ID, ACTIVE_CLUSTER)
       );
       if (!pre.ok) {
+        // `return 'noop'`, not `throw`. Throwing sent this back through
+        // `withRetry`, which reads an unrecognised Error as retryable and ran
+        // the whole preflight three times — three balance reads and three
+        // NOT ENOUGH SOL toasts for a wallet that is not going to grow — and
+        // then the guard's catch replaced that exact sentence with
+        // TRANSACTION FAILED, naming a transaction nothing had sent.
         toast.error(pre.title!, pre.detail);
-        throw new Error(pre.title);
+        setError(pre.detail ? `${pre.title}. ${pre.detail}` : pre.title!);
+        return 'noop';
       }
       await client!.ensureTreasury(me);
 
