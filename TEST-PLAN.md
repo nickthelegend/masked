@@ -323,3 +323,46 @@ only one that exercised first-run conditions honestly:
 Both passes agree. The one defect the second pass found that the first did not
 is recorded in its own commit: the margin cap rejected every MAX long from
 flat.
+
+---
+
+## Open, not fixed: the crank runs about five times too often
+
+Not a plan item, found while auditing network behaviour. Recording it because
+it is real, measured, and **not resolved**.
+
+**Symptom.** During a live round the price crank effect re-subscribes many times
+a second instead of once for the round, so `livePxFor` goes out at roughly
+1–2 requests a second against a designed 0.2 (`MARK_CRANK_MS = 5000`).
+
+**Measured, one tab, live round:**
+
+| | 5s timers created | market requests |
+|---|---|---|
+| before any fix | 63 in 25s | 1.4/s |
+| after three identity fixes | 158 in 30s | 2.1/s |
+
+**What was fixed along the way** (all real, all committed):
+
+- `Keypair.publicKey` is a getter that builds a new `PublicKey` on every
+  access, so `LocalKeyWalletAdapter.publicKey` had a fresh identity per read.
+- The client memo depended on `signTransaction` / `signAllTransactions` /
+  `signMessage`, which `useWallet()` re-creates most renders — rebuilding the
+  whole `FogduelClient` and its `Connection`s constantly.
+- The crank and balance effects keyed on the `match` and `publicKey` objects;
+  the live poll replaces the match object once a second.
+
+**What is still wrong.** After all three, the crank's dependencies are a memo
+and three strings, and it still churns. The remaining cause is not identified,
+and the numbers got worse rather than better across the session, which hints at
+timers accumulating rather than simply re-subscribing. Two `setInterval(…5000)`
+call sites in `useDuel.ts` (the crank and the balance poll) share a delay, so
+any counter keyed on delay alone conflates them — that confounded several
+measurements here and should be the first thing a follow-up separates.
+
+**What it does not affect.** Correctness. Across every round driven after these
+changes: the mark tracks the market, fills execute at exactly the quoted impact
+(1.56% quoted, 1.5625% realised), rounds settle, PnL matches the chain's own
+bps, and all 15 check suites pass. This is load, not behaviour — but it is
+load on two third-party APIs, and it is the likeliest reason Jupiter began
+answering 429 earlier in the build.
