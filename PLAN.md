@@ -360,3 +360,71 @@ Everything else in this document is done and verified.
 
 The single highest-value hour in this document is **Phase 2, task 2.3** — the
 privacy shot. Everything else is either already built or replaceable.
+
+---
+
+## 13. ADVERSARIAL AUDIT — 2026-09-07
+
+Driven through the **production export** (`npx expo export -p web`, served on
+:4173), not the dev server, in two real browser sessions on two origins
+(`127.0.0.1:4173` and `localhost:4173`) with two independently funded in-page
+wallets. Everything below was found by using the app, not by reading it.
+
+### Fixed this run
+
+| # | Found | Commit |
+|---|---|---|
+| 1 | A double-click on LONG spent the player's money twice | `91701db` |
+| 2 | The mute button was off-screen on a 375px phone | `193c76c` |
+| 3 | A zero-SOL wallet was told **TRANSACTION FAILED** for a transaction never sent — and the preflight ran 3× because a thrown `Error` reads as retryable | `137ee8c` |
+| 4 | **Sitting in the lobby spent your SOL settling strangers' duels** — 0.019 SOL gone between CONNECT and FIND MATCH | `c022a8b` |
+| 5 | `/tape` and `/spectate` answered a mistyped link with Anchor's `Invalid account discriminator` | `5349fe2` |
+| 6 | `MARKET FEED DOWN / Failed to fetch` — the browser's string, which cannot name which host | `f60d7a4` |
+
+Number 4 is the one that mattered. Settlement is permissionless, so the sweep
+took any expired match it found; each costs the signer ~0.01 SOL and pays them
+nothing, because the pot belongs to the two people who played for it. On
+mainnet that is a stranger's round billed to whoever left the lobby open.
+
+### Verified working, by playing it
+
+- **A full duel at 375px on the production build.** A took MAX (1.56% impact),
+  B took 1/4 (0.39%); the market moved +0.00%, so impact alone decided it and
+  B took the pot. Both reveals mirrored to the basis point: A `-3.03%` /
+  B `-0.19%`, `0-1 DOWN` against `YOU LEAD 1-0`.
+- **The trading maths, recomputed by hand off the public tape.**
+  A: `0.10 / 0.010619490 = 9.4167` base, closed at `0.010297694` → `0.0969692◎`,
+  PnL `-0.0030308 / 0.10 = -3.03%`. B: `0.025 / 0.010496960 = 2.3817`, closed at
+  `0.010415592` → `0.0248063◎`, PnL `-0.0001937 / 0.10 = -0.19%`. Both land on
+  the chain's own number.
+- **The impact quote is exact, not indicative.** A's mark was `0.010456117`
+  and it filled at `0.010619490` — `+1.5625%`, against a pre-press quote of
+  "1.56%".
+- **Payout closes.** `0.196◎ paid + 0.004◎ rake = 0.200◎ pot`.
+- Feed filters (MINE 1 / BIG POTS 2 / REVEALS 170) — and REVEALS equals the
+  chain's own `DUELS SETTLED: 170`.
+- RANK, MODES (unbuilt modes marked SOON, not faked), QUEST progress tracking
+  real play, `/tape`, `/spectate`, `/proof`, `/gallery`, 404.
+- **Dependency outage.** With the price proxy stopped: no stale prices, no
+  invented ones, the CTA degrades to a disabled PICK A MARKET so there is no
+  button to press into a doomed duel, and RETRY recovers to 25 live markets.
+- No horizontal overflow at 375px or desktop on any route.
+- 12 check suites green, including `check:tape` replaying **170 real tapes /
+  2624 assertions** to the chain's own bps.
+
+### Looked at and deliberately not "fixed"
+
+- **`ERR_BLOCKED_BY_RESPONSE.NotSameOrigin` in the console.** Third-party logo
+  CDNs refusing hotlinks. `TokenLogo` already falls back to a deterministic
+  coloured tile with the ticker's initial. The browser logs the block; the app
+  cannot suppress it, and the degradation is by design.
+- **The reveal's last action sitting under the fold on a phone.** Hit-tested:
+  the scroll region is correctly bounded (content 592 in a 501 pane, nav below
+  it, 26px clear at full scroll). The clipped edge is the "more below" signal,
+  not a layout bug.
+- **`/gallery`'s synthesized sample data.** It is a component showcase, titled
+  as one, every constant `GALLERY_`-prefixed, linked only from the 404. `toEnd`
+  survives there and nowhere in the product.
+- **Dev-only `console.warn`s** in `PixelText` and `series`. `__DEV__`-guarded
+  and confirmed absent from the shipped bundle; the `ErrorBoundary`'s
+  `console.error` is intentional and is the only one that ships.
