@@ -19,7 +19,7 @@ export const BOOK_DEPTH = 64;
 /** Mirrors `MAX_FILLS` in state.rs. */
 export const MAX_FILLS = 16;
 
-export type FillSide = 'buy' | 'sell' | 'settle';
+export type FillSide = 'buy' | 'sell' | 'settle' | 'liquidation';
 
 /** One fill, exactly as the program stored it. */
 export interface TapeFill {
@@ -185,10 +185,29 @@ export function replayEquity(fills: TapeFill[], entry: number, startTs?: number)
 
   for (const f of sorted) {
     const value = (f.qty * f.px) / VALUE_DIV;
-    if (f.side === 'buy') {
+    if (f.side === 'liquidation') {
+      // The program closes the position and wipes the balance: equity is
+      // exactly zero from here, whichever way the position pointed. Replaying
+      // it as another sell drove the base further negative and left the curve
+      // holding a position the chain had already closed.
+      quote = 0;
+      base = 0;
+    } else if (f.side === 'settle') {
+      // The buzzer closes whatever is open, so it buys a short back and sells
+      // a long down. The direction comes from the position, not from the side.
+      if (base > 0) {
+        quote += value;
+        base -= f.qty;
+      } else {
+        quote -= value;
+        base += f.qty;
+      }
+    } else if (f.side === 'buy') {
       quote -= value;
       base += f.qty;
     } else {
+      // A sell with nothing to sell opens a short — the base goes negative,
+      // which `equity` reads correctly because it is signed.
       quote += value;
       base -= f.qty;
     }

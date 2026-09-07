@@ -5,7 +5,7 @@
  *   npm run check:markets
  */
 import { fetchMemeMarkets, fetchMajorMarkets } from '../src/chain/markets';
-import { formatCap, formatUsdPrice, solPerTokenFromPx } from '../src/chain/units';
+import { formatCap, formatUsdPrice, MAX_PX, solPerTokenFromPx } from '../src/chain/units';
 
 const fail = (msg: string): never => {
   console.error(`FAIL — ${msg}`);
@@ -56,8 +56,13 @@ async function main() {
 
   console.log('\n4. every startPx round-trips to the price it came from');
   for (const m of [...memes, ...majors]) {
-    if (m.startPx <= 0) fail(`${m.symbol} has a non-positive startPx`);
-    if (!Number.isSafeInteger(m.startPx)) fail(`${m.symbol} startPx ${m.startPx} is not a safe integer`);
+    if (m.startPx <= 0n) fail(`${m.symbol} has a non-positive startPx`);
+    // The bound that matters is the program's field, not a JS number. px is a
+    // u64 on chain and a bigint here precisely so that an asset worth more
+    // than about 9 SOL a token — every wrapped BTC, and ETH — stops being
+    // dropped as unrepresentable. `Number.isSafeInteger` was the old contract
+    // and is what used to exclude them.
+    if (m.startPx > MAX_PX) fail(`${m.symbol} startPx ${m.startPx} overflows a u64`);
     const back = solPerTokenFromPx(m.startPx);
     const drift = Math.abs(back - m.priceSol) / m.priceSol;
     // Rounding to whole lamports per traded unit is the only loss allowed.

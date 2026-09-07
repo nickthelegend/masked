@@ -203,7 +203,7 @@ export default function RoundTimeline({
           </Row>
         ))}
         <PixelText variant="bodySmall" size={8} color={color.textFaint}>
-          ▲ LONG  ▼ CLOSE  ■ BUZZER
+          ▲ BUY  ▼ SELL  ■ BUZZER  ✕ LIQUIDATED
         </PixelText>
       </Row>
     </View>
@@ -212,6 +212,15 @@ export default function RoundTimeline({
 
 /** A one-line description of a fill, for a caption or a list row. */
 export function describeFill(f: TapeFill): string {
-  const label = f.side === 'buy' ? 'LONG' : f.side === 'sell' ? 'CLOSE' : 'BUZZER';
+  // Named for what the fill was, not for a direction it no longer implies: a
+  // sell opens a short as readily as it closes a long.
+  const label =
+    f.side === 'buy'
+      ? 'BUY'
+      : f.side === 'sell'
+        ? 'SELL'
+        : f.side === 'liquidation'
+          ? 'LIQUIDATED'
+          : 'BUZZER';
   return `${label} ${(f.qty / 1_000_000).toFixed(2)}`;
 }

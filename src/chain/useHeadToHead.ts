@@ -10,10 +10,21 @@
  * Two queries rather than one scan. A tape records a fixed player A and player
  * B — whoever opened and whoever joined — so a rivalry appears under both
  * orderings, and both are asked for by `memcmp` on the account itself. The
- * offsets are the fixed prefix of the account: 8 discriminator + 32 match_key
- * + 32 mint + 12 symbol + 1 market_type = 85 for player A, and 32 more for
- * player B. `scripts/check-h2h.mts` re-derives them from a real account rather
- * than trusting that arithmetic.
+ * offsets are the fixed prefix of the account:
+ *
+ *     8   discriminator
+ *   + 32  match_key
+ *   + 85  leg_a   (32 mint + 12 symbol + 32 name + 1 market_type + 8 start_px)
+ *   + 85  leg_b
+ *   + 1   liquidated_a
+ *   + 1   liquidated_b
+ *   = 212 for player A, and 32 more for player B.
+ *
+ * It was 85 when a duel had one market and no liquidation flags, and moving to
+ * a leg per player silently invalidated it — every rivalry read back 0-0,
+ * because the filter was comparing a pubkey against the middle of `leg_b`.
+ * `scripts/check-h2h.mts` re-derives both from a real account rather than
+ * trusting this arithmetic, which is how the drift was caught.
  */
 import { useEffect, useState } from 'react';
 import { Connection, PublicKey } from '@solana/web3.js';
@@ -24,9 +35,9 @@ import { withDeadline } from './rpcTimeout';
 import { toTapeState, type TapeState } from './tape';
 
 /** Byte offset of `player_a` in a `Tape` account. */
-export const TAPE_PLAYER_A_OFFSET = 85;
+export const TAPE_PLAYER_A_OFFSET = 212;
 /** Byte offset of `player_b`. */
-export const TAPE_PLAYER_B_OFFSET = 117;
+export const TAPE_PLAYER_B_OFFSET = 244;
 
 export interface HeadToHead {
   /** Duels these two have settled against each other. */

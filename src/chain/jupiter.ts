@@ -45,10 +45,36 @@ export interface JupToken {
 
 const tokensApi = () => `${feedBase('jup')}/tokens/v2`;
 
+/**
+ * Ask again after a 429, rather than treating it as an outage.
+ *
+ * Jupiter's free tier is tight, and a rate limit is the endpoint saying "wait",
+ * not "the market does not exist". Reporting it as unreachable blanks the whole
+ * market list over something that resolves itself in under a second.
+ *
+ * Bounded and short: three tries at 400ms, 800ms, 1600ms. Beyond that it really
+ * is unavailable and the caller should say so.
+ */
+const RETRY_DELAYS_MS = [400, 800, 1600];
+
+async function getWithBackoff(url: string, signal?: AbortSignal): Promise<Response> {
+  let last: Response | null = null;
+  for (let i = 0; i <= RETRY_DELAYS_MS.length; i += 1) {
+    const res = await fetch(url, { headers: { accept: 'application/json' }, signal: withTimeout(signal) });
+    if (res.status !== 429) return res;
+    last = res;
+    if (i < RETRY_DELAYS_MS.length) {
+      await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[i]));
+    }
+  }
+  return last!;
+}
+
+
 const readTokens = async (url: string, signal?: AbortSignal): Promise<JupToken[]> => {
   let res: Response;
   try {
-    res = await fetch(url, { headers: { accept: 'application/json' }, signal: withTimeout(signal) });
+    res = await getWithBackoff(url, signal);
   } catch (e) {
     throw new JupiterError(`Jupiter token list unreachable: ${(e as Error).message}`);
   }
@@ -112,7 +138,9 @@ export async function fetchUsdPrices(
   const url = `${api()}?ids=${mints.join(',')}`;
   let res: Response;
   try {
-    res = await fetch(url, { headers: { accept: 'application/json' }, signal: withTimeout(signal) });
+    // Same reasoning as the token list: a 429 is "wait", and every major's
+    // price is converted against this one call.
+    res = await getWithBackoff(url, signal);
   } catch (e) {
     throw new JupiterError(
       e instanceof Error && e.name === 'TimeoutError'

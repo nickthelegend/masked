@@ -29,10 +29,19 @@ export interface TapeScreenProps {
 
 const pct = (bps: number) => `${bps >= 0 ? '+' : ''}${(bps / 100).toFixed(2)}%`;
 
+/**
+ * A fill's side, named for what it did.
+ *
+ * These used to read LONG and CLOSE, which was accurate while the product was
+ * long-only. A sell now either closes a long or opens a short, and a buy either
+ * opens a long or covers a short — the side alone cannot tell you which, so it
+ * says what it literally was and the running position says the rest.
+ */
 const SIDE_LABEL: Record<TapeFill['side'], string> = {
-  buy: 'LONG',
-  sell: 'CLOSE',
+  buy: 'BUY',
+  sell: 'SELL',
   settle: 'BUZZER',
+  liquidation: 'LIQUIDATED',
 };
 
 const when = (ts: number, startTs: number) => {
