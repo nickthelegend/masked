@@ -20,10 +20,11 @@ after**. That window is the product.
 
 | Primitive | Where | Status |
 |---|---|---|
-| **Ephemeral Rollups** — delegate / write / commit / undelegate | `delegate_position_to_er`, `commit_and_undelegate_positions` | **Working, proved by test** |
-| **Private Ephemeral Rollups** — ephemeral permission, `is_private` | `init_position_privacy` | **Implemented and building; live proof blocked — see Limitations** |
+| **Ephemeral Rollups** — delegate / write / commit / undelegate | `delegate_position_to_er`, `commit_and_undelegate_position` | **Working, proved by test.** 26 on-chain tests, including the negative case: a fill that succeeds on the rollup is rejected on L1 while the account is delegated. |
+| **Private Ephemeral Rollups** — per-position ACL | `create_position_permission`, `delegate_position_permission`, `init_position_privacy` | **Enforced, not attested.** Every match started through the UI puts an ACL on chain naming only its owner, and the query-filtering-service refuses a sealed position while serving the same account shape without one — `npm run check:gate` proves it every run. What is missing is attestation; see Limitations §1. |
 | Magic Router / ER RPC | `src/chain/client.ts` | Working |
-| VRF | — | Not attempted |
+| **VRF** | `request_market_draw`, `settle_market_draw` | **Requested on chain; cannot be fulfilled here.** The request is built with the official SDK and the VRF program accepts it (`npm run check:vrf`). No oracle answers: the queues this validator preloads were dumped from devnet and name oracle identities we do not hold keys for. Nothing simulates a draw, and no UI is built on one that cannot resolve. See Limitations §7. |
+| Session keys | — | **Not used.** Every fill is a wallet signature. |
 
 ---
 
@@ -76,21 +77,33 @@ npm run proxy      # :8791, and GET /whoami identifies it
 ### 4. Test
 
 ```bash
-# 16 lifecycle tests: escrow, the private book, impact, the mark's rate limit,
-# rake, settlement, tape, stats
+# 26 passing, 2 pending across three suites: lifecycle (escrow, the private
+# book, impact, the mark's rate limit, rake, settlement, tape, stats), the
+# rollup (delegation, ER writes, L1 rejection, commit-back, settle) and the
+# permission ACL. The two pending are the ephemeral-permission TEE path.
 cd chain && anchor test --skip-local-validator
 
-# 5 rollup tests: delegation, ER writes, L1 rejection, commit-back, settle
-ANCHOR_PROVIDER_URL=http://127.0.0.1:8999 ANCHOR_WALLET=$HOME/.config/solana/id.json \
-  npx mocha --import=tsx --timeout 1000000 tests/er-privacy.ts
-
 cd ..
-npm run check          # typecheck + 5 assertion suites
+npm run check          # typecheck + 9 assertion suites, 1963 assertions
 npm run verify:client  # a full match through the app's own client
 npm run check:gate     # what the front door enforces, against a control
+npm run check:guards   # every refusal the program makes, exercised for real
+npm run check:race     # two clients sealing and settling one match at once
 npm run check:markets  # the live market list, end to end
 npm run prove:privacy  # the whole privacy claim, stage by stage
 ```
+
+`npm run check` is the whole suite. What each part asserts:
+
+| Suite | What it proves |
+|---|---|
+| `tape` | 1683 assertions replaying every real settled tape's fills onto the chain's own `pnl_*_bps`, and the impact previewer against every recorded execution price |
+| `h2h` | The head-to-head query's byte offsets, derived from a real account, agreeing filtered-vs-scanned across every pairing |
+| `race` | Two independent clients sealing **and** settling one live match concurrently |
+| `guards` | Six refusals the deployed program enforces: self-join, cancel-after-join, settle-before-buzzer, fill-on-undelegated, fill-after-buzzer, join-a-stale-match |
+| `fog` | Opponent state unreadable in every pre-reveal phase |
+| `errors` | Every error the program declares maps to a unique readable message, with codes read from the deployed IDL |
+| `preflight`, `tokens`, `series` | Cluster/program/balance checks, design-token drift, chart maths |
 
 ### 5. The markets
 
@@ -124,6 +137,8 @@ npx expo export -p web && npx serve -s dist
 | `/` | Landing page |
 | `/play` | The duel |
 | `/proof` | **Live on-chain evidence — start here if you are judging** |
+| `/tape/<match>` | A settled duel at a permanent URL: both players' every fill, no wallet |
+| `/spectate/<match>` | Watch a live duel, both positions fogged to you too, no wallet |
 | `/health` | Dependency health |
 | `/gallery` | Every UI component in every state |
 
@@ -134,13 +149,20 @@ npx expo export -p web && npx serve -s dist
 The exact click path, in the order that makes the argument.
 
 **1. `/proof` — establish that this is real (45s)**
-   - CLUSTER panel: which endpoints, which validator, and whether privacy is
-     actually enforced here. It says NO on a local validator, in red.
-   - MEASURED LATENCY: real medians, not a slide.
+   - CLUSTER panel: which endpoints, which validator, and two separate rows
+     that are the whole honest claim —
+     `read gate: YES — sealed position refused, control served` and
+     `gate attested: NO — not a TEE`. Enforcement is real here; attestation is
+     what needs the TEE.
+   - MEASURED SPEED: real medians, not a slide.
    - ACCESS CONTROL LISTS: the permission accounts of the most recent duel,
      read from chain. Sealed and delegated, owned by `DELeGG…`.
-   - RECENT PROGRAM TRANSACTIONS: click any signature — it opens an explorer.
-     `DELEGATE POSITION TO ER` and `PROCESS UNDELEGATION` are right there.
+   - **THE LIFE OF ONE DUEL**: every base-layer transaction touching either
+     position, oldest first — JOIN MATCH, CREATE POSITION PERMISSION ×2,
+     DELEGATE POSITION PERMISSION ×2, DELEGATE POSITION TO ER ×2, PROCESS
+     UNDELEGATION ×2, SETTLE MATCH. Click any row and it opens in an explorer.
+     This is the delegation story as signatures rather than as a claim.
+   - LIVE RIGHT NOW: duels in progress, each linking into `/spectate`.
    - None of this needs a wallet. It is public account state.
 
 **2. Terminal — the privacy proof (60s)**
@@ -165,8 +187,21 @@ npm run prove:privacy
    - The opponent panel shows a fill count and nothing else, all round.
    - Rounds are 60s by default so this is watchable; set
      `EXPO_PUBLIC_ROUND_SECONDS=300` for the real five-minute round.
-   - At 0:00 the curtain tears: TAPE UNSEALED, both PnLs roll up, the tape
-     draws in.
+   - SIZE (1/4, 1/2, MAX) changes what a fill costs, and the line under it
+     quotes the impact before you sign. It is exact, not an estimate — MAX
+     quotes 1.56% and the chain charges 1.56%.
+   - At 0:00 SETTLING ON SOLANA shows the three real stages: the commit reports
+     how many rollup transactions it took, undelegation reports both positions
+     home, settle reports the pot paid.
+   - Then the curtain tears and the ROUND TIMELINE draws both players' real
+     fills on one time axis, replayed from the tape the program just wrote —
+     with the head-to-head record underneath.
+
+**3b. COPY TAPE LINK → `/tape/<match>` (15s)**
+   - The same duel at a permanent URL, no wallet: every fill of both players
+     with side, size, execution price and the second it landed, and
+     `paid + rake = pot` shown exactly. The Tape never changes after
+     settlement, so the link says the same thing tomorrow.
 
 **4. `/play` → RANK (15s)**
    - The leaderboard is on-chain `PlayerStats`, not a client-side sum. Wins,
@@ -223,8 +258,13 @@ opponent's.
 ## Verification you can run
 
 ```bash
-npm run check          # typecheck + 5 assertion suites (tokens, series, fog, errors, preflight)
+npm run check          # typecheck + 9 assertion suites, 1963 assertions
 npm run check:gate     # what the front door enforces, tested against a control
+npm run check:guards   # every refusal the deployed program makes, exercised for real
+npm run check:race     # two independent clients sealing and settling one match at once
+npm run check:tape     # every settled tape replayed onto the chain's own PnL
+npm run check:h2h      # the head-to-head count, filtered vs a full scan
+npm run check:vrf      # the VRF request path, and exactly where it stops
 npm run check:sealed   # proves the UI's own path puts an ACL on chain for both players
 npm run check:markets  # the live market list: real mints, prices, logos, and a
                        # startPx the program will accept
@@ -234,7 +274,7 @@ npm run prove:privacy  # the privacy proof, stage by stage (~65s)
 npm run truth          # RPC ground truth, to check rendered numbers against
 npm run state          # where every unfinished match got to
 npm run crank          # settle anything abandoned past its buzzer
-cd chain && anchor test --skip-local-validator   # 26 on-chain tests
+cd chain && anchor test --skip-local-validator   # 26 passing, 2 pending
 ```
 
 ---
@@ -276,18 +316,46 @@ Read this before judging — none of it is hidden in the code.
    match, pushed by the match authority. It is deliberately *not* a public DEX
    swap — a public swap print mid-round would hand the opponent the fills the
    fog exists to hide. A production build should read Pyth/Switchboard.
-3. **Positions are virtual inventory.** The entry becomes quote purchasing
-   power inside the round; no SPL moves until settlement — a public swap print
-   mid-round would hand the opponent the fills the fog exists to hide. The
-   market is a real SPL mint (`3nmxq3N78WQGQPXULxmSQ2rjXYwX8zrjrcYxnP2aQpNo`)
-   that identifies the market without being custodied.
+3. **Positions are virtual inventory, and fills do not route to a venue.**
+   The entry becomes quote purchasing power inside the round; no SPL moves
+   until settlement. Each fill executes against a constant-product book held
+   *inside that player's own `Position`*, not against pump.fun or Jupiter —
+   a public swap print mid-round would leak the wallet, the mint and the size,
+   which is the whole thing the fog exists to hide. The program contains no CPI
+   into either venue.
+
+   The markets themselves are real: live pump.fun `frontend-api-v3` and Jupiter
+   over HTTP, real mainnet mints, real market caps, real logos. The mint on a
+   `Match` is the market's true mainnet identity — it is what the duel is
+   *about*, and it is not custodied.
 4. **Web only.** `@solana/wallet-adapter` is browser-only, and metro resolves
    `@solana-mobile/*` to a stub. A native build needs Mobile Wallet Adapter or
    Solflare deeplinks.
-5. **Not deployed to devnet** for the same faucet reason — the `.so` is 636KB,
-   so rent plus the deploy buffer needs roughly 5–9 SOL, which is several
-   successful airdrops rather than one. The program ID below is the local
-   deployment. See `SUBMISSION.md` for the exact unblock steps.
+5. **Not deployed to devnet** for the same faucet reason — the `.so` is
+   702,128 bytes, so rent plus the deploy buffer needs roughly 6–10 SOL, which
+   is several successful airdrops rather than one. Airdrops were refused 40+
+   times across the public faucets; `faucet.solana.com` requires a captcha. The
+   program ID below is the local deployment. See `SUBMISSION.md` for the exact
+   unblock steps.
+6. **An open match goes stale after five minutes.** Both books are seeded from
+   the market mid snapshotted when the match is *created*, so a duel joined long
+   afterwards would start at a price the market has left behind — and the
+   rate-limited crank would then correct it mid-round, at the joiner's expense.
+   That is not hypothetical: before this was bounded, a match joined 86 minutes
+   late settled its joiner at **-90.22%** on a single fill whose own impact was
+   1.53%. `join_match` now refuses a match older than `MAX_OPEN_AGE` (300s,
+   `state.rs`) with `MatchStale`, and the open book marks those rows STALE
+   rather than offering a JOIN the program will refuse. The creator cancels and
+   reopens at a fresh price, which costs one transaction.
+7. **VRF is requested but never fulfilled.** `request_market_draw` builds a real
+   request with the official SDK and the VRF program accepts it on chain. No
+   oracle answers, because the queues this validator preloads were dumped from
+   devnet and list oracle identities we do not hold the keys for; registering
+   our own needs `modify_oracles` / `initialize_oracle_queue`, whose instruction
+   encoding is not in the published SDK — only the request builders are.
+   `settle_market_draw` is guarded by `#[vrf_callback]`, so only the VRF program
+   could ever write a result. **Nothing simulates a draw**, and the BLIND DRAFT
+   mode that would consume one stays a `SOON` tile rather than being faked.
 
 ---
 
@@ -295,9 +363,9 @@ Read this before judging — none of it is hidden in the code.
 
 ```
 chain/                  Anchor workspace
-  programs/fogduel/     the program (14 instructions)
-  tests/fogduel.ts      16 lifecycle tests
-  tests/er-privacy.ts   rollup delegation + commit tests
+  programs/fogduel/     the program (16 instructions)
+  tests/fogduel.ts      lifecycle: escrow, book, impact, rake, settlement, tape
+  tests/er-privacy.ts   rollup delegation + commit tests (2 pending: the TEE path)
   tests/permission.ts   ACL creation, delegation, and what each endpoint serves
 scripts/localnet.sh     brings up base + rollup + the permission-checking front
 server/market-proxy.mjs CORS shim for pump.fun and Jupiter (no secrets)
@@ -305,7 +373,8 @@ server/rpc-recorder.mjs records what the app asks the rollup for
 src/chain/              typed client, config, PDAs, units, wallet, chain hooks
 src/ui/                 pixel UI library + drawn SVG icons and token marks
 src/screens/            landing, duel, feed, board, modes, quests, proof, gallery
-app/                    expo-router:  /  /play  /proof  /health  /gallery
+app/                    expo-router:  /  /play  /proof  /tape/<m>  /spectate/<m>
+                        /health  /gallery
 TEST-PLAN.md            every component and flow, with its verified result
 PLAN.md                 phase/task status and the full gap list
 ```

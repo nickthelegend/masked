@@ -100,16 +100,16 @@ everything in Phase 2 and 3. Est. 60–90 minutes total.
 
 | # | Task | Status |
 |---|---|---|
-| 1.1 | `README.md` line ~26: the primitives table says `VRF \| — \| Not attempted`. It **is** attempted: `request_market_draw` builds a real request with the official SDK and the VRF program accepts it on chain (`npm run check:vrf`). Change to "Requested on chain; fulfilment blocked — no oracle identity, see Limitations" and add a Limitations entry explaining the devnet-dump queue problem. | NOT STARTED |
-| 1.2 | `README.md` line ~24: PER row reads "Implemented and building; live proof blocked". The gate is now proven locally. Change to "ACL enforced by the query-filtering-service; attestation needs a TEE" and point at the table in Limitations §1, which is already correct. | NOT STARTED |
-| 1.3 | `README.md` Limitations §3 still names `3nmxq3N78WQGQPXULxmSQ2rjXYwX8zrjrcYxnP2aQpNo` as "the market". Markets are now live pump.fun + Jupiter mints. Rewrite to say positions are virtual inventory against a real mainnet mint identity, and drop the demo mint. | NOT STARTED |
-| 1.4 | `README.md` Limitations §5 says the `.so` is 636KB. It is now **702,128 bytes**. Update the number and the SOL estimate. | NOT STARTED |
-| 1.5 | `README.md`: document `MAX_OPEN_AGE` (300s). An unjoined match older than that cannot be joined, because both books are seeded from the price snapshotted at creation. Currently undocumented anywhere outside `state.rs`. | NOT STARTED |
-| 1.6 | `SUBMISSION.md` is stale in five places: "VRF — not attempted"; `commit_and_undelegate_positions` (the instruction is singular); "Market mint: 3nmxq3N…" (retired); "5 assertion suites, 74 assertions" (now 9 suites); "22 tests, 20 pass, 2 skipped" (now 26 pass, 2 pending). Rewrite each against reality. | NOT STARTED |
-| 1.7 | `SUBMISSION.md` "What a judge can verify in five commands" — replace with the current set: `npm run check`, `npm run check:gate`, `npm run check:race`, `npm run check:guards`, `cd chain && anchor test --skip-local-validator`. | NOT STARTED |
-| 1.8 | `CHANGELOG-ui.md` stops at §19. Add §20 covering this run's UI work: `SettleProgress`, `RoundTimeline`, `SizePicker`, `LifecycleFeed`, `sound.ts` + the speaker icons, `solExact`, and `PixelButton` gaining `forwardRef`. | NOT STARTED |
-| 1.9 | `IDEAS.md` build log records #7, #9, #10, #11, #12. Add #13 (clickable delegation lifecycle on `/proof`) and #23 (size control + exact impact preview), both built and verified this run. | NOT STARTED |
-| 1.10 | Re-read `README.md` end to end against the running app and fix anything else that has drifted. Do this **after** 1.1–1.5 so it is a check, not a rewrite. | NOT STARTED |
+| 1.1 | `README.md` line ~26: the primitives table says `VRF \| — \| Not attempted`. It **is** attempted: `request_market_draw` builds a real request with the official SDK and the VRF program accepts it on chain (`npm run check:vrf`). Change to "Requested on chain; fulfilment blocked — no oracle identity, see Limitations" and add a Limitations entry explaining the devnet-dump queue problem. | **DONE** |
+| 1.2 | `README.md` line ~24: PER row reads "Implemented and building; live proof blocked". The gate is now proven locally. Change to "ACL enforced by the query-filtering-service; attestation needs a TEE" and point at the table in Limitations §1, which is already correct. | **DONE** |
+| 1.3 | `README.md` Limitations §3 still names `3nmxq3N78WQGQPXULxmSQ2rjXYwX8zrjrcYxnP2aQpNo` as "the market". Markets are now live pump.fun + Jupiter mints. Rewrite to say positions are virtual inventory against a real mainnet mint identity, and drop the demo mint. | **DONE** |
+| 1.4 | `README.md` Limitations §5 says the `.so` is 636KB. It is now **702,128 bytes**. Update the number and the SOL estimate. | **DONE** |
+| 1.5 | `README.md`: document `MAX_OPEN_AGE` (300s). An unjoined match older than that cannot be joined, because both books are seeded from the price snapshotted at creation. Currently undocumented anywhere outside `state.rs`. | **DONE** |
+| 1.6 | `SUBMISSION.md` is stale in five places: "VRF — not attempted"; `commit_and_undelegate_positions` (the instruction is singular); "Market mint: 3nmxq3N…" (retired); "5 assertion suites, 74 assertions" (now 9 suites); "22 tests, 20 pass, 2 skipped" (now 26 pass, 2 pending). Rewrite each against reality. | **DONE** |
+| 1.7 | `SUBMISSION.md` "What a judge can verify in five commands" — replace with the current set: `npm run check`, `npm run check:gate`, `npm run check:race`, `npm run check:guards`, `cd chain && anchor test --skip-local-validator`. | **DONE** |
+| 1.8 | `CHANGELOG-ui.md` stops at §19. Add §20 covering this run's UI work: `SettleProgress`, `RoundTimeline`, `SizePicker`, `LifecycleFeed`, `sound.ts` + the speaker icons, `solExact`, and `PixelButton` gaining `forwardRef`. | **DONE** |
+| 1.9 | `IDEAS.md` build log records #7, #9, #10, #11, #12. Add #13 (clickable delegation lifecycle on `/proof`) and #23 (size control + exact impact preview), both built and verified this run. | **DONE** |
+| 1.10 | Re-read `README.md` end to end against the running app and fix anything else that has drifted. Do this **after** 1.1–1.5 so it is a check, not a rewrite. | **DONE** |
 
 ---
 

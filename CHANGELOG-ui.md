@@ -297,3 +297,52 @@ live pump.fun and Jupiter data rather than a fixture list.
 - `WalletPicker` — which wallet to connect with. The connect button used to
   select the first one outright, which is fine with one wallet and silently
   wrong with two.
+
+## 20. What settlement, size and the reveal actually do
+
+Six components and a sound engine, all added to make real behaviour legible
+rather than to add surface. Every one of them draws from chain state.
+
+- `SettleProgress` — the twenty-odd seconds between the buzzer and the reveal,
+  as three stages that have really completed: the commit reports how many
+  transactions it took (two, one per position, because two do not fit in 1232
+  bytes), undelegation reports both accounts home, settle reports the pot paid.
+  A stage that throws goes red rather than freezing on a spinner. Shown when a
+  stage leaves `waiting`, not when the clock hits zero — settling early is a
+  real path and the clock is not its trigger.
+- `RoundTimeline` — both players' fills on one shared time axis, replayed from
+  the fill lists `settle_match` writes into the public `Tape`. This replaced
+  invented data rather than adding a chart: the opponent's curve had been a
+  seeded random walk pinned to their final PnL. The line stops between fills,
+  because the tape records where a player stood when they traded and nothing
+  about the ground in between. The one segment that is extended is extended
+  because it is a fact — a position holding no base is all quote, and quote does
+  not move with the market.
+- `SizePicker` — quarter, half, max. Fill size used to be a constant (every
+  LONG spent 40%, every CLOSE sold everything), which took the one decision the
+  private book exists to make and made it for the player. The note underneath
+  quotes the impact before the fill is signed, and it is exact rather than
+  estimated: `apply_fill` re-pegs to the mark and rebuilds depth to
+  `entry * BOOK_DEPTH`, which leaves impact a closed form.
+- `LifecycleFeed` — one duel's transitions in slot order, each a real signature
+  that opens in an explorer. The rest of `/proof` reports state; this reports
+  how it got that way, which is the half that would otherwise be taken on trust.
+  Ascending by slot, unlike the feed below it, because a lifecycle read
+  newest-first is not a lifecycle.
+- `SoundOnIcon` / `SoundOffIcon` — a speaker on the same 12×12 lattice as every
+  other icon. They took over the green header slot, which had been a menu button
+  whose handler nothing ever passed and which had no menu to open.
+- `sound.ts` — seven voices synthesized at play time from oscillators and gain
+  envelopes. No audio files in the repo and nothing fetched: partly taste (a
+  1-bit machine should sound like one) and partly honesty, since a sample pack
+  would be an asset dependency for something the platform generates exactly.
+  Quantised to the same 83ms frame the animations use.
+
+`PixelButton` now forwards its ref. `<Link asChild>` clones its child and hands
+it one, so React warned on every screen with a Link — including the 404, whose
+only job is to be the page you land on when something has already gone wrong.
+
+`solExact` joins `sol` in `format.ts`. Two decimal places is right for a pot
+chosen in round numbers and wrong for anything derived: a 2% rake on a 0.2 pot
+is 0.004, and under a heading reading SETTLED ON SOLANA, "0.00◎" states that no
+rake was taken.

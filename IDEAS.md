@@ -9,10 +9,18 @@ Ranked by **impact × feasibility × fit**. Impact is "would a judge notice";
 feasibility is "can this be built for real, here, now"; fit is "does it
 strengthen *this* pitch or just add surface". Ideas already built are excluded.
 
-The biggest single gap: the submission form says **VRF — not attempted**, and
-the local stack preloads the VRF program (`Vrf1RNUj…`) and ships a `vrf-oracle`
-binary. That is a whole MagicBlock primitive sitting unused, and it is the
-first thing on this list.
+The biggest single gap when this list was written: the submission form said
+**VRF — not attempted**, while the local stack preloads the VRF program
+(`Vrf1RNUj…`) and ships a `vrf-oracle` binary. That is a whole MagicBlock
+primitive sitting unused, and it is the first thing on this list.
+
+**Update:** #1 is now half-done and honestly labelled. `request_market_draw`
+builds a real request with the official SDK and the VRF program accepts it on
+chain (`npm run check:vrf`), but no oracle answers — the preloaded queues were
+dumped from devnet and name identities we do not hold keys for. The submission
+now says "requested on chain, never fulfilled" rather than "not attempted".
+#5 (BLIND DRAFT) stays blocked behind that, and stays a `SOON` tile rather than
+being faked.
 
 ---
 
@@ -246,3 +254,47 @@ trusting the arithmetic, because a filter at the wrong offset returns an empty
 list rather than an error and reads as "never played": 77 assertions, 18
 pairings, filtered agreeing with scanned across 59 tapes. In the product the
 reveal read YOU LEAD 7-6 while an independent scan read 13 played, 7 and 6.
+
+### #13 — Clickable delegation signatures on /proof · built, verified
+
+`src/chain/useDuelProof.ts`, `src/ui/LifecycleFeed.tsx`. The rest of `/proof`
+reports state — who owns which account right now. What it could not show was
+the transitions, and those were the claims the pitch rests on: that a position
+really was handed to the delegation program, that its ACL really was created
+first, and that the delegation program itself really gave ownership back.
+
+They are all transactions, and the base layer will list them. Asking a position
+PDA for its signature history returns the whole life of a duel in order — for
+the most recently settled one, ten steps: JOIN MATCH, CREATE POSITION
+PERMISSION ×2, DELEGATE POSITION PERMISSION ×2, DELEGATE POSITION TO ER ×2,
+PROCESS UNDELEGATION ×2, SETTLE MATCH. The doubled steps are real and worth
+seeing: one per position, because two do not fit in a 1232-byte transaction.
+
+Each row says what it is evidence *of* and opens in an explorer. A transaction
+whose instruction is not part of the delegation story is still listed, labelled
+as itself — hiding one from an evidence page would invert the point.
+
+Verified against a real settled duel: sixteen steps in slot order with real
+signatures, and a click resolving to
+`explorer.solana.com/tx/<sig>?cluster=custom&customUrl=<the local RPC>`, which
+is honest about a localhost signature rather than claiming devnet.
+
+### #23 — Position size control · built, verified
+
+`src/ui/SizePicker.tsx`, `src/chain/book.ts`. Fill size was a constant that
+nothing exposed — every LONG spent 40% of the remaining quote and every CLOSE
+sold everything — which took the one decision the private book exists to make
+and made it for the player. Quarter, half and max now govern both directions,
+and MAX on a close sells the exact remaining base so no dust is stranded for
+the buzzer to clean up.
+
+The impact quote under it is exact, not an estimate. `apply_fill` re-pegs the
+book to the mark before every fill and rebuilds depth to `entry * BOOK_DEPTH`,
+which leaves the impact of a size a closed form: `q/Q` for a buy, `v/(Q+v)` for
+a sell. `npm run check:tape` asserts those predictions against the execution
+price recorded on every real fill of every settled tape, agreeing to 1e-9.
+
+Verified in a live two-session duel: quoted 1.56% at MAX and 0.39% at a quarter,
+and the chain charged exactly 1.56% and 0.39%. On the tape, a buy of 4,994,030
+closed at half to exactly 2,497,015 and then to exactly 2,497,015 again —
+summing to what was bought, with nothing left over.
