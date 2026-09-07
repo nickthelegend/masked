@@ -58,13 +58,18 @@ describe("fogduel · ephemeral rollup + privacy", () => {
     const [matchPda] = PublicKey.findProgramAddressSync(
       [Buffer.from("match"), creator.publicKey.toBuffer(), idBuf], program.programId);
     const [vault] = PublicKey.findProgramAddressSync([Buffer.from("vault"), matchPda.toBuffer()], program.programId);
-    const [feed] = PublicKey.findProgramAddressSync([Buffer.from("feed"), matchPda.toBuffer()], program.programId);
+    const [feed] = PublicKey.findProgramAddressSync(
+      [Buffer.from("feed"), matchPda.toBuffer(), creator.publicKey.toBuffer()], program.programId);
+    const [feedB] = PublicKey.findProgramAddressSync(
+      [Buffer.from("feed"), matchPda.toBuffer(), joiner.publicKey.toBuffer()], program.programId);
+    const [status] = PublicKey.findProgramAddressSync(
+      [Buffer.from("status"), matchPda.toBuffer()], program.programId);
     const [posA] = PublicKey.findProgramAddressSync(
       [Buffer.from("position"), matchPda.toBuffer(), creator.publicKey.toBuffer()], program.programId);
     const [posB] = PublicKey.findProgramAddressSync(
       [Buffer.from("position"), matchPda.toBuffer(), joiner.publicKey.toBuffer()], program.programId);
     const [tape] = PublicKey.findProgramAddressSync([Buffer.from("tape"), matchPda.toBuffer()], program.programId);
-    return { matchPda, vault, feed, posA, posB, tape };
+    return { matchPda, vault, feed, feedB, status, posA, posB, tape };
   }
 
   before(async () => {
@@ -82,11 +87,12 @@ describe("fogduel · ephemeral rollup + privacy", () => {
         new BN(RUN), PublicKey.default, new BN(DURATION), new BN(ENTRY),
         new BN(START_PX), { meme: {} }, "ERTEST", "ER Privacy Market",
       )
-      .accounts({ creator: creator.publicKey, matchAccount: p.matchPda, vault: p.vault, priceFeed: p.feed, systemProgram: SystemProgram.programId })
+      .accounts({ creator: creator.publicKey, matchAccount: p.matchPda, vault: p.vault, priceFeed: p.feed, roundStatus: p.status, systemProgram: SystemProgram.programId })
       .rpc();
-    await program.methods.joinMatch()
+    await program.methods
+      .joinMatch(PublicKey.default, new BN(START_PX), { meme: {} }, "ERTEST", "ER Privacy Market")
       .accounts({ joiner: joiner.publicKey, matchAccount: p.matchPda, vault: p.vault, priceFeed: p.feed,
-        positionA: p.posA, positionB: p.posB, systemProgram: SystemProgram.programId })
+        priceFeedB: p.feedB, positionA: p.posA, positionB: p.posB, systemProgram: SystemProgram.programId })
       .signers([joiner]).rpc();
   });
 
@@ -227,7 +233,8 @@ describe("fogduel · ephemeral rollup + privacy", () => {
       .accounts({ cranker: creator.publicKey, matchAccount: p.matchPda }).rpc();
     await program.methods.settleMatch()
       .accounts({
-        cranker: creator.publicKey, matchAccount: p.matchPda, vault: p.vault, priceFeed: p.feed,
+        cranker: creator.publicKey, matchAccount: p.matchPda, vault: p.vault,
+        priceFeed: p.feed, priceFeedB: p.feedB, roundStatus: p.status,
         positionA: p.posA, positionB: p.posB, creator: creator.publicKey, joiner: joiner.publicKey,
         treasury: treasuryPda, tape: p.tape,
         statsCreator: statsPda(creator.publicKey), statsJoiner: statsPda(joiner.publicKey),

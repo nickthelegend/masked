@@ -53,7 +53,13 @@ describe("fogduel · permission ACL", () => {
     [matchPda] = PublicKey.findProgramAddressSync(
       [Buffer.from("match"), creator.publicKey.toBuffer(), idBuf], program.programId);
     [vault] = PublicKey.findProgramAddressSync([Buffer.from("vault"), matchPda.toBuffer()], program.programId);
-    [feed] = PublicKey.findProgramAddressSync([Buffer.from("feed"), matchPda.toBuffer()], program.programId);
+    // A feed per player, and the unsealed status account.
+    [feed] = PublicKey.findProgramAddressSync(
+      [Buffer.from("feed"), matchPda.toBuffer(), creator.publicKey.toBuffer()], program.programId);
+    const [feedB] = PublicKey.findProgramAddressSync(
+      [Buffer.from("feed"), matchPda.toBuffer(), joiner.publicKey.toBuffer()], program.programId);
+    const [status] = PublicKey.findProgramAddressSync(
+      [Buffer.from("status"), matchPda.toBuffer()], program.programId);
     [posA] = PublicKey.findProgramAddressSync(
       [Buffer.from("position"), matchPda.toBuffer(), creator.publicKey.toBuffer()], program.programId);
     [posB] = PublicKey.findProgramAddressSync(
@@ -63,11 +69,12 @@ describe("fogduel · permission ACL", () => {
       new BN(RUN), PublicKey.default, new BN(60), new BN(ENTRY),
       new BN(100 * PRICE_SCALE), { meme: {} }, "PERM", "Permission Market",
     )
-      .accounts({ creator: creator.publicKey, matchAccount: matchPda, vault, priceFeed: feed, systemProgram: SystemProgram.programId })
+      .accounts({ creator: creator.publicKey, matchAccount: matchPda, vault, priceFeed: feed, roundStatus: status, systemProgram: SystemProgram.programId })
       .rpc();
-    await program.methods.joinMatch()
+    await program.methods
+      .joinMatch(PublicKey.default, new BN(100 * PRICE_SCALE), { meme: {} }, "PERM", "Permission Market")
       .accounts({ joiner: joiner.publicKey, matchAccount: matchPda, vault, priceFeed: feed,
-        positionA: posA, positionB: posB, systemProgram: SystemProgram.programId })
+        priceFeedB: feedB, positionA: posA, positionB: posB, systemProgram: SystemProgram.programId })
       .signers([joiner]).rpc();
   });
 

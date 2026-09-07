@@ -29,6 +29,8 @@ describe("fogduel", () => {
   const ENTRY = 0.1 * LAMPORTS_PER_SOL;
   const DURATION = 10; // seconds — short so tests do not crawl
   const START_PX = px(0.1); // 0.1 SOL a token
+  /** Mirrors VALUE_DIV in state.rs: base x price divides by this to be lamports. */
+  const VALUE_DIV = 1_000_000 * 1_000_000;
 
   let treasuryPda: PublicKey;
 
@@ -43,15 +45,21 @@ describe("fogduel", () => {
     );
     const [vault] = PublicKey.findProgramAddressSync(
       [Buffer.from("vault"), matchPda.toBuffer()], program.programId);
+    // A feed per player: the two sides trade different tokens now.
     const [feed] = PublicKey.findProgramAddressSync(
-      [Buffer.from("feed"), matchPda.toBuffer()], program.programId);
+      [Buffer.from("feed"), matchPda.toBuffer(), creator.publicKey.toBuffer()], program.programId);
+    const [feedB] = PublicKey.findProgramAddressSync(
+      [Buffer.from("feed"), matchPda.toBuffer(), joiner.publicKey.toBuffer()], program.programId);
+    // Unsealed by design — where a liquidation is announced.
+    const [status] = PublicKey.findProgramAddressSync(
+      [Buffer.from("status"), matchPda.toBuffer()], program.programId);
     const [posA] = PublicKey.findProgramAddressSync(
       [Buffer.from("position"), matchPda.toBuffer(), creator.publicKey.toBuffer()], program.programId);
     const [posB] = PublicKey.findProgramAddressSync(
       [Buffer.from("position"), matchPda.toBuffer(), joiner.publicKey.toBuffer()], program.programId);
     const [tape] = PublicKey.findProgramAddressSync(
       [Buffer.from("tape"), matchPda.toBuffer()], program.programId);
-    return { matchPda, vault, feed, posA, posB, tape };
+    return { matchPda, vault, feed, feedB, status, posA, posB, tape };
   };
 
   // These suites run against a posted oracle (`Major`), because every
@@ -64,19 +72,39 @@ describe("fogduel", () => {
    * `push_price` caps a single post at 5% and one per second, so a test that
    * jumps the price 10% is rejected — which is the point of the cap.
    */
-  const walkPriceTo = async (p: ReturnType<typeof pdas>, targetPx: number) => {
+  const walkPriceTo = async (
+    p: ReturnType<typeof pdas>,
+    targetPx: number,
+    // Whose market to move. There is a feed per player now, so walking the
+    // creator's mark does nothing to a position the joiner is holding — which
+    // is exactly how the settle test came to close a long at the price it
+    // opened at and report a loss.
+    owner: PublicKey = creator.publicKey,
+  ) => {
+    const feedPda = owner.equals(creator.publicKey) ? p.feed : p.feedB;
     for (let i = 0; i < 12; i += 1) {
-      const feed = await program.account.priceFeed.fetch(p.feed);
+      const feed = await program.account.priceFeed.fetch(feedPda);
       const current = feed.px.toNumber();
       if (Math.abs(current - targetPx) <= Math.max(1, targetPx / 10_000)) return;
       // Floored: the on-chain cap is an exact integer comparison, and a
       // rounded-up 5% step lands one lamport over it.
       const step = Math.floor((current / 10_000) * 500);
       const next = Math.max(current - step, Math.min(current + step, Math.round(targetPx)));
-      if (i > 0) await new Promise((r) => setTimeout(r, 1100));
-      await program.methods.pushPrice(new BN(next))
-        .accounts({ authority: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed })
-        .rpc();
+      // Wait before the first post too, not only between posts.
+      // MIN_PUSH_INTERVAL is one second on the cluster clock, and the feed may
+      // have been written a moment ago — by this match being created, or by
+      // the test that ran before this one. The production client already waits
+      // here for the same reason.
+      await new Promise((r) => setTimeout(r, 1100));
+      try {
+        await program.methods.pushPrice(new BN(next), owner)
+          .accounts({ authority: creator.publicKey, matchAccount: p.matchPda, priceFeed: feedPda })
+          .rpc();
+      } catch (e: any) {
+        // The rate limit saying "come back in a moment" is not a failure; the
+        // next iteration retries. Anything else is.
+        if (!e.toString().includes("PriceTooSoon")) throw e;
+      }
     }
   };
 
@@ -92,6 +120,7 @@ describe("fogduel", () => {
         matchAccount: p.matchPda,
         vault: p.vault,
         priceFeed: p.feed,
+        roundStatus: p.status,
         systemProgram: SystemProgram.programId,
       })
       .rpc();
@@ -100,12 +129,17 @@ describe("fogduel", () => {
 
   const joinMatch = async (p: ReturnType<typeof pdas>) =>
     program.methods
-      .joinMatch()
+      // The joiner names their own market. These suites use the same mint and
+      // mark on both sides, because every assertion below is about lamports
+      // and PnL — two tokens would change nothing except the arithmetic's
+      // starting point, and `check:short` covers the differing case.
+      .joinMatch(PublicKey.default, new BN(START_PX), { major: {} }, "TEST", "Test Market")
       .accounts({
         joiner: joiner.publicKey,
         matchAccount: p.matchPda,
         vault: p.vault,
         priceFeed: p.feed,
+        priceFeedB: p.feedB,
         positionA: p.posA,
         positionB: p.posB,
         systemProgram: SystemProgram.programId,
@@ -293,7 +327,7 @@ describe("fogduel", () => {
       // +20% in one post. Anyone may post the mark, so the cap is the only
       // thing stopping a player from walking it wherever suits them at the
       // buzzer.
-      await program.methods.pushPrice(new BN(Math.round(feed.px.toNumber() * 1.2)))
+      await program.methods.pushPrice(new BN(Math.round(feed.px.toNumber() * 1.2)), creator.publicKey)
         .accounts({ authority: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed })
         .rpc();
       assert.fail("a 20% jump should have been rejected");
@@ -308,7 +342,7 @@ describe("fogduel", () => {
     await new Promise((r) => setTimeout(r, 1100));
     // The joiner is not the feed authority. If only the creator could post,
     // one player would get to time the mark against the other.
-    await program.methods.pushPrice(new BN(feed.px.toNumber() + 1))
+    await program.methods.pushPrice(new BN(feed.px.toNumber() + 1), creator.publicKey)
       .accounts({ authority: joiner.publicKey, matchAccount: p.matchPda, priceFeed: p.feed })
       .signers([joiner])
       .rpc();
@@ -316,18 +350,41 @@ describe("fogduel", () => {
     assert.equal(after.px.toNumber(), feed.px.toNumber() + 1);
   });
 
-  it("refuses a sell larger than the base held", async () => {
+  // Selling past what you hold used to be refused outright. It is now how a
+  // short is opened, so the guard that bounds it is the margin cap rather than
+  // an inventory check — these two tests pin both halves of that change.
+  it("lets a sell past the base held open a short", async () => {
+    const p = pdas(RUN + 1);
+    const before = await program.account.position.fetch(p.posA);
+    // A quarter of what the entry can carry, on top of whatever is held.
+    const extra = Math.floor(((ENTRY / 4) * VALUE_DIV) / START_PX);
+    await program.methods
+      .applyFill({ sell: {} }, new BN(before.baseQty.toNumber() + extra), creator.publicKey)
+      .accounts({
+        player: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posA, sessionToken: null })
+      .rpc();
+    const after = await program.account.position.fetch(p.posA);
+    assert.ok(after.baseQty.toNumber() < 0, `base should be negative, is ${after.baseQty.toNumber()}`);
+    assert.ok(
+      after.quoteBalance.toNumber() > before.quoteBalance.toNumber(),
+      "selling should have raised the quote balance"
+    );
+  });
+
+  it("refuses a short larger than the entry can cover", async () => {
     const p = pdas(RUN + 1);
     const pos = await program.account.position.fetch(p.posA);
+    // Ten times what the whole entry could carry at this mark.
+    const absurd = Math.floor(((ENTRY * 10) * VALUE_DIV) / START_PX);
     try {
       await program.methods
-        .applyFill({ sell: {} }, new BN(pos.baseQty.toNumber() + 1_000_000), creator.publicKey)
+        .applyFill({ sell: {} }, new BN(Math.abs(pos.baseQty.toNumber()) + absurd), creator.publicKey)
         .accounts({
           player: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posA, sessionToken: null })
         .rpc();
-      assert.fail("overselling should have been rejected");
+      assert.fail("a short beyond one times equity should have been rejected");
     } catch (e: any) {
-      assert.include(e.toString().toLowerCase(), "insufficientbase");
+      assert.include(e.toString().toLowerCase(), "insufficientquote");
     }
   });
 
@@ -358,7 +415,8 @@ describe("fogduel", () => {
 
     await program.methods.settleMatch()
       .accounts({
-        cranker: creator.publicKey, matchAccount: p.matchPda, vault: p.vault, priceFeed: p.feed,
+        cranker: creator.publicKey, matchAccount: p.matchPda, vault: p.vault,
+        priceFeed: p.feed, priceFeedB: p.feedB, roundStatus: p.status,
         positionA: p.posA, positionB: p.posB, creator: creator.publicKey, joiner: joiner.publicKey,
         treasury: treasuryPda, tape: p.tape,
         statsCreator: statsPda(creator.publicKey), statsJoiner: statsPda(joiner.publicKey),
@@ -404,7 +462,7 @@ describe("fogduel", () => {
     const p = pdas(RUN + 1);
     const feed = await program.account.priceFeed.fetch(p.feed);
     try {
-      await program.methods.pushPrice(new BN(feed.px.toNumber() + 1))
+      await program.methods.pushPrice(new BN(feed.px.toNumber() + 1), creator.publicKey)
         .accounts({ authority: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed })
         .rpc();
       assert.fail("a post after the buzzer should have been rejected");
@@ -436,17 +494,18 @@ describe("fogduel", () => {
 
     await program.methods.applyFill({ buy: {} }, new BN(0.5 * ENTRY), joiner.publicKey)
       .accounts({
-        player: joiner.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posB, sessionToken: null })
+        player: joiner.publicKey, matchAccount: p.matchPda, priceFeed: p.feedB, position: p.posB, sessionToken: null })
       .signers([joiner]).rpc();
 
-    await walkPriceTo(p, px(0.12));
+    await walkPriceTo(p, px(0.12), joiner.publicKey);
 
     await new Promise((r) => setTimeout(r, (DURATION + 2) * 1000));
     await program.methods.requestSettle()
       .accounts({ cranker: creator.publicKey, matchAccount: p.matchPda }).rpc();
     await program.methods.settleMatch()
       .accounts({
-        cranker: creator.publicKey, matchAccount: p.matchPda, vault: p.vault, priceFeed: p.feed,
+        cranker: creator.publicKey, matchAccount: p.matchPda, vault: p.vault,
+        priceFeed: p.feed, priceFeedB: p.feedB, roundStatus: p.status,
         positionA: p.posA, positionB: p.posB, creator: creator.publicKey, joiner: joiner.publicKey,
         treasury: treasuryPda, tape: p.tape,
         statsCreator: statsPda(creator.publicKey), statsJoiner: statsPda(joiner.publicKey),
