@@ -24,6 +24,7 @@ import { feedPda, matchPda, positionPda, statsPda, tapePda, treasuryPda, vaultPd
 import { toTapeState, type TapeState } from './tape';
 import { authenticate, type MessageSigner } from './erAuth';
 import { VALUE_DIV } from './units';
+import { isProgramError } from './errors';
 
 const COMMITMENT: Commitment = 'confirmed';
 
@@ -699,6 +700,15 @@ export class FogduelClient {
     try {
       await this.pushPrice(match, authority, clamped, onEr);
     } catch (e) {
+      // `PriceTooSoon` is the program saying "come back in a moment", so it is
+      // always a wait rather than a fault. It fires against our *own* last
+      // post too: MIN_PUSH_INTERVAL is measured on the cluster clock, which
+      // ticks in whole seconds, so two posts 1.1s apart in wall time can still
+      // land in the same on-chain second. The old handler only forgave the
+      // error when *somebody else* had moved the feed, so a script walking the
+      // mark on its own — `prove:privacy` — crashed on its own rate limit.
+      if (isProgramError(e, 'PriceTooSoon')) return null;
+
       // Both players crank the same feed, so losing the race is the normal
       // case rather than a fault. Decided by re-reading the feed instead of
       // matching on the error text: two posts landing in the same slot come

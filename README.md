@@ -270,7 +270,7 @@ npm run check:markets  # the live market list: real mints, prices, logos, and a
                        # startPx the program will accept
 npm run check:pumpfun  # the pump.fun integration on its own
 npm run verify:client  # drives a full match through the app's own client
-npm run prove:privacy  # the privacy proof, stage by stage (~65s)
+npm run prove:privacy  # the privacy proof, stage by stage (~31s)
 npm run truth          # RPC ground truth, to check rendered numbers against
 npm run state          # where every unfinished match got to
 npm run crank          # settle anything abandoned past its buzzer

@@ -99,6 +99,21 @@ const codeOf = (err: unknown): number | null => {
   return m ? parseInt(m[1], 16) : null;
 };
 
+/**
+ * Whether a failure is a specific program error, named rather than numbered.
+ *
+ * The code is resolved from the deployed IDL, so this cannot drift when an
+ * error is inserted in the middle of `errors.rs` — which has already happened
+ * once and silently renumbered seven of them.
+ */
+export function isProgramError(err: unknown, name: string): boolean {
+  const code = codeOf(err);
+  if (code === null) return false;
+  const declared = ((FOGDUEL_IDL as { errors?: Array<{ code: number; name: string }> }).errors ?? [])
+    .find((e) => e.name === name);
+  return !!declared && declared.code === code;
+}
+
 export function explainError(err: unknown): FriendlyError {
   if (!err) return UNKNOWN;
 

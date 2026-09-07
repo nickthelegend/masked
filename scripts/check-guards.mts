@@ -138,7 +138,33 @@ async function main() {
   // A match that has sat on the book long enough for its seeded price to be
   // wrong must not be joinable — see MAX_OPEN_AGE in state.rs. This uses a
   // genuinely old match from the cluster rather than waiting five minutes.
-  console.log('3. a round past its buzzer');
+  // The mark's rate limit is a *wait*, not a fault: MIN_PUSH_INTERVAL is
+  // measured on the cluster clock, which ticks in whole seconds, so the same
+  // cranker posting twice in quick succession hits it against its own last
+  // post. `crankPrice` must absorb that and report "not posted" rather than
+  // throwing — `prove:privacy` walks the mark alone and crashed on exactly
+  // this, in a script both the README and SUBMISSION tell judges to run.
+  console.log('3. the same cranker posting twice in a row');
+  const feedNow = await clientA.fetchPrice(live, false);
+  const target = Math.round(feedNow * 1.02);
+  await clientA.crankPrice(live, a.publicKey, target, false);
+  let secondThrew = false;
+  try {
+    await clientA.crankPrice(live, a.publicKey, target, false);
+  } catch {
+    secondThrew = true;
+  }
+  checks += 1;
+  if (secondThrew) fail('a second crank inside the rate limit threw instead of reporting no-post');
+  console.log('   absorbed — the rate limit reported no-post rather than throwing');
+
+  // And the walk itself must reach its target despite that limit.
+  const walked = await clientA.walkPriceTo(live, a.publicKey, Math.round(feedNow * 1.08), false);
+  checks += 1;
+  if (walked <= feedNow) fail(`walkPriceTo did not move the mark: ${feedNow} -> ${walked}`);
+  console.log(`   walkPriceTo moved the mark ${feedNow} -> ${walked}`);
+
+  console.log('4. a round past its buzzer');
   const shortLived = await clientA.createMatch({
     creator: a.publicKey,
     matchId: Date.now() + 2,
@@ -161,7 +187,7 @@ async function main() {
     clientA.applyFill(shortLived, a.publicKey, 'buy', Math.round(ENTRY * LAMPORTS_PER_SOL * 0.25))
   );
 
-  console.log('4. a stale open match');
+  console.log('5. a stale open match');
   const book = await clientA.fetchOpenMatches();
   const nowSecs = Math.floor(Date.now() / 1000);
   const old = book.find((x) => nowSecs - x.createdTs > MAX_OPEN_AGE_SECS && !x.creator.equals(b.publicKey));
