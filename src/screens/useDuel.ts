@@ -253,7 +253,11 @@ export function useDuel(): Duel {
       try {
         const px = await livePxFor({ kind, mint }, ac.signal);
         if (!alive) return;
-        await client.crankPrice(match.address, wallet.publicKey!, px, true);
+        // Posted on L1, not the rollup. The price feed is never delegated —
+        // only the positions are — so the rollup rejects a write to it with
+        // InvalidWritableAccount, and every mark was silently failing. The
+        // rollup clones the feed for reads, so fills there see the new mark.
+        await client.crankPrice(match.address, wallet.publicKey!, px, false);
       } catch {
         // The market API or the rate limit said no. The next tick tries again;
         // a failed crank must never interrupt a round in progress.
