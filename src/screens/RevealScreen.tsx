@@ -37,7 +37,8 @@ export interface RevealScreenProps {
   myPnl: number;
   opponentPnl: number;
   myFills: number;
-  opponentFills: number;
+  /** Null if it was never readable — see useDuel. The tape supersedes it. */
+  opponentFills: number | null;
   opponentName: string;
   /** The record against this opponent, counted off chain. Null while unknown. */
   record?: string | null;
@@ -117,6 +118,22 @@ export default function RevealScreen({
    * Losing 0.4% while the market fell 6% is a good round; the two numbers above
    * cannot say that on their own.
    */
+  /**
+   * Fill counts, from the tape.
+   *
+   * The tape is the public record the program just wrote, so at the reveal it
+   * is both authoritative and certainly readable — unlike the live position,
+   * which is sealed and may never have been read at all. Falls back to what
+   * was passed only until the tape arrives, and says "—" rather than zero if
+   * neither is available.
+   */
+  const shownMyFills = tape
+    ? (isPlayerA ? tape.fillsA : tape.fillsB).length
+    : myFills;
+  const shownTheirFills = tape
+    ? (isPlayerA ? tape.fillsB : tape.fillsA).length
+    : opponentFills ?? '—';
+
   const myMove = useMemo(
     () => (tape ? marketMove(isPlayerA ? tape.fillsA : tape.fillsB, entryLamports) : null),
     [tape, entryLamports, isPlayerA]
@@ -178,14 +195,14 @@ export default function RevealScreen({
           <Stack gap={space.xs}>
             <PixelText variant="bodySmall" color={color.cyan}>YOU</PixelText>
             <PnLOdometer value={unsealed ? myPnl : 0} size={13} signed />
-            <PixelText variant="bodySmall" color={color.textDim}>{myFills} FILLS</PixelText>
+            <PixelText variant="bodySmall" color={color.textDim}>{shownMyFills} FILLS</PixelText>
           </Stack>
         </PixelPanel>
         <PixelPanel flat accent={color.magenta} flex={1}>
           <Stack gap={space.xs}>
             <PixelText variant="bodySmall" color={color.magenta}>{opponentName.toUpperCase()}</PixelText>
             <PnLOdometer value={unsealed ? opponentPnl : 0} size={13} signed />
-            <PixelText variant="bodySmall" color={color.textDim}>{opponentFills} FILLS</PixelText>
+            <PixelText variant="bodySmall" color={color.textDim}>{shownTheirFills} FILLS</PixelText>
           </Stack>
         </PixelPanel>
       </Row>

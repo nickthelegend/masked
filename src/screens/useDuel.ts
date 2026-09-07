@@ -101,7 +101,15 @@ export interface Duel {
   fills: Fill[];
   opponentName: string;
   opponentPnl: number;
-  opponentFills: number;
+  /**
+   * The opponent's fill count, or null while it cannot be read.
+   *
+   * Null is the honest answer during a live round: the position is sealed by
+   * its ACL and the gate refuses it, so there is no count to report. It used
+   * to coalesce to 0, which claimed the opponent had not traded — a number the
+   * client had never been given and could not have obtained.
+   */
+  opponentFills: number | null;
   pot: number;
   /**
    * What this round actually put at risk, in SOL.
@@ -1397,9 +1405,10 @@ export function useDuel(): Duel {
     // round being told they were still AWAITING OPPONENT.
     opponentName: opponentKey ? `${opponentKey.toBase58().slice(0, 6)}…` : OPPONENT_PENDING,
     opponentPnl,
-    // Mid-round this is all the opponent ever exposes: a count, never a size,
-    // side or price. After settlement the committed position is public.
-    opponentFills: opponentPosition?.fillCount ?? 0,
+    // Mid-round the opponent exposes nothing at all — not a size, not a side,
+    // not a count. The position is only read at the reveal, once it is public,
+    // so this is null until then rather than a zero standing in for it.
+    opponentFills: opponentPosition ? opponentPosition.fillCount : null,
     pot,
     entrySol: match ? match.entry / LAMPORTS_PER_SOL : stake,
     won: match?.winner ? !!(wallet.publicKey && match.winner.equals(wallet.publicKey)) : false,

@@ -34,7 +34,8 @@ export interface LiveRoundScreenProps {
   myPnl: number;
   positionLabel: string;
   opponentName: string;
-  opponentFills: number;
+  /** Null while the count is unreadable — see useDuel. */
+  opponentFills: number | null;
   fills: Fill[];
   onLong: () => void;
   /** Sell what you do not own. The mirror of onLong. */
@@ -247,7 +248,7 @@ export default function LiveRoundScreen({
               panel
               label={opponentName.toUpperCase()}
               fogged
-              note={`FOGGED · ${opponentFills} FILLS`}
+              note={opponentFills === null ? 'FOGGED · FILLS HIDDEN' : `FOGGED · ${opponentFills} FILLS`}
               accent={color.panelLight}
             />
           </Animated.View>
