@@ -6,6 +6,7 @@
  * says what happened and, where there is one, what to do about it.
  */
 import { FOGDUEL_IDL } from './idl';
+import { RpcTimeoutError } from './rpcTimeout';
 
 export interface FriendlyError {
   title: string;
@@ -143,4 +144,28 @@ export async function withRetry<T>(fn: () => Promise<T>, attempts = 3, baseMs = 
     }
   }
   throw last;
+}
+
+/**
+ * A failed chain *read*, phrased for the person looking at it.
+ *
+ * `fetchNullable` returns null for an account that is not there, but throws for
+ * one that is there with the wrong shape. So `/tape/<any Solana address>` — the
+ * system program, a token mint, a wallet — put Anchor's own "Invalid account
+ * discriminator" on screen, which tells a player nothing about what they pasted
+ * or what to paste instead.
+ *
+ * A missed deadline already phrases itself ("the base layer did not answer in
+ * 8s") and is kept verbatim: the difference between "no duel here" and "cannot
+ * tell right now" is one this app makes a point of drawing, and collapsing it
+ * into a generic message would throw that away.
+ */
+export function explainRead(err: unknown, fallback = 'Could not reach the cluster.'): string {
+  if (err instanceof RpcTimeoutError) return err.message;
+  const message = String((err as Error)?.message ?? err);
+  if (/discriminator/i.test(message)) {
+    return 'That address is a Solana account, but not a duel.';
+  }
+  if (/did not answer in/.test(message)) return message;
+  return fallback;
 }

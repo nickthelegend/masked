@@ -19,6 +19,7 @@ import { FOGDUEL_IDL } from './idl';
 import { ACTIVE_CLUSTER } from './config';
 import { feedPda, tapePda } from './pdas';
 import { withDeadline } from './rpcTimeout';
+import { explainRead } from './errors';
 
 export interface SpectatedMatch {
   address: PublicKey;
@@ -148,7 +149,7 @@ export function useSpectate(address: string | null, pollMs = 1000) {
         setLoaded(true);
       } catch (e) {
         if (!alive) return;
-        setError(e instanceof Error ? e.message : 'Could not reach the cluster.');
+        setError(explainRead(e));
         setLoaded(true);
       }
     };

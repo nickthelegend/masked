@@ -15,6 +15,7 @@ import { FOGDUEL_IDL } from './idl';
 import { ACTIVE_CLUSTER } from './config';
 import { tapePda } from './pdas';
 import { withDeadline } from './rpcTimeout';
+import { explainRead } from './errors';
 import { toTapeState, type TapeState } from './tape';
 
 export interface RevealedTape {
@@ -97,7 +98,7 @@ export function useTape(address: string | null) {
         setLoaded(true);
       } catch (e) {
         if (!alive) return;
-        setError(e instanceof Error ? e.message : 'Could not reach the cluster.');
+        setError(explainRead(e));
         setLoaded(true);
       }
     })();
