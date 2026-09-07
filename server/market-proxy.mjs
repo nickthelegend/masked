@@ -15,20 +15,25 @@
  * open forwarder on a developer's laptop is a genuinely bad thing to leave
  * lying around.
  *
- * It also serves token logos, at /img?url=… , for the same reason and one
- * more: pump.fun's image_uri points at half a dozen third-party CDNs, and
- * several of them answer a browser with a 403 or a Cross-Origin-Resource-Policy
- * that blocks the load. Fetched server-side and re-served, every logo either
- * arrives or fails once, here, instead of printing an error into the console of
- * every visitor.
+ * Logos are deliberately NOT relayed. That was tried: pump.fun's image_uri
+ * points at half a dozen CDNs, and Cloudflare Images — which serves most of
+ * them — answers a browser and refuses a server, so proxying broke logos that
+ * load fine today. They are loaded directly, and TokenLogo falls back for the
+ * ones that are dead upstream.
  *
  *   node server/market-proxy.mjs        # :8788
  *   MARKET_PROXY_PORT=9000 node …
  */
 import { createServer } from 'node:http';
 
-const PORT = Number(process.env.MARKET_PROXY_PORT ?? 8788);
+// 8788 was the first choice and collided with an unrelated dev server on the
+// same machine, which answered the app's market requests with a 401 — so the
+// picker correctly reported "pump.fun returned 401" for a service that was
+// never pump.fun. A less-travelled port plus the identity check below makes
+// that failure mode obvious instead of mysterious.
+const PORT = Number(process.env.MARKET_PROXY_PORT ?? 8791);
 const TIMEOUT_MS = 12_000;
+const SERVICE = 'masked-market-proxy';
 
 /** prefix -> upstream origin. Nothing else is reachable through this. */
 const ROUTES = {
@@ -58,77 +63,6 @@ const send = (res, status, body) => {
   res.end(JSON.stringify(body));
 };
 
-/** Largest logo we will relay. Anything bigger is not a token icon. */
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-
-/**
- * Refuse anything that could be used to reach inside the network this runs on.
- *
- * The image URL comes from pump.fun's feed, so it is attacker-influenced by
- * definition: anyone can list a coin whose logo points at 169.254.169.254 or a
- * host on the operator's LAN, and a proxy that fetched it would hand back the
- * response. Hostnames are checked rather than resolved addresses, which stops
- * the obvious cases; a deployment on a network where this matters should put
- * egress rules in front of it as well.
- */
-function isPrivateHost(hostname) {
-  const h = hostname.toLowerCase().replace(/^\[|\]$/g, '');
-  if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal')) {
-    return true;
-  }
-  if (h === '::1' || h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80')) return true;
-  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
-  if (!v4) return false;
-  const [a, b] = [Number(v4[1]), Number(v4[2])];
-  return (
-    a === 0 || a === 127 || a === 10 ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    (a === 169 && b === 254) ||
-    (a === 100 && b >= 64 && b <= 127)
-  );
-}
-
-async function relayImage(res, raw) {
-  let target;
-  try {
-    target = new URL(raw);
-  } catch {
-    return send(res, 400, { error: 'url is not a URL' });
-  }
-  if (target.protocol !== 'https:' && target.protocol !== 'http:') {
-    return send(res, 403, { error: 'only http(s) images' });
-  }
-  if (isPrivateHost(target.hostname)) return send(res, 403, { error: 'refusing a private address' });
-
-  let r;
-  try {
-    r = await fetch(target, {
-      headers: { accept: 'image/*', 'user-agent': UPSTREAM_HEADERS['user-agent'] },
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-      redirect: 'follow',
-    });
-  } catch (e) {
-    return send(res, 502, { error: `image fetch failed: ${e?.message ?? e}` });
-  }
-  if (!r.ok) return send(res, r.status, { error: `image upstream returned ${r.status}` });
-
-  const type = r.headers.get('content-type') ?? '';
-  if (!type.startsWith('image/')) return send(res, 415, { error: `not an image: ${type || 'no content-type'}` });
-
-  const buf = Buffer.from(await r.arrayBuffer());
-  if (buf.byteLength > MAX_IMAGE_BYTES) return send(res, 413, { error: 'image too large' });
-
-  cors(res);
-  res.writeHead(200, {
-    'content-type': type,
-    'content-length': String(buf.byteLength),
-    // Logos do not change. Caching keeps a scrolling list off the network.
-    'cache-control': 'public, max-age=86400',
-  });
-  res.end(buf);
-}
-
 const server = createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
     cors(res);
@@ -140,15 +74,18 @@ const server = createServer(async (req, res) => {
 
   const url = new URL(req.url, 'http://localhost');
 
-  if (url.pathname === '/img') {
-    const raw = url.searchParams.get('url');
-    if (!raw) return send(res, 400, { error: 'need ?url=' });
-    return relayImage(res, raw);
+  // Identity, so a client can tell this proxy from whatever else might be
+  // listening on the port. The first choice of port belonged to an unrelated
+  // dev server, which answered market requests with a 401 — and the app
+  // faithfully reported "pump.fun returned 401" about a service that was not
+  // pump.fun.
+  if (url.pathname === '/whoami') {
+    return send(res, 200, { service: SERVICE, upstreams: Object.keys(ROUTES) });
   }
 
   const entry = Object.entries(ROUTES).find(([prefix]) => url.pathname.startsWith(prefix));
   if (!entry) {
-    return send(res, 403, { error: 'not a market route', allowed: [...Object.keys(ROUTES), '/img'] });
+    return send(res, 403, { error: 'not a market route', allowed: Object.keys(ROUTES) });
   }
   const [prefix, origin] = entry;
 
@@ -172,8 +109,20 @@ const server = createServer(async (req, res) => {
   }
 });
 
+server.on('error', (e) => {
+  // Without this a second copy dies on an unhandled 'error' event and prints a
+  // stack trace, which reads like a bug rather than "something is already
+  // there" — which, the first time, was true and was not us.
+  if (e.code === 'EADDRINUSE') {
+    console.error(`port ${PORT} is already in use.`);
+    console.error('If that is another copy of this proxy, nothing to do. If it is');
+    console.error('something else, set MARKET_PROXY_PORT and EXPO_PUBLIC_MARKET_PROXY to match.');
+    process.exit(1);
+  }
+  throw e;
+});
+
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`market proxy on http://127.0.0.1:${PORT}`);
   for (const [p, o] of Object.entries(ROUTES)) console.log(`  ${p.padEnd(8)} -> ${o}`);
-  console.log(`  ${'/img'.padEnd(8)} -> any public image host, re-served with CORS`);
 });

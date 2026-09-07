@@ -24,10 +24,7 @@ import { FOGDUEL_PROGRAM_ID } from '../chain/config';
 import { assertFogIntact } from '../chain/fog';
 import { FogduelClient, pnlBps, type MatchState, type PositionState } from '../chain/client';
 import { formatSolPrice } from '../chain/units';
-import { fetchMarket } from '../chain/pumpfun';
-import { fetchUsdPrices, WSOL_MINT } from '../chain/jupiter';
-import { pxFromSolPerToken } from '../chain/units';
-import type { TradableMarket } from '../chain/markets';
+import { livePxFor, type TradableMarket } from '../chain/markets';
 import { ACTIVE_CLUSTER } from '../chain/config';
 import { DEMO_MINT, marketLabel } from '../chain/market';
 import { OPPONENT_PENDING, RAKE, ROUND_SECONDS } from './data';
@@ -240,21 +237,9 @@ export function useDuel(): Duel {
 
     const tick = async () => {
       try {
-        let priceSol: number | null = null;
-        if (kind === 'meme') {
-          const live = await fetchMarket(mint, ac.signal);
-          priceSol = live?.priceSol ?? null;
-        } else {
-          const [prices, sol] = await Promise.all([
-            fetchUsdPrices([mint], ac.signal),
-            fetchUsdPrices([WSOL_MINT], ac.signal),
-          ]);
-          const usd = prices.get(mint)?.usdPrice;
-          const solUsd = sol.get(WSOL_MINT)?.usdPrice;
-          priceSol = usd && solUsd ? usd / solUsd : null;
-        }
-        if (!alive || priceSol === null || priceSol <= 0) return;
-        await client.crankPrice(match.address, wallet.publicKey!, pxFromSolPerToken(priceSol), true);
+        const px = await livePxFor({ kind, mint }, ac.signal);
+        if (!alive) return;
+        await client.crankPrice(match.address, wallet.publicKey!, px, true);
       } catch {
         // The market API or the rate limit said no. The next tick tries again;
         // a failed crank must never interrupt a round in progress.
@@ -383,15 +368,30 @@ export function useDuel(): Duel {
           return;
         }
         const matchId = Math.floor(Date.now() / 1000);
-        // The opening mark is the market's live price, read seconds ago from
-        // pump.fun or Jupiter — not a placeholder.
+
+        // Re-read the price rather than using the one in the list. The list
+        // refreshes every 20 seconds and freezes at whatever it last saw when
+        // the feed goes down, so a cached number could be any age — and this
+        // one becomes the round's opening mark and seeds both private books.
+        // If the feed cannot answer, the match does not open.
+        let startPx: number;
+        try {
+          startPx = await livePxFor(selectedMarket);
+        } catch (e) {
+          setError(
+            `Could not read a live price for ${selectedMarket.symbol}: ` +
+              `${e instanceof Error ? e.message : String(e)}`
+          );
+          return;
+        }
+
         target = await client!.createMatch({
           creator: me,
           matchId,
           mint: new PublicKey(selectedMarket.mint),
           durationSecs: ROUND_SECONDS,
           entryLamports,
-          startPx: selectedMarket.startPx,
+          startPx,
           marketType: selectedMarket.kind,
           symbol: selectedMarket.symbol,
           name: selectedMarket.name,

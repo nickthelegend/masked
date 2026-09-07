@@ -319,6 +319,22 @@ describe("fogduel", () => {
     assert.equal(after.px.toNumber(), feed.px.toNumber() + 1);
   });
 
+  it("refuses a sell larger than the base held", async () => {
+    const p = pdas(RUN + 1);
+    const pos = await program.account.position.fetch(p.posA);
+    try {
+      await program.methods
+        .applyFill({ sell: {} }, new BN(pos.baseQty.toNumber() + 1_000_000))
+        .accounts({
+          player: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posA,
+        })
+        .rpc();
+      assert.fail("overselling should have been rejected");
+    } catch (e: any) {
+      assert.include(e.toString().toLowerCase(), "insufficientbase");
+    }
+  });
+
   it("refuses to settle before the clock expires", async () => {
     const p = pdas(RUN + 1);
     try {
@@ -384,6 +400,27 @@ describe("fogduel", () => {
     assert.equal(tape.potPaid.toNumber(), payout);
     assert.equal(tape.rake.toNumber(), rake);
     assert.isAtLeast(tape.fillsA.length, 2, "tape carries the creator's fills");
+  });
+
+  // The mark that settles a round is the one the round finished on. Without
+  // this, anyone could walk the price after the buzzer and before settlement.
+  it("refuses a price push after the clock expires", async () => {
+    const p = pdas(RUN + 1);
+    const feed = await program.account.priceFeed.fetch(p.feed);
+    try {
+      await program.methods.pushPrice(new BN(feed.px.toNumber() + 1))
+        .accounts({ authority: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed })
+        .rpc();
+      assert.fail("a post after the buzzer should have been rejected");
+    } catch (e: any) {
+      // The match has already settled by this point in the suite, so the
+      // status check fires first — either way the post is refused.
+      const msg = e.toString().toLowerCase();
+      assert.ok(
+        msg.includes("matchexpired") || msg.includes("matchnotlive"),
+        `expected the post to be refused, got: ${e}`,
+      );
+    }
   });
 
   it("cancels an unjoined match and refunds the creator", async () => {

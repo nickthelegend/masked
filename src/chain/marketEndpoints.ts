@@ -27,7 +27,7 @@ const inBrowser = typeof window !== 'undefined' && typeof window.document !== 'u
  * the default is what `npm run proxy` listens on.
  */
 const PROXY_BASE =
-  process.env.EXPO_PUBLIC_MARKET_PROXY?.replace(/\/$/, '') || 'http://127.0.0.1:8788';
+  process.env.EXPO_PUBLIC_MARKET_PROXY?.replace(/\/$/, '') || 'http://127.0.0.1:8791';
 
 /** Base URL for a feed, for the runtime we are actually in. */
 export function feedBase(feed: Feed): string {

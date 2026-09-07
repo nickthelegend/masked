@@ -8,7 +8,7 @@
  * wallet, the mint and the size on a public chain — which is precisely the
  * information the round exists to hide.
  */
-import { fetchTopMarkets, PumpFunError, type PumpMarket } from './pumpfun';
+import { fetchMarket, fetchTopMarkets, PumpFunError, type PumpMarket } from './pumpfun';
 import { fetchUsdPrices, JupiterError, MAJORS, WSOL_MINT } from './jupiter';
 import { pxFromSolPerToken } from './units';
 import type { MarketKind } from './client';
@@ -105,6 +105,37 @@ export async function fetchMajorMarkets(signal?: AbortSignal): Promise<TradableM
     );
     return t ? [t] : [];
   });
+}
+
+/**
+ * The market's price right now, as the program's `px`.
+ *
+ * The picker's list is a snapshot that refreshes every 20 seconds, and it goes
+ * stale the moment the feed stops answering — which it does. Opening a match
+ * against a cached number would set the round's whole starting mark from a
+ * price of unknown age, so both the crank and `create_match` come through
+ * here instead.
+ *
+ * Throws rather than falling back. A duel that opens at a made-up mark is
+ * worse than one that does not open.
+ */
+export async function livePxFor(
+  market: Pick<TradableMarket, 'kind' | 'mint'>,
+  signal?: AbortSignal
+): Promise<number> {
+  if (market.kind === 'meme') {
+    const live = await fetchMarket(market.mint, signal);
+    if (!live || live.priceSol <= 0) {
+      throw new PumpFunError(`pump.fun has no live price for ${market.mint}`);
+    }
+    return pxFromSolPerToken(live.priceSol);
+  }
+
+  const prices = await fetchUsdPrices([market.mint, WSOL_MINT], signal);
+  const usd = prices.get(market.mint)?.usdPrice;
+  const solUsd = prices.get(WSOL_MINT)?.usdPrice;
+  if (!usd || !solUsd) throw new JupiterError(`jupiter has no live price for ${market.mint}`);
+  return pxFromSolPerToken(usd / solUsd);
 }
 
 export { PumpFunError, JupiterError };

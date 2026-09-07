@@ -103,6 +103,21 @@ const wrap = (kp: Keypair) => ({
   await joinerClient.applyFill(match, joiner.publicKey, 'buy', Math.floor(ENTRY * 0.2));
   console.log('   opponent also filled — two positions now need committing');
 
+  // Both players crank the same feed, so losing the race is the normal case.
+  // It must not surface as an error to whoever lost it.
+  console.log('6a. two crankers race the same mark');
+  const px = await client.fetchPrice(match, false);
+  const bumped = px + Math.floor(px / 1000);
+  const [a, b] = await Promise.all([
+    client.crankPrice(match, creator.publicKey, bumped),
+    joinerClient.crankPrice(match, joiner.publicKey, bumped),
+  ]);
+  assert.ok(
+    (a === null) !== (b === null),
+    `exactly one crank should land, got ${JSON.stringify([a, b])}`
+  );
+  console.log('   one landed, one was declined without erroring');
+
   console.log('6. price moves, commit + undelegate');
   await client.walkPriceTo(match, creator.publicKey, pxFromSolPerToken(0.118));
   await new Promise((r) => setTimeout(r, 13_000));

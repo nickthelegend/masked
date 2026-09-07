@@ -567,8 +567,9 @@ export class FogduelClient {
     targetPx: number,
     onEr = false
   ): Promise<number | null> {
-    const current = await this.fetchPrice(match, onEr);
-    if (current <= 0) return null;
+    const feed = await this.fetchPriceFeed(match, onEr);
+    if (!feed || feed.px <= 0) return null;
+    const current = feed.px;
 
     // Floored, and divided before multiplying, for two separate reasons.
     //
@@ -590,8 +591,13 @@ export class FogduelClient {
       await this.pushPrice(match, authority, clamped, onEr);
     } catch (e) {
       // Both players crank the same feed, so losing the race is the normal
-      // case, not a fault: whoever got there first already posted this mark.
-      if (String(e).includes('PriceTooSoon')) return null;
+      // case rather than a fault. Decided by re-reading the feed instead of
+      // matching on the error text: two posts landing in the same slot come
+      // back from Anchor with no message and no logs at all, so there is
+      // nothing to match on — but the feed itself says plainly whether
+      // somebody else just moved it.
+      const after = await this.fetchPriceFeed(match, onEr);
+      if (after && after.updatedTs > feed.updatedTs) return null;
       throw e;
     }
     return clamped;
@@ -712,11 +718,19 @@ export class FogduelClient {
     };
   }
 
-  /** The posted oracle mark as a `px`: lamports per traded unit. */
-  async fetchPrice(match: PublicKey, fromEr: boolean): Promise<number> {
+  /** The posted mark, with the moment it was posted. */
+  async fetchPriceFeed(
+    match: PublicKey,
+    fromEr: boolean
+  ): Promise<{ px: number; updatedTs: number } | null> {
     const program = fromEr ? await this.erProgramAuthed() : this.l1Program;
     const raw = await program.account.priceFeed.fetchNullable(feedPda(match));
-    return raw ? raw.px.toNumber() : 0;
+    return raw ? { px: raw.px.toNumber(), updatedTs: raw.updatedTs.toNumber() } : null;
+  }
+
+  /** The posted mark as a `px`. See units.ts. */
+  async fetchPrice(match: PublicKey, fromEr: boolean): Promise<number> {
+    return (await this.fetchPriceFeed(match, fromEr))?.px ?? 0;
   }
 
   async fetchTape(match: PublicKey) {
