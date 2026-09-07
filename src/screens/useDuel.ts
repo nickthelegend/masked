@@ -1250,7 +1250,11 @@ export function useDuel(): Duel {
         await beginRound(m, creatorKey, m.joiner, me);
       });
     },
-    [guard, client, wallet.publicKey, beginRound]
+    // `selectedMarket` belongs here: without it this callback closes over the
+    // value from first render, which is null, and every join silently fell
+    // back to the top meme. A player who picked SOL joined on WOFI and the
+    // only place it showed was the settled tape.
+    [guard, client, wallet.publicKey, beginRound, selectedMarket, toast]
   );
 
   const cancelMatchByAddress = useCallback(
