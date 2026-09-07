@@ -44,6 +44,12 @@ export default function NotFound() {
         <Link href="/health" asChild>
           <PixelButton tone="quiet" label="SYSTEM HEALTH" size={10} />
         </Link>
+        <Link href="/spectate" asChild>
+          <PixelButton tone="quiet" label="WATCH A DUEL" size={10} />
+        </Link>
+        <Link href="/tape" asChild>
+          <PixelButton tone="quiet" label="READ A SETTLED TAPE" size={10} />
+        </Link>
         <Link href="/gallery" asChild>
           <PixelButton tone="quiet" label="COMPONENT GALLERY" size={10} />
         </Link>

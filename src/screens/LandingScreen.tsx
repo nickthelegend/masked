@@ -34,7 +34,7 @@ import AppHeader from './AppHeader';
 import DuelLobbyScreen from './DuelLobbyScreen';
 import { HOW_IT_WORKS, LANDING_STAT_LABELS, MODES, RAKE, roundPhrase } from './data';
 import { useTickerItems } from '../chain/useTickerItems';
-import { DEMO_MINT, marketLabel } from '../chain/market';
+import { marketLabel } from '../chain/market';
 import { bpsPct, short, useTapes } from '../chain/useTapes';
 import { useChainStats } from '../chain/useChainStats';
 import type { TradableMarket } from '../chain/markets';
@@ -249,7 +249,11 @@ export default function LandingScreen() {
           {tapes.slice(0, REVEAL_PREVIEW).map((t) => (
             <Box key={t.match} flex={1} style={{ minWidth: REVEAL_MIN_WIDTH }}>
               <MatchCard
-                token={marketLabel(DEMO_MINT)}
+                // The tape says what was traded. This was `marketLabel(DEMO_MINT)`,
+                // a constant, so every duel on the landing page was labelled
+                // $FOG whatever market it had actually been fought over — the
+                // in-app feed had been reading the real symbol all along.
+                token={t.symbol || marketLabel(t.mint)}
                 pot={`${(t.potPaid / 1e9).toFixed(2)}◎`}
                 ago={`${Math.max(0, Math.floor((Date.now() / 1000 - t.settledTs) / 60))}m ago`}
                 winner={short(t.winner)}

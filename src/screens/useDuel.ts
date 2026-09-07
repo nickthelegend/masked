@@ -650,8 +650,17 @@ export function useDuel(): Duel {
   }, [client, wallet.publicKey, phase]);
 
   /* ----------------------------- transitions ----------------------------- */
+  /**
+   * Run an action, and say what really happened.
+   *
+   * Returning `'noop'` means the action correctly decided there was nothing to
+   * do — and the success toast is then skipped. Without that, pressing CLOSE
+   * with no position answered "POSITION CLOSED", which is a confirmation of
+   * something that did not occur; a player who mis-clicks should be told
+   * nothing happened, not congratulated for it.
+   */
   const guard = useCallback(
-    async (label: string, fn: () => Promise<void>) => {
+    async (label: string, fn: () => Promise<void | 'noop'>) => {
       if (!client || !wallet.publicKey) {
         setError('Connect a wallet first.');
         toast.error('CONNECT A WALLET', 'Nothing can be signed without one.');
@@ -662,8 +671,8 @@ export function useDuel(): Duel {
       try {
         // Retry only the failures where retrying is meaningful — a declined
         // signature or a self-join is final.
-        await withRetry(fn);
-        toast.ok(label);
+        const outcome = await withRetry(fn);
+        if (outcome !== 'noop') toast.ok(label);
       } catch (e) {
         const friendly = explainError(e);
         setError(friendly.title);
@@ -811,10 +820,17 @@ export function useDuel(): Duel {
 
   const openLong = useCallback(() => {
     void guard('LONG FILLED', async () => {
-      if (!match) return;
+      if (!match) return 'noop';
       // Spend a slice of what is left, in quote units.
       const quote = myPosition?.quoteBalance ?? match.entry;
-      const spend = Math.max(1, Math.floor(quote * fillSize));
+      const spend = Math.floor(quote * fillSize);
+      // Nothing left to spend. This used to floor to a 1-lamport buy and send
+      // it, which the program refuses for a position with no quote — a doomed
+      // transaction, and a button that appeared to do nothing at all.
+      if (spend <= 0) {
+        toast.error('NOTHING LEFT TO LONG', 'Your whole entry is already in the position. Close some of it first.');
+        return 'noop';
+      }
       const markBefore = await client!.fetchPrice(match.address, true);
       await client!.applyFill(match.address, wallet.publicKey!, 'buy', spend);
       const mine = await client!.fetchPosition(match.address, wallet.publicKey!, true);
@@ -823,11 +839,15 @@ export function useDuel(): Duel {
         noteFill(mine, markBefore, 'buy');
       }
     });
-  }, [guard, client, match, myPosition, wallet.publicKey, fillSize, noteFill]);
+  }, [guard, client, match, myPosition, wallet.publicKey, fillSize, noteFill, toast]);
 
   const closeLong = useCallback(() => {
     void guard('POSITION CLOSED', async () => {
-      if (!match || !myPosition || myPosition.baseQty <= 0) return;
+      if (!match) return 'noop';
+      if (!myPosition || myPosition.baseQty <= 0) {
+        toast.info('NOTHING TO CLOSE', 'You are flat — there is no position to sell.');
+        return 'noop';
+      }
       // The same size control governs both directions, so a partial close is
       // a real move rather than all-or-nothing. MAX sells the exact remaining
       // base — a rounded-down fraction of it would strand dust that the
@@ -842,7 +862,7 @@ export function useDuel(): Duel {
       if (mine) noteFill(mine, markBefore, 'sell');
       if (mine) setMyPosition(mine);
     });
-  }, [guard, client, match, myPosition, wallet.publicKey, fillSize]);
+  }, [guard, client, match, myPosition, wallet.publicKey, fillSize, toast]);
 
   /** Take a specific match off the book. */
   const joinMatchByAddress = useCallback(
@@ -966,9 +986,14 @@ export function useDuel(): Duel {
       const qty =
         fillSize >= 1 ? myPosition!.baseQty : Math.floor(myPosition!.baseQty * fillSize);
       const cost = sellImpact(qty, price, match.entry) * 100;
-      return `CLOSING THAT COSTS ${cost.toFixed(2)}% · LONGING COSTS ${(
-        buyImpact(Math.floor((myPosition?.quoteBalance ?? match.entry) * fillSize), match.entry) * 100
-      ).toFixed(2)}%`;
+      const spend = Math.floor((myPosition?.quoteBalance ?? match.entry) * fillSize);
+      // "LONGING COSTS 0.00%" is true of a fill that cannot happen, which
+      // reads as free rather than as impossible.
+      const longPart =
+        spend > 0
+          ? `LONGING COSTS ${(buyImpact(spend, match.entry) * 100).toFixed(2)}%`
+          : 'NOTHING LEFT TO LONG';
+      return `CLOSING THAT COSTS ${cost.toFixed(2)}% · ${longPart}`;
     }
     const spend = Math.floor((myPosition?.quoteBalance ?? match.entry) * fillSize);
     return `THAT SIZE COSTS ${(buyImpact(spend, match.entry) * 100).toFixed(2)}% IN IMPACT`;

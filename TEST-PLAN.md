@@ -68,38 +68,38 @@ is a FAIL.
 
 | # | Item | Correct means | Status |
 |---|---|---|---|
-| A1 | Base validator | `getHealth` returns `ok` on :8999 | |
-| A2 | Rollup validator | :7799 answers RPC | |
-| A3 | ACL gate | :6699 answers, and refuses an unauthenticated read of a sealed position | |
-| A4 | Market proxy identity | `/whoami` returns `masked-market-proxy` — not another project's server on the same port | |
-| A5 | Program deployed | fogduel program account exists on :8999 and is executable | |
-| A6 | Metro serves the app | :8081 returns 200 and the bundle loads with no build error | |
+| A1 | Base validator | `getHealth` returns `ok` on :8999 | PASS |
+| A2 | Rollup validator | :7799 answers RPC | PASS |
+| A3 | ACL gate | :6699 answers, and refuses an unauthenticated read of a sealed position | PASS |
+| A4 | Market proxy identity | `/whoami` returns `masked-market-proxy` — not another project's server on the same port | PASS |
+| A5 | Program deployed | fogduel program account exists on :8999 and is executable | PASS |
+| A6 | Metro serves the app | :8081 returns 200 and the bundle loads with no build error | PASS |
 
 ## B — Landing page `/`
 
 | # | Item | Correct means | Status |
 |---|---|---|---|
-| B1 | Page renders | Wordmark, hero and pitch render; no console error | |
-| B2 | Live tape rows | Reveal rows come from real settled tapes on chain, not constants | |
-| B3 | Sparklines are real | Each row's curve is replayed from that tape's real fills — dips on its own impact rather than a straight ramp | |
-| B4 | Hero market | A real market at a real price from the live feed | |
-| B5 | CTA into the app | Navigates to `/play` | |
-| B6 | Empty state | With no settled tapes the feed says so rather than rendering blanks | |
+| B1 | Page renders | Wordmark, hero and pitch render; no console error | PASS |
+| B2 | Live tape rows | Reveal rows come from real settled tapes on chain, not constants | **FAIL → fixed** |
+| B3 | Sparklines are real | Each row's curve is replayed from that tape's real fills — dips on its own impact rather than a straight ramp | PASS |
+| B4 | Hero market | A real market at a real price from the live feed | PASS |
+| B5 | CTA into the app | Navigates to `/play` | PASS |
+| B6 | Empty state | With no settled tapes the feed says so rather than rendering blanks | PASS |
 
 ## C — Lobby and market picker (`/play`, duel tab)
 
 | # | Item | Correct means | Status |
 |---|---|---|---|
-| C1 | Wallet disconnected | Lobby renders, balance 0.00, CONNECT offered | |
-| C2 | Wallet picker | Offers Solflare and Local Key (dev); picking one connects and shows the real pubkey | |
-| C3 | Balance is real | Matches `getBalance` for that pubkey on :8999 | |
-| C4 | Market list | ≥10 rows, every symbol/price/cap from the live pump.fun feed | |
-| C5 | Market logos | Real images from the token's metadata; a failed load falls back to a letter tile, never a broken image | |
-| C6 | MEMES / MAJORS | MAJORS shows Jupiter-priced majors; switching re-renders with the right source badge | |
-| C7 | Selecting a market | Row highlights and the hero updates to that market | |
-| C8 | Stake picker | 0.05 / 0.1 / 0.5 / 1 selectable; "WINNER TAKES" updates to 2× less 2% rake | |
-| C9 | Price scale | A sub-cent coin and a dollar coin both render a sane price, neither rounded to zero | |
-| C10 | FIND MATCH | Moves to matchmaking | |
+| C1 | Wallet disconnected | Lobby renders, balance 0.00, CONNECT offered | PASS |
+| C2 | Wallet picker | Offers Solflare and Local Key (dev); picking one connects and shows the real pubkey | PASS |
+| C3 | Balance is real | Matches `getBalance` for that pubkey on :8999 | PASS |
+| C4 | Market list | ≥10 rows, every symbol/price/cap from the live pump.fun feed | PASS |
+| C5 | Market logos | Real images from the token's metadata; a failed load falls back to a letter tile, never a broken image | PASS |
+| C6 | MEMES / MAJORS | MAJORS shows Jupiter-priced majors; switching re-renders with the right source badge | PASS |
+| C7 | Selecting a market | Row highlights and the hero updates to that market | PASS |
+| C8 | Stake picker | 0.05 / 0.1 / 0.5 / 1 selectable; "WINNER TAKES" updates to 2× less 2% rake | PASS |
+| C9 | Price scale | A sub-cent coin and a dollar coin both render a sane price, neither rounded to zero | PASS |
+| C10 | FIND MATCH | Moves to matchmaking | PASS |
 
 ## D — Matchmaking and the open book
 
