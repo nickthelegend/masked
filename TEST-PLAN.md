@@ -486,3 +486,48 @@ duel — one `Leg` per player, one pot, one winner — so a squad screen would b
 front end for instructions that do not exist. Building it would mean either
 mocking the mode or rewriting and redeploying the program, and this document
 does not mark mocked features as done.
+
+---
+
+## Re-execution — A–S against the rebuilt arcade UI
+
+The T section was executed against the new screens, but A–S had last been
+executed against the old ones, and the arcade work rewrote `AppHeader`,
+`TokenLogo`, `MarketRow`, `MarketPicker`, `RevealScreen` and
+`LiveRoundScreen`. Checking that five tabs render without an error boundary is
+not a re-run. This is the re-run of everything those six components touch.
+
+| Re-checked | Result |
+|---|---|
+| B — landing `/` | **2 defects**, below |
+| C3 C4 C6 — logos, MEMES/MAJORS, selection persists | P — MAJORS switches to Jupiter, SOL selection carried into the round |
+| D1–D4 — wallet chip and balance in the new HUD | P — real address, real balance, real trophy count |
+| G5 G6 — reveal mirrors, PnL matches chain | **1 defect**, below |
+| I — Modes / Rank | P — tier ladder and per-row tier chips, both off on-chain `wins` |
+| J — `/tape` | P — renders with real logos on both legs |
+| K — `/spectate` | P — both positions FOGGED, no PnL anywhere in the DOM |
+| L — `/proof` | P — read gate YES, attested NO, running duels split from expired ones |
+| M — `/health` | P — all five layers up |
+
+### Found while re-executing
+
+1. **A drawn round showed both players `#1`.** The result board ranked on
+   `myPnl >= opponentPnl` — evaluated from whichever player was looking. The
+   program breaks a draw in favour of the creator, and the comment beside that
+   line in `lib.rs` warns in as many words that *"a client-side `>=` would
+   silently favour whoever happened to be looking at the screen"*. The board
+   did precisely that: on a real drawn duel the creator's screen read `#1 ·
+   YOU TOOK THE POT` and the joiner's read `#1 (YOU)` directly above `You
+   finished at #2 · OOF… SO CLOSE`. It now orders by the chain's own `winner`,
+   which is a fact to be read and not recomputed — the pot has already been
+   paid by the time the board renders. A drawn round also now names the rule
+   instead of reporting "you missed the top by 0.0000%".
+
+2. **The landing page still described v1.** "Two traders stake a pot and trade
+   **the same token** for five minutes" — untrue since the two-leg rewrite,
+   on the first sentence a judge reads.
+
+3. **The landing's device preview showed a real wallet holding `0.00`.** Its
+   header is the real `AppHeader`, so it named the connected wallet and then
+   printed a hardcoded zero balance and zero trophies beside it. It reads the
+   chain now, via a `useBalance` that does not drag a whole duel in with it.

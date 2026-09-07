@@ -150,11 +150,16 @@ export default function RevealScreen({
   const theirLeg = tape ? (isPlayerA ? tape.legB : tape.legA) : null;
 
   /**
-   * The two standings, best PnL first.
+   * The two standings, winner first.
    *
-   * Ranked on PnL rather than on `won`, and then cross-checked: the program
-   * settles on the same comparison, so if these ever disagreed it would mean
-   * the board was describing a different round than the pot did.
+   * Ordered by the chain's own outcome, never by comparing the two PnLs here.
+   * `settle_match` breaks a draw in favour of the creator — `pnl_a >= pnl_b`
+   * — and its comment warns in as many words that a client-side `>=` would
+   * silently favour whoever happened to be looking at the screen. This board
+   * did exactly that: it ranked on `myPnl >= opponentPnl`, so a drawn round
+   * showed *both* players a gold trophy and `#1`, directly above a summary
+   * reading "You finished at #2". The pot has already been paid by the time
+   * this renders; who won is a fact to be read, not recomputed.
    */
   const standings = useMemo(() => {
     const myFillList = tape ? (isPlayerA ? tape.fillsA : tape.fillsB) : [];
@@ -179,9 +184,17 @@ export default function RevealScreen({
       token: theirLeg ? { mint: theirLeg.mint.toBase58(), symbol: theirLeg.symbol } : null,
       liquidated: tape ? (isPlayerA ? tape.liquidatedB : tape.liquidatedA) : false,
     };
-    const ordered = myPnl >= opponentPnl ? [mine, theirs] : [theirs, mine];
+    const ordered = won ? [mine, theirs] : [theirs, mine];
     return ordered.map((e, i) => ({ ...e, rank: i + 1 }));
-  }, [myPnl, opponentPnl, myLeg, theirLeg, opponentName, myName, tape, isPlayerA]);
+  }, [won, myPnl, opponentPnl, myLeg, theirLeg, opponentName, myName, tape, isPlayerA]);
+
+  /**
+   * A drawn round, decided by the program's tie-break rather than by trading.
+   *
+   * "You missed the top by 0.0000%" is true and tells the reader nothing about
+   * why they lost. The rule is public, so it is named.
+   */
+  const drawn = myPnl === opponentPnl;
 
   return (
     <View>
@@ -237,7 +250,8 @@ export default function RevealScreen({
           entryFee={sol(stake)}
           yourRank={won ? 1 : 2}
           trophies={won ? TROPHIES_PER_WIN : 0}
-          missedBy={won ? null : myPnl - opponentPnl}
+          missedBy={won || drawn ? null : myPnl - opponentPnl}
+          drawNote={!won && drawn ? 'A DRAW GOES TO THE MATCH CREATOR' : null}
           paid={won ? solExact(pot) : null}
         />
       ) : null}

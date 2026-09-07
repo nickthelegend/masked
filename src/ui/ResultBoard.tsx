@@ -25,6 +25,13 @@ export interface ResultBoardProps {
   missedBy?: number | null;
   /** What the reader was paid, formatted, when they won. */
   paid?: string | null;
+  /**
+   * Why a round with no gap in it still had a loser.
+   *
+   * Only set on an actual draw. The alternative was printing "you missed the
+   * top by 0.0000%", which is true and explains nothing.
+   */
+  drawNote?: string | null;
 }
 
 const MONTHS = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
@@ -55,6 +62,7 @@ export default function ResultBoard({
   trophies,
   missedBy = null,
   paid = null,
+  drawNote = null,
 }: ResultBoardProps) {
   const won = yourRank === 1;
   return (
@@ -123,6 +131,11 @@ export default function ResultBoard({
         {!won && missedBy !== null ? (
           <PixelText variant="bodySmall" size={10} align="center" color={color.textFaint}>
             {`You missed the top by ${Math.abs(missedBy).toFixed(4)}% (round PnL)`}
+          </PixelText>
+        ) : null}
+        {drawNote ? (
+          <PixelText variant="tabLabel" size={7} align="center" color={color.textFaint}>
+            {drawNote}
           </PixelText>
         ) : null}
       </Stack>

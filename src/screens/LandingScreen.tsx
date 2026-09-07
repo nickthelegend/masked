@@ -37,7 +37,10 @@ import { HOW_IT_WORKS, LANDING_STAT_LABELS, MODES, RAKE, roundPhrase } from './d
 import { useTickerItems } from '../chain/useTickerItems';
 import { marketLabel } from '../chain/market';
 import { bpsPct, short, useTapes } from '../chain/useTapes';
+import { useWallet } from '@solana/wallet-adapter-react';
 import { useChainStats } from '../chain/useChainStats';
+import { useBalance } from '../chain/useBalance';
+import { usePlayerStats } from '../chain/usePlayerStats';
 import type { TradableMarket } from '../chain/markets';
 
 /** Above this width the hero splits into copy + device columns. */
@@ -59,6 +62,10 @@ export default function LandingScreen() {
   const [previewMarket, setPreviewMarket] = useState<TradableMarket | null>(null);
   const stats = useChainStats();
   const tickerItems = useTickerItems();
+  const balance = useBalance();
+  const { publicKey } = useWallet();
+  const { board } = usePlayerStats();
+  const trophies = board.find((r) => r.owner.toBase58() === publicKey?.toBase58())?.wins ?? 0;
   const { tapes, loaded: tapesLoaded } = useTapes();
 
   // "HOW IT WORKS" scrolls to the explainer rather than dumping you into a
@@ -103,8 +110,8 @@ export default function LandingScreen() {
       </Stack>
 
       <PixelText variant="body">
-        1v1 fog duels. Two traders stake a pot and trade the same token for {roundPhrase()} with every position
-        hidden. At the buzzer the tape reveals — best PnL takes the pot.
+        1v1 fog duels. Two traders stake a pot and each pick their own token — any coin, any pool — then trade
+        it for {roundPhrase()} with every position hidden. At the buzzer the tape reveals — best PnL takes the pot.
       </PixelText>
 
       <Row gap={space.sm} wrap>
@@ -136,9 +143,11 @@ export default function LandingScreen() {
   const heroDevice = (
     <View style={{ width: '100%', maxWidth: 440 }}>
       <PocketShell screenHeight={HERO_SHELL_HEIGHT}>
-        {/* Preview shell. Balance is 0 until a wallet connects — it used to
-            display a hardcoded 50. */}
-        <AppHeader balance={0} onHome={goPlay} />
+        {/* A preview of the app, but the header inside it is the real one and
+            shows the real wallet, so its counters have to be real too. It
+            printed a flat 0.00 next to a connected wallet holding several
+            SOL — a hardcoded 50 before that. */}
+        <AppHeader balance={balance} trophies={trophies} onHome={goPlay} />
         <Ticker items={tickerItems} />
         <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
           <DuelLobbyScreen
