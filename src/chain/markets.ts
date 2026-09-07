@@ -33,7 +33,7 @@ export interface TradableMarket {
   /** USD per token. */
   priceUsd: number;
   /** Opening mark as the program stores it. See units.ts. */
-  startPx: number;
+  startPx: bigint;
   /** Where the mark came from, shown in the UI so it is never a mystery. */
   source: 'pump.fun' | 'jupiter';
   /** Rough size signal, for ordering. USD market cap for memes. */
@@ -45,7 +45,7 @@ const toTradable = (
   m: { mint: string; symbol: string; name: string; imageUri: string | null; priceSol: number; priceUsd: number; usdMarketCap: number },
   source: TradableMarket['source']
 ): TradableMarket | null => {
-  let startPx: number;
+  let startPx: bigint;
   try {
     startPx = pxFromSolPerToken(m.priceSol);
   } catch {
@@ -122,7 +122,7 @@ export async function fetchMajorMarkets(signal?: AbortSignal): Promise<TradableM
 export async function livePxFor(
   market: Pick<TradableMarket, 'kind' | 'mint'>,
   signal?: AbortSignal
-): Promise<number> {
+): Promise<bigint> {
   if (market.kind === 'meme') {
     const live = await fetchMarket(market.mint, signal);
     if (!live || live.priceSol <= 0) {

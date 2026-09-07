@@ -20,7 +20,7 @@ import {
 } from '@magicblock-labs/ephemeral-rollups-sdk';
 import { FOGDUEL_IDL as idl } from './idl';
 import { ACTIVE_CLUSTER, DELEGATION_PROGRAM_ID, type ClusterConfig } from './config';
-import { feedPda, matchPda, positionPda, statsPda, tapePda, treasuryPda, vaultPda } from './pdas';
+import { feedPda, matchPda, positionPda, statsPda, statusPda, tapePda, treasuryPda, vaultPda } from './pdas';
 import { toTapeState, type TapeState } from './tape';
 import { authenticate, type MessageSigner } from './erAuth';
 import { VALUE_DIV } from './units';
@@ -250,7 +250,7 @@ export class FogduelClient {
     durationSecs: number;
     entryLamports: number;
     /** Opening mark, as the program stores it: lamports per traded unit. */
-    startPx: number;
+    startPx: bigint;
     marketType?: MarketKind;
     symbol?: string;
     name?: string;
@@ -263,7 +263,7 @@ export class FogduelClient {
         args.mint,
         new BN(args.durationSecs),
         new BN(args.entryLamports),
-        new BN(Math.round(args.startPx)),
+        new BN(args.startPx.toString()),
         kind === 'meme' ? { meme: {} } : { major: {} },
         (args.symbol ?? '').slice(0, 12),
         (args.name ?? '').slice(0, 32)
@@ -272,21 +272,41 @@ export class FogduelClient {
         creator: args.creator,
         matchAccount: match,
         vault: vaultPda(match),
-        priceFeed: feedPda(match),
+        priceFeed: feedPda(match, args.creator),
+        roundStatus: statusPda(match),
         systemProgram: SystemProgram.programId,
       })
       .rpc();
     return match;
   }
 
-  async joinMatch(match: PublicKey, joiner: PublicKey, creator: PublicKey): Promise<void> {
+  /**
+   * Join an open match, bringing your own market.
+   *
+   * The joiner names their own mint and the mark they just read for it, rather
+   * than inheriting the creator's. That is what makes the duel "my read
+   * against yours" instead of "we both had to want the same coin".
+   */
+  async joinMatch(
+    match: PublicKey,
+    joiner: PublicKey,
+    creator: PublicKey,
+    leg: { mint: PublicKey; startPx: bigint; marketType: 'meme' | 'major'; symbol: string; name: string }
+  ): Promise<void> {
     await this.l1Program.methods
-      .joinMatch()
+      .joinMatch(
+        leg.mint,
+        new BN(leg.startPx.toString()),
+        leg.marketType === 'meme' ? { meme: {} } : { major: {} },
+        leg.symbol.slice(0, 12),
+        leg.name.slice(0, 32)
+      )
       .accounts({
         joiner,
         matchAccount: match,
         vault: vaultPda(match),
-        priceFeed: feedPda(match),
+        priceFeed: feedPda(match, creator),
+        priceFeedB: feedPda(match, joiner),
         positionA: positionPda(match, creator),
         positionB: positionPda(match, joiner),
         systemProgram: SystemProgram.programId,
@@ -529,7 +549,7 @@ export class FogduelClient {
       .accounts({
         player,
         matchAccount: match,
-        priceFeed: feedPda(match),
+        priceFeed: feedPda(match, owner),
         position: positionPda(match, owner),
         sessionToken,
       })
@@ -558,7 +578,7 @@ export class FogduelClient {
       .accounts({
         player: session.signer.publicKey,
         matchAccount: match,
-        priceFeed: feedPda(match),
+        priceFeed: feedPda(match, owner),
         position: positionPda(match, owner),
         sessionToken: session.token,
       })
@@ -625,7 +645,9 @@ export class FogduelClient {
         cranker,
         matchAccount: match,
         vault: vaultPda(match),
-        priceFeed: feedPda(match),
+        priceFeed: feedPda(match, creator),
+        priceFeedB: feedPda(match, joiner),
+        roundStatus: statusPda(match),
         positionA: positionPda(match, creator),
         positionB: positionPda(match, joiner),
         creator,
@@ -709,11 +731,17 @@ export class FogduelClient {
    * chasing a fast move should walk the mark rather than jump it, which is
    * what `crankPrice` does.
    */
-  async pushPrice(match: PublicKey, authority: PublicKey, px: number, onEr = false): Promise<void> {
+  async pushPrice(
+    match: PublicKey,
+    authority: PublicKey,
+    px: bigint,
+    owner: PublicKey,
+    onEr = false
+  ): Promise<void> {
     const program = onEr ? await this.erProgramAuthed() : this.l1Program;
     await program.methods
-      .pushPrice(new BN(Math.round(px)))
-      .accounts({ authority, matchAccount: match, priceFeed: feedPda(match) })
+      .pushPrice(new BN(px.toString()), owner)
+      .accounts({ authority, matchAccount: match, priceFeed: feedPda(match, owner) })
       .rpc();
   }
 
@@ -730,31 +758,28 @@ export class FogduelClient {
   async crankPrice(
     match: PublicKey,
     authority: PublicKey,
-    targetPx: number,
+    targetPx: bigint,
+    owner: PublicKey,
     onEr = false
-  ): Promise<number | null> {
-    const feed = await this.fetchPriceFeed(match, onEr);
-    if (!feed || feed.px <= 0) return null;
+  ): Promise<bigint | null> {
+    const feed = await this.fetchPriceFeed(match, owner, onEr);
+    if (!feed || feed.px <= 0n) return null;
     const current = feed.px;
 
-    // Floored, and divided before multiplying, for two separate reasons.
-    //
-    // Floored because the on-chain cap is an exact integer comparison: a 5%
-    // step is very often fractional, and rounding it up puts the post one
-    // lamport over the limit, which the program rejects outright.
-    //
-    // Divided first because px runs to 1e15 for SOL, and `px * 10000` leaves
-    // the range where a double is exact — the cap would then be computed from
-    // a number that is already wrong.
-    const maxStep = Math.floor((current / BPS) * MAX_PUSH_BPS);
-    const clamped = Math.max(
-      current - maxStep,
-      Math.min(current + maxStep, Math.round(targetPx))
-    );
-    if (clamped === current || clamped <= 0) return null;
+    // All of this is integer arithmetic on chain, and now it is here too.
+    // px reaches 7.6e17 for an asset like WBTC, well past where a double can
+    // represent consecutive integers — the cap would have been computed from a
+    // number that was already wrong, and the post rejected for being a step
+    // over a limit it was trying to respect. bigint truncates towards zero,
+    // which is the floor the program's exact comparison wants.
+    const maxStep = (current * BigInt(MAX_PUSH_BPS)) / BigInt(BPS);
+    const lo = current - maxStep;
+    const hi = current + maxStep;
+    const clamped = targetPx < lo ? lo : targetPx > hi ? hi : targetPx;
+    if (clamped === current || clamped <= 0n) return null;
 
     try {
-      await this.pushPrice(match, authority, clamped, onEr);
+      await this.pushPrice(match, authority, clamped, owner, onEr);
     } catch (e) {
       // `PriceTooSoon` is the program saying "come back in a moment", so it is
       // always a wait rather than a fault. It fires against our *own* last
@@ -771,7 +796,7 @@ export class FogduelClient {
       // back from Anchor with no message and no logs at all, so there is
       // nothing to match on — but the feed itself says plainly whether
       // somebody else just moved it.
-      const after = await this.fetchPriceFeed(match, onEr);
+      const after = await this.fetchPriceFeed(match, owner, onEr);
       if (after && after.updatedTs > feed.updatedTs) return null;
       throw e;
     }
@@ -788,18 +813,20 @@ export class FogduelClient {
   async walkPriceTo(
     match: PublicKey,
     authority: PublicKey,
-    targetPx: number,
+    targetPx: bigint,
+    owner: PublicKey,
     onEr = false,
     maxSteps = 12
-  ): Promise<number> {
-    let last = await this.fetchPrice(match, onEr);
+  ): Promise<bigint> {
+    let last = await this.fetchPrice(match, owner, onEr);
     for (let i = 0; i < maxSteps; i += 1) {
-      if (Math.abs(last - targetPx) <= Math.max(1, targetPx / 10_000)) break;
+      const gap = last > targetPx ? last - targetPx : targetPx - last;
+      if (gap <= (targetPx / 10_000n > 1n ? targetPx / 10_000n : 1n)) break;
       // MIN_PUSH_INTERVAL is one second against the cluster clock, and the
       // feed was last written when the match was created — so wait before the
       // first post too, not only between posts.
       await new Promise((r) => setTimeout(r, 1100));
-      const posted = await this.crankPrice(match, authority, targetPx, onEr);
+      const posted = await this.crankPrice(match, authority, targetPx, owner, onEr);
       if (posted === null) continue;
       last = posted;
     }
@@ -947,16 +974,19 @@ export class FogduelClient {
   /** The posted mark, with the moment it was posted. */
   async fetchPriceFeed(
     match: PublicKey,
+    owner: PublicKey,
     fromEr: boolean
-  ): Promise<{ px: number; updatedTs: number } | null> {
+  ): Promise<{ px: bigint; updatedTs: number } | null> {
     const program = fromEr ? await this.erProgramAuthed() : this.l1Program;
-    const raw = await program.account.priceFeed.fetchNullable(feedPda(match));
-    return raw ? { px: raw.px.toNumber(), updatedTs: raw.updatedTs.toNumber() } : null;
+    const raw = await program.account.priceFeed.fetchNullable(feedPda(match, owner));
+    // `toString()` rather than `toNumber()`: a px above ~9e15 is exactly what
+    // this release added support for, and `toNumber()` throws on it.
+    return raw ? { px: BigInt(raw.px.toString()), updatedTs: raw.updatedTs.toNumber() } : null;
   }
 
   /** The posted mark as a `px`. See units.ts. */
-  async fetchPrice(match: PublicKey, fromEr: boolean): Promise<number> {
-    return (await this.fetchPriceFeed(match, fromEr))?.px ?? 0;
+  async fetchPrice(match: PublicKey, owner: PublicKey, fromEr: boolean): Promise<bigint> {
+    return (await this.fetchPriceFeed(match, owner, fromEr))?.px ?? 0n;
   }
 
   /**

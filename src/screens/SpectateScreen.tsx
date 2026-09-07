@@ -15,7 +15,6 @@ import {
   TokenLogo,
   Wordmark,
   color,
-  sol,
   solExact,
   space,
 } from '../ui';
@@ -42,6 +41,19 @@ const pct = (bps: number) => `${bps >= 0 ? '+' : ''}${(bps / 100).toFixed(2)}%`;
  * No wallet. That is deliberate: it is the version of the app a judge can open
  * from a link.
  */
+/**
+ * A price series as percent change from its first observed point.
+ *
+ * Two legs are two different tokens, so their raw marks cannot share an axis.
+ * This is what makes them comparable — and it is the same quantity the round
+ * is settled on.
+ */
+const asMove = (series: number[]): number[] => {
+  const first = series[0];
+  if (!first) return [];
+  return series.map((px) => ((px - first) / first) * 100);
+};
+
 export default function SpectateScreen({ address }: SpectateScreenProps) {
   const { match, error, loaded } = useSpectate(address);
 
@@ -79,17 +91,24 @@ export default function SpectateScreen({ address }: SpectateScreenProps) {
     return (
       <Stack gap={space.lg}>
         <Row justify="space-between" align="center" gap={space.md} wrap>
-          <Row gap={space.sm} align="center">
-            <TokenLogo mint={match.mint.toBase58()} symbol={match.symbol || '?'} size={30} />
-            <Stack gap={2}>
-              <PixelText variant="label" size={11} color={color.white}>
-                {match.symbol || 'UNNAMED MARKET'}
-              </PixelText>
-              <PixelText variant="bodySmall" size={10} color={color.textFaint}>
-                {match.marketType === 'major' ? 'jupiter' : 'pump.fun'} · {sol(match.entry / 1e9)} a
-                side
-              </PixelText>
-            </Stack>
+          {/* Two markets, because the players brought one each. Naming only
+              one of them would be a lie about half the duel. */}
+          <Row gap={space.md} align="center" wrap>
+            {[match.legA, match.legB]
+              .filter((leg) => leg.symbol)
+              .map((leg, i) => (
+                <Row gap={space.sm} align="center" key={`${leg.symbol}-${i}`}>
+                  <TokenLogo mint={leg.mint.toBase58()} symbol={leg.symbol || '?'} size={30} />
+                  <Stack gap={2}>
+                    <PixelText variant="label" size={11} color={i === 0 ? color.cyan : color.magenta}>
+                      {leg.symbol}
+                    </PixelText>
+                    <PixelText variant="bodySmall" size={10} color={color.textFaint}>
+                      {leg.marketType === 'major' ? 'jupiter' : 'pump.fun'}
+                    </PixelText>
+                  </Stack>
+                </Row>
+              ))}
           </Row>
           <Row gap={space.sm} align="center">
             {live ? <RoundClock seconds={match.secondsLeft} /> : null}
@@ -99,11 +118,27 @@ export default function SpectateScreen({ address }: SpectateScreenProps) {
 
         <PixelPanel flat bg={color.chartBg} pad={space.sm}>
           <Stack gap={space.xs}>
-            <TapeChart mine={match.series} height={180} baseline />
-            <Row justify="space-between">
-              <PixelText variant="bodySmall">MARK {formatSolPrice(match.px)}◎</PixelText>
+            {/* Both marks on one chart, each as percent change from the
+                first mark this view saw.
+                
+                Raw prices could not share an axis: one side might be trading
+                something worth $79,000 and the other something worth
+                $0.000003, and a shared scale would draw the second as a flat
+                line on the floor. Percent change is the quantity that actually
+                compares, and it is what the duel is scored on anyway. */}
+            <TapeChart mine={asMove(match.legA.series)} opponent={asMove(match.legB.series)} height={180} baseline />
+            <Row justify="space-between" wrap gap={space.sm}>
+              <PixelText variant="bodySmall" color={color.cyan}>
+                {match.legA.symbol || '—'} {formatSolPrice(match.legA.px)}◎
+              </PixelText>
+              {match.legB.symbol ? (
+                <PixelText variant="bodySmall" color={color.magenta}>
+                  {match.legB.symbol} {formatSolPrice(match.legB.px)}◎
+                </PixelText>
+              ) : null}
               <PixelText variant="bodySmall" color={color.textFaint}>
-                {match.series.length} mark{match.series.length === 1 ? '' : 's'} since you joined
+                {match.legA.series.length} mark{match.legA.series.length === 1 ? '' : 's'} since you
+                joined
               </PixelText>
             </Row>
           </Stack>
@@ -114,8 +149,18 @@ export default function SpectateScreen({ address }: SpectateScreenProps) {
             about what either of them holds. */}
         <Row gap={space.md} align="stretch">
           {[
-            { who: match.creator, bps: match.pnlABps, fills: match.revealed?.fillsA },
-            { who: match.joiner, bps: match.pnlBBps, fills: match.revealed?.fillsB },
+            {
+              who: match.creator,
+              bps: match.pnlABps,
+              fills: match.revealed?.fillsA,
+              leg: match.legA,
+            },
+            {
+              who: match.joiner,
+              bps: match.pnlBBps,
+              fills: match.revealed?.fillsB,
+              leg: match.legB,
+            },
           ].map((side, i) => (
             <Stack
               key={i}

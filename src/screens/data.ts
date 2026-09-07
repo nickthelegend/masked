@@ -32,17 +32,18 @@ export type FeedFilter = (typeof FEED_FILTERS)[number];
 /**
  * Round length in seconds.
  *
- * The product round is five minutes. A five-minute wait is unwatchable on
- * camera, so the demo default is 60s and EXPO_PUBLIC_ROUND_SECONDS overrides
- * both. The program accepts anything from MIN_DURATION (10s) to MAX_DURATION
- * (3600s), so this is a real parameter, not a display trick.
+ * The product round is five minutes, and that is what ships. A five-minute
+ * wait is unwatchable on camera, so DEMO.md records with
+ * EXPO_PUBLIC_ROUND_SECONDS=60 rather than the product pretending to be
+ * shorter than it is. The program accepts anything from MIN_DURATION (10s) to
+ * MAX_DURATION (3600s), so this is a real parameter, not a display trick.
  */
 export const FULL_ROUND_SECONDS = 300;
 export const DEMO_ROUND_SECONDS = 60;
 
 const envRound = Number(process.env.EXPO_PUBLIC_ROUND_SECONDS);
 export const ROUND_SECONDS =
-  Number.isFinite(envRound) && envRound >= 10 && envRound <= 3600 ? envRound : DEMO_ROUND_SECONDS;
+  Number.isFinite(envRound) && envRound >= 10 && envRound <= 3600 ? envRound : FULL_ROUND_SECONDS;
 export const RAKE = 0.02;
 
 /**

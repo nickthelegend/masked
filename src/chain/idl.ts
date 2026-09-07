@@ -87,6 +87,10 @@ export const FOGDUEL_IDL = {
               {
                 "kind": "account",
                 "path": "match_account"
+              },
+              {
+                "kind": "arg",
+                "path": "owner"
               }
             ]
           }
@@ -279,6 +283,48 @@ export const FOGDUEL_IDL = {
       "args": []
     },
     {
+      "name": "commit_and_undelegate_status",
+      "docs": [
+        "Bring the public round status back from the rollup.",
+        "",
+        "`settle_match` runs on L1 and reads the liquidation flags off this",
+        "account to write them onto the tape. A delegated account is owned by the",
+        "delegation program on L1, so without this the settle transaction would",
+        "be rejected before it read anything."
+      ],
+      "discriminator": [
+        78,
+        127,
+        172,
+        129,
+        19,
+        192,
+        0,
+        99
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "round_status",
+          "writable": true
+        },
+        {
+          "name": "magic_program",
+          "address": "Magic11111111111111111111111111111111111111"
+        },
+        {
+          "name": "magic_context",
+          "writable": true,
+          "address": "MagicContext1111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "create_match",
       "docs": [
         "Open a match and escrow the creator's entry."
@@ -349,6 +395,9 @@ export const FOGDUEL_IDL = {
         },
         {
           "name": "price_feed",
+          "docs": [
+            "The creator's feed. One per player now, so it is seeded by owner."
+          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -359,6 +408,37 @@ export const FOGDUEL_IDL = {
                   101,
                   101,
                   100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "match_account"
+              },
+              {
+                "kind": "account",
+                "path": "creator"
+              }
+            ]
+          }
+        },
+        {
+          "name": "round_status",
+          "docs": [
+            "Deliberately unsealed: this is the one thing about a live round that is",
+            "public. See `RoundStatus`."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  116,
+                  117,
+                  115
                 ]
               },
               {
@@ -885,6 +965,242 @@ export const FOGDUEL_IDL = {
       ]
     },
     {
+      "name": "delegate_status_to_er",
+      "docs": [
+        "Delegate the public round status to the rollup.",
+        "",
+        "`liquidate` runs on the rollup, because that is where positions live,",
+        "so the account it announces into has to be writable there too. Unlike a",
+        "position this one is never given a permission, so it stays readable by",
+        "everyone — which is the entire reason it exists."
+      ],
+      "discriminator": [
+        151,
+        143,
+        77,
+        19,
+        105,
+        14,
+        28,
+        228
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "match_account",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  116,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "match_account.creator",
+                "account": "Match"
+              },
+              {
+                "kind": "account",
+                "path": "match_account.match_id",
+                "account": "Match"
+              }
+            ]
+          }
+        },
+        {
+          "name": "buffer_round_status",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  102,
+                  102,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "round_status"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                34,
+                87,
+                31,
+                141,
+                149,
+                180,
+                182,
+                229,
+                165,
+                163,
+                202,
+                172,
+                78,
+                88,
+                59,
+                31,
+                185,
+                225,
+                213,
+                201,
+                69,
+                196,
+                187,
+                239,
+                225,
+                147,
+                121,
+                167,
+                126,
+                29,
+                3,
+                4
+              ]
+            }
+          }
+        },
+        {
+          "name": "delegation_record_round_status",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "round_status"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegation_program"
+            }
+          }
+        },
+        {
+          "name": "delegation_metadata_round_status",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  109,
+                  101,
+                  116,
+                  97,
+                  100,
+                  97,
+                  116,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "round_status"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegation_program"
+            }
+          }
+        },
+        {
+          "name": "round_status",
+          "docs": [
+            "program, so this cannot stay a typed `Account`."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  116,
+                  117,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "match_account"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner_program",
+          "address": "3K3v1bp6uUGVdzRfZmkwZGK82BHgCJxAroXJ3ZRs1Rj1"
+        },
+        {
+          "name": "delegation_program",
+          "address": "DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "validator",
+          "type": {
+            "option": "pubkey"
+          }
+        },
+        {
+          "name": "commit_frequency_ms",
+          "type": "u32"
+        }
+      ]
+    },
+    {
       "name": "init_position_privacy",
       "docs": [
         "Mark a delegated `Position` private on the ER.",
@@ -1124,6 +1440,9 @@ export const FOGDUEL_IDL = {
         },
         {
           "name": "price_feed",
+          "docs": [
+            "The creator's feed, opened at create time."
+          ],
           "pda": {
             "seeds": [
               {
@@ -1138,6 +1457,39 @@ export const FOGDUEL_IDL = {
               {
                 "kind": "account",
                 "path": "match_account"
+              },
+              {
+                "kind": "account",
+                "path": "match_account.creator",
+                "account": "Match"
+              }
+            ]
+          }
+        },
+        {
+          "name": "price_feed_b",
+          "docs": [
+            "The joiner's own feed, for the token they are bringing."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "match_account"
+              },
+              {
+                "kind": "account",
+                "path": "joiner"
               }
             ]
           }
@@ -1206,7 +1558,182 @@ export const FOGDUEL_IDL = {
           "address": "11111111111111111111111111111111"
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "mint",
+          "type": "pubkey"
+        },
+        {
+          "name": "start_px",
+          "type": "u64"
+        },
+        {
+          "name": "market_type",
+          "type": {
+            "defined": {
+              "name": "MarketType"
+            }
+          }
+        },
+        {
+          "name": "symbol",
+          "type": "string"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "liquidate",
+      "docs": [
+        "Force-close a position that has run out of equity, and say so publicly.",
+        "",
+        "Runs on the rollup, because that is where the position lives. The mark",
+        "is written on L1 but the rollup carries a readable clone of the feed, so",
+        "both halves of the question — what is this worth, and what does the",
+        "player hold — are answerable here and nowhere else.",
+        "",
+        "Permissionless, like settlement: a player would never call it on",
+        "themselves, and an opponent has every reason to. Calling it on a",
+        "position that is solvent does nothing, so there is no grief in trying.",
+        "",
+        "The result is announced in `RoundStatus`, which carries no ACL. That is",
+        "a deliberate hole in the fog and the only one: position *contents* stay",
+        "sealed, but the fact that a side blew up is public the moment it does."
+      ],
+      "discriminator": [
+        223,
+        179,
+        226,
+        125,
+        48,
+        46,
+        39,
+        74
+      ],
+      "accounts": [
+        {
+          "name": "cranker",
+          "docs": [
+            "Anyone. They pay the fee and get nothing for it but the outcome."
+          ],
+          "signer": true
+        },
+        {
+          "name": "match_account",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  116,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "match_account.creator",
+                "account": "Match"
+              },
+              {
+                "kind": "account",
+                "path": "match_account.match_id",
+                "account": "Match"
+              }
+            ]
+          }
+        },
+        {
+          "name": "price_feed",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "match_account"
+              },
+              {
+                "kind": "arg",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "match_account"
+              },
+              {
+                "kind": "arg",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "round_status",
+          "docs": [
+            "Unsealed on purpose. See `RoundStatus`."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  116,
+                  117,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "match_account"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "owner",
+          "type": "pubkey"
+        }
+      ]
     },
     {
       "name": "process_undelegation",
@@ -1316,10 +1843,13 @@ export const FOGDUEL_IDL = {
     {
       "name": "push_price",
       "docs": [
-        "Post a new mark.",
+        "Post a new mark for one player's market.",
         "",
-        "One feed per match, so both players are always quoted the same price —",
-        "an asymmetric feed would be an exploit on its own.",
+        "One feed per player, because the two sides no longer trade the same",
+        "token. The symmetry that used to matter — neither side quoted a",
+        "different price than the other — is replaced by a narrower guarantee",
+        "that still bites: a player's fills are priced by the feed for the token",
+        "they chose, and that feed is rate-limited like any other.",
         "",
         "Permissionless. The obvious alternative, letting only the creator post,",
         "is worse: it hands one player the power to time the mark against the",
@@ -1395,6 +1925,10 @@ export const FOGDUEL_IDL = {
               {
                 "kind": "account",
                 "path": "match_account"
+              },
+              {
+                "kind": "arg",
+                "path": "owner"
               }
             ]
           }
@@ -1404,6 +1938,10 @@ export const FOGDUEL_IDL = {
         {
           "name": "px",
           "type": "u64"
+        },
+        {
+          "name": "owner",
+          "type": "pubkey"
         }
       ]
     },
@@ -1707,6 +2245,9 @@ export const FOGDUEL_IDL = {
         },
         {
           "name": "price_feed",
+          "docs": [
+            "The creator's market, for valuing the creator's position."
+          ],
           "pda": {
             "seeds": [
               {
@@ -1716,6 +2257,66 @@ export const FOGDUEL_IDL = {
                   101,
                   101,
                   100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "match_account"
+              },
+              {
+                "kind": "account",
+                "path": "match_account.creator",
+                "account": "Match"
+              }
+            ]
+          }
+        },
+        {
+          "name": "price_feed_b",
+          "docs": [
+            "The joiner's market. A different token, so a different mark."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "match_account"
+              },
+              {
+                "kind": "account",
+                "path": "position_b.owner",
+                "account": "Position"
+              }
+            ]
+          }
+        },
+        {
+          "name": "round_status",
+          "docs": [
+            "Read here only to copy the liquidation flags onto the tape, so the",
+            "permanent record says whether a side was closed out or traded to the",
+            "buzzer."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  116,
+                  117,
+                  115
                 ]
               },
               {
@@ -1957,6 +2558,19 @@ export const FOGDUEL_IDL = {
         35,
         243,
         156
+      ]
+    },
+    {
+      "name": "RoundStatus",
+      "discriminator": [
+        80,
+        158,
+        199,
+        249,
+        29,
+        255,
+        40,
+        218
       ]
     },
     {
@@ -2205,6 +2819,71 @@ export const FOGDUEL_IDL = {
       }
     },
     {
+      "name": "Leg",
+      "docs": [
+        "One player's chosen market.",
+        "",
+        "A duel used to be two players on one token. It is now two players on two",
+        "tokens, compared on PnL — so everything that described \"the market\" has to",
+        "be said twice, once per side."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "docs": [
+              "The token this player is trading. Informational for settlement —",
+              "positions are virtual inventory, so no SPL transfer happens mid-round."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "symbol",
+            "docs": [
+              "Ticker, zero-padded. Display only; the mint is the identity."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                12
+              ]
+            }
+          },
+          {
+            "name": "name",
+            "docs": [
+              "Token name, zero-padded."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "market_type",
+            "docs": [
+              "Which feed prices it, which decides how the mark is produced."
+            ],
+            "type": {
+              "defined": {
+                "name": "MarketType"
+              }
+            }
+          },
+          {
+            "name": "start_px",
+            "docs": [
+              "The mark this player's round opened on, and their book was seeded at."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "MarketDraw",
       "docs": [
         "A market chosen by MagicBlock's VRF rather than by a player.",
@@ -2369,12 +3048,26 @@ export const FOGDUEL_IDL = {
             }
           },
           {
-            "name": "mint",
+            "name": "leg_a",
             "docs": [
-              "The token being traded. Informational for the demo — positions are",
-              "virtual inventory, so no SPL transfer happens mid-round."
+              "The creator's market. Set at `create_match`."
             ],
-            "type": "pubkey"
+            "type": {
+              "defined": {
+                "name": "Leg"
+              }
+            }
+          },
+          {
+            "name": "leg_b",
+            "docs": [
+              "The joiner's market. Zeroed until somebody joins and names their own."
+            ],
+            "type": {
+              "defined": {
+                "name": "Leg"
+              }
+            }
           },
           {
             "name": "match_id",
@@ -2433,41 +3126,6 @@ export const FOGDUEL_IDL = {
           {
             "name": "pnl_b_bps",
             "type": "i64"
-          },
-          {
-            "name": "market_type",
-            "docs": [
-              "Meme or Major. Decides how the mark is produced at settlement."
-            ],
-            "type": {
-              "defined": {
-                "name": "MarketType"
-              }
-            }
-          },
-          {
-            "name": "symbol",
-            "docs": [
-              "Ticker, zero-padded. Display only; the mint is the identity."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                12
-              ]
-            }
-          },
-          {
-            "name": "name",
-            "docs": [
-              "Token name, zero-padded."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
           },
           {
             "name": "bump",
@@ -2649,14 +3307,28 @@ export const FOGDUEL_IDL = {
     {
       "name": "PriceFeed",
       "docs": [
-        "The mark price both players trade against. One feed per match, so neither",
-        "side can be quoted a different price than the other."
+        "The mark one player trades against.",
+        "",
+        "There used to be a single feed per match, so that neither side could be",
+        "quoted a different price than the other. That guarantee only meant anything",
+        "while both sides traded the same token; now each player brings their own",
+        "market, so there is one feed per player, seeded `[b\"feed\", match, owner]`.",
+        "The protection that mattered survives in a stronger form: a player's fills",
+        "are priced by the feed for the token they actually chose, and nothing else",
+        "can write it."
       ],
       "type": {
         "kind": "struct",
         "fields": [
           {
             "name": "match_key",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "docs": [
+              "Which player's market this prices."
+            ],
             "type": "pubkey"
           },
           {
@@ -2673,6 +3345,46 @@ export const FOGDUEL_IDL = {
           {
             "name": "authority",
             "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RoundStatus",
+      "docs": [
+        "What the whole world may know about a round in progress.",
+        "",
+        "Every Position is sealed by an ACL, which is the point of the product — so",
+        "there was nowhere to publish a fact that both players are *supposed* to",
+        "see. A liquidation is exactly that fact: a blow-up is announced, by",
+        "decision, even though position contents never are.",
+        "",
+        "Deliberately carries no permission account. It is delegated to the rollup so",
+        "`liquidate` can write it, and served to anyone who asks — the same shape as",
+        "the unsealed control account `check:gate` probes to show that the gate",
+        "discriminates rather than simply refusing everything."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "match_key",
+            "type": "pubkey"
+          },
+          {
+            "name": "liquidated_a",
+            "docs": [
+              "Set when that side was force-closed for running out of equity."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "liquidated_b",
+            "type": "bool"
           },
           {
             "name": "bump",
@@ -2718,6 +3430,9 @@ export const FOGDUEL_IDL = {
           },
           {
             "name": "Settle"
+          },
+          {
+            "name": "Liquidation"
           }
         ]
       }
@@ -2735,30 +3450,36 @@ export const FOGDUEL_IDL = {
             "type": "pubkey"
           },
           {
-            "name": "mint",
+            "name": "leg_a",
             "docs": [
-              "What was traded. The tape is the public record of a duel, and a record",
-              "that does not say which market it was is not much of a record — the",
-              "feed had to fall back to naming every past duel after a demo mint."
+              "What each side traded. The tape is the public record of a duel, and a",
+              "record that does not say which markets it was is not much of a record.",
+              "Two legs now, because the players no longer share one."
             ],
-            "type": "pubkey"
-          },
-          {
-            "name": "symbol",
-            "type": {
-              "array": [
-                "u8",
-                12
-              ]
-            }
-          },
-          {
-            "name": "market_type",
             "type": {
               "defined": {
-                "name": "MarketType"
+                "name": "Leg"
               }
             }
+          },
+          {
+            "name": "leg_b",
+            "type": {
+              "defined": {
+                "name": "Leg"
+              }
+            }
+          },
+          {
+            "name": "liquidated_a",
+            "docs": [
+              "Whether either side ended by being force-closed rather than by trading."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "liquidated_b",
+            "type": "bool"
           },
           {
             "name": "player_a",

@@ -33,19 +33,61 @@ export const VALUE_DIV = BASE_SCALE * PRICE_SCALE;
  * rejected on-chain as `InvalidPrice`, so it is caught here instead, where the
  * message can say something useful.
  */
-export function pxFromSolPerToken(priceSol: number): number {
-  const px = Math.round(priceSol * LAMPORTS_PER_SOL * PRICE_SCALE);
-  if (!Number.isFinite(px) || px <= 0) {
-    throw new RangeError(`price ${priceSol} SOL/token rounds to px=${px}, which the program rejects`);
+/** Largest `px` the program's u64 can carry. */
+export const MAX_PX = (1n << 64n) - 1n;
+
+/**
+ * Decimal-shift a double into an exact integer, rounding half up.
+ *
+ * `Math.round(priceSol * 1e15)` cannot do this job at either end of the range
+ * this app now has to cover. BONK is about 3e-11 SOL, where multiplying first
+ * and rounding after throws away every significant digit; WBTC is about 755
+ * SOL, where the product is 7.6e17 and a double can no longer represent
+ * consecutive integers. Going through the number's own decimal expansion keeps
+ * all seventeen significant digits and puts the point where it belongs.
+ */
+function shiftToBigInt(x: number, decimals: number): bigint {
+  const [mantissa, exponent] = x.toExponential(16).split('e');
+  const digits = mantissa.replace('-', '').replace('.', '');
+  const shift = Number(exponent) + 1 - digits.length + decimals;
+  let out = BigInt(digits);
+  if (shift >= 0) {
+    out *= 10n ** BigInt(shift);
+  } else {
+    const divisor = 10n ** BigInt(-shift);
+    out = (out + divisor / 2n) / divisor; // half up
   }
-  if (!Number.isSafeInteger(px)) {
-    throw new RangeError(`price ${priceSol} SOL/token overflows a safe integer as px=${px}`);
+  return x < 0 ? -out : out;
+}
+
+/**
+ * SOL per token to the program's `px`.
+ *
+ * `px = priceSol * 1e9 lamports * PRICE_SCALE`, so fifteen decimal places.
+ *
+ * Returns a `bigint` because a `number` cannot hold the top of the range:
+ * `Number.isSafeInteger` gives out at 9.007e15, which is about 9 SOL a token,
+ * so every asset above roughly $945 — WBTC, and anything else worth owning —
+ * was being silently dropped from the market list as unrepresentable. The
+ * program's field is a u64 and always was; only this conversion was the limit.
+ */
+export function pxFromSolPerToken(priceSol: number): bigint {
+  if (!Number.isFinite(priceSol) || priceSol <= 0) {
+    throw new RangeError(`price ${priceSol} SOL/token is not a positive number`);
+  }
+  const px = shiftToBigInt(priceSol, 15);
+  if (px <= 0n) {
+    throw new RangeError(`price ${priceSol} SOL/token rounds to px=0, which the program rejects`);
+  }
+  if (px > MAX_PX) {
+    throw new RangeError(`price ${priceSol} SOL/token overflows a u64 as px=${px}`);
   }
   return px;
 }
 
 /** The inverse, for display. */
-export const solPerTokenFromPx = (px: number): number => px / LAMPORTS_PER_SOL / PRICE_SCALE;
+export const solPerTokenFromPx = (px: number | bigint): number =>
+  Number(px) / LAMPORTS_PER_SOL / PRICE_SCALE;
 
 /** On-chain base quantity to whole tokens. */
 export const tokensFromBase = (baseQty: number): number => baseQty / BASE_SCALE;
