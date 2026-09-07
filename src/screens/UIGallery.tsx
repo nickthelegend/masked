@@ -251,6 +251,12 @@ export default function UIGallery() {
           <Orb size={88} state="live" />
           <Orb size={88} state="reveal" />
           <Orb size={88} state="fog" animate={false} />
+          {/* The size the live round actually uses. It is here because at 22px
+              the lattice arithmetic produced a negative radius and the browser
+              refused to draw the core — a catalogue that only shows the
+              comfortable size would not have caught it. */}
+          <Orb size={22} state="live" />
+          <Orb size={16} state="fog" />
         </Row>
       </Section>
 

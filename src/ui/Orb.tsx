@@ -60,7 +60,18 @@ export default function Orb({ size = 140, state = 'fog', animate = true }: OrbPr
 
   const p = PALETTE[state];
   const c = size / 2;
-  const px = Math.max(3, Math.round(size / 22));
+  /**
+   * One "pixel" of the orb's lattice.
+   *
+   * The floor used to be 3, which is wider than a small orb has room for: at
+   * the 22px size the live round uses, the core radius came out as c - px*4 =
+   * -1 and the browser refused to draw it. It scales all the way down now, and
+   * every radius is clamped so no arithmetic here can produce a negative one
+   * again.
+   */
+  const px = Math.max(1, Math.round(size / 22));
+  /** Never below a hairline: an invisible ring beats an invalid one. */
+  const ring = (inset: number) => Math.max(0.5, c - px * inset);
 
   const corona = useMemo(
     () =>
@@ -82,9 +93,9 @@ export default function Orb({ size = 140, state = 'fog', animate = true }: OrbPr
       }}
     >
       <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        <Circle cx={c} cy={c} r={c - px * 4} fill={p.core} />
-        <Circle cx={c} cy={c} r={c - px * 3} fill="none" stroke={p.ring} strokeWidth={px} />
-        <Circle cx={c} cy={c} r={c - px * 1.2} fill="none" stroke={p.ring} strokeWidth={px / 1.5} opacity={0.5} />
+        <Circle cx={c} cy={c} r={ring(4)} fill={p.core} />
+        <Circle cx={c} cy={c} r={ring(3)} fill="none" stroke={p.ring} strokeWidth={px} />
+        <Circle cx={c} cy={c} r={ring(1.2)} fill="none" stroke={p.ring} strokeWidth={px / 1.5} opacity={0.5} />
         <G>
           {corona.map((s) => (
             <Rect key={s.key} x={s.x} y={s.y} width={px} height={px} fill={p.spark} />
