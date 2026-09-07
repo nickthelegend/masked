@@ -54,8 +54,9 @@ pub enum MatchStatus {
 /// from a posted oracle mark. Neither routes the battle fill through a public
 /// venue — a public swap print would leak wallet, mint and size, which is
 /// exactly what the fog exists to prevent.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug, InitSpace)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug, Default, InitSpace)]
 pub enum MarketType {
+    #[default]
     Meme,
     Major,
 }
@@ -231,6 +232,67 @@ impl Book {
         self.virtual_base = new_base as u64;
         self.virtual_quote = k.checked_div(new_base)? as u64;
         Some(quote_out)
+    }
+}
+
+/// How many markets a draw chooses between.
+///
+/// Three is enough that neither player can have prepared for all of them and
+/// small enough to show on one screen.
+pub const DRAW_CANDIDATES: usize = 3;
+
+/// One market a draw can land on.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default, Debug, InitSpace)]
+pub struct MarketRef {
+    pub mint: Pubkey,
+    pub symbol: [u8; SYMBOL_LEN],
+    pub market_type: MarketType,
+    /// Lamports per token x PRICE_SCALE, snapshotted when the draw was opened.
+    pub start_px: u64,
+}
+
+/// A market chosen by MagicBlock's VRF rather than by a player.
+///
+/// A trading duel where one side picks the market is a duel about preparation,
+/// not trading — the opener can choose the coin they have been watching all
+/// week. Here the opener nominates three and verifiable randomness picks one,
+/// so neither player knows the market until it is drawn and neither could have
+/// arranged it.
+///
+/// `chosen` stays -1 until the oracle calls back, which is what makes this a
+/// real draw rather than a client-side shuffle: the value arrives in a
+/// transaction signed by the VRF program's identity, and the program will not
+/// accept it from anybody else.
+#[account]
+#[derive(InitSpace)]
+pub struct MarketDraw {
+    /// Who opened the draw. Only they may create the match from its result.
+    pub opener: Pubkey,
+    /// Ties the draw to one intended match, so a result cannot be reused.
+    pub draw_id: u64,
+    pub candidates: [MarketRef; DRAW_CANDIDATES],
+    /// Index into `candidates`, or -1 while the oracle has not answered.
+    pub chosen: i8,
+    /// The randomness the oracle returned, kept so the result is checkable.
+    pub randomness: [u8; 32],
+    pub requested_ts: i64,
+    pub fulfilled_ts: i64,
+    /// Set once the match is created, so one draw cannot open two matches.
+    pub consumed: bool,
+    pub bump: u8,
+}
+
+impl MarketDraw {
+    pub fn is_fulfilled(&self) -> bool {
+        self.chosen >= 0
+    }
+
+    /// The drawn market, if the oracle has answered.
+    pub fn winner(&self) -> Option<&MarketRef> {
+        if self.chosen < 0 {
+            return None;
+        }
+        self.candidates.get(self.chosen as usize)
     }
 }
 

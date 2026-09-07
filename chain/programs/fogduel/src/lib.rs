@@ -27,6 +27,13 @@ use ephemeral_rollups_sdk::access_control::structs::{
     EphemeralMembersArgs, Member, MembersArgs, AUTHORITY_FLAG, TX_BALANCES_FLAG, TX_LOGS_FLAG,
     TX_MESSAGE_FLAG,
 };
+use ephemeral_rollups_sdk::vrf::anchor::{vrf, vrf_callback};
+use ephemeral_rollups_sdk::vrf::consts::VRF_PROGRAM_IDENTITY;
+use ephemeral_rollups_sdk::vrf::instructions::{
+    create_request_randomness_ix, RequestRandomnessParams,
+};
+use ephemeral_rollups_sdk::vrf::rnd::random_u8_with_range;
+use ephemeral_rollups_sdk::vrf::types::SerializableAccountMeta;
 
 pub mod errors;
 pub mod state;
@@ -494,6 +501,83 @@ pub mod fogduel {
     }
 
     /// One-time protocol treasury init.
+    /// Ask MagicBlock's VRF which of three markets this duel will be fought on.
+    ///
+    /// A trading duel where one side picks the market is a duel about
+    /// preparation: the opener chooses the coin they have been watching all
+    /// week and the other player is behind before a fill is placed. Here the
+    /// opener nominates three and verifiable randomness picks one.
+    ///
+    /// This only *requests*. The answer arrives later, in a transaction the
+    /// VRF program signs, and `settle_market_draw` refuses it from anyone
+    /// else — which is the whole difference between this and shuffling an
+    /// array in the client.
+    pub fn request_market_draw(
+        ctx: Context<RequestMarketDraw>,
+        draw_id: u64,
+        candidates: [MarketRef; DRAW_CANDIDATES],
+        caller_seed: [u8; 32],
+    ) -> Result<()> {
+        for c in candidates.iter() {
+            require!(c.start_px > 0, FogError::InvalidPrice);
+        }
+
+        let draw = &mut ctx.accounts.draw;
+        draw.opener = ctx.accounts.payer.key();
+        draw.draw_id = draw_id;
+        draw.candidates = candidates;
+        draw.chosen = -1;
+        draw.randomness = [0u8; 32];
+        draw.requested_ts = Clock::get()?.unix_timestamp;
+        draw.fulfilled_ts = 0;
+        draw.consumed = false;
+        draw.bump = ctx.bumps.draw;
+
+        let ix = create_request_randomness_ix(RequestRandomnessParams {
+            payer: ctx.accounts.payer.key(),
+            oracle_queue: ctx.accounts.oracle_queue.key(),
+            callback_program_id: crate::ID,
+            callback_discriminator: crate::instruction::SettleMarketDraw::DISCRIMINATOR.to_vec(),
+            caller_seed,
+            // The draw account is the only thing the callback writes to.
+            accounts_metas: Some(vec![SerializableAccountMeta {
+                pubkey: draw.key(),
+                is_signer: false,
+                is_writable: true,
+            }]),
+            ..Default::default()
+        });
+
+        // The macro generates this: it signs with the program's identity PDA and
+        // rewrites the discriminator to the scoped request the callback expects.
+        ctx.accounts
+            .invoke_signed_vrf(&ctx.accounts.payer.to_account_info(), &ix)?;
+
+        msg!("market draw {} requested", draw_id);
+        Ok(())
+    }
+
+    /// The oracle's answer: which market the duel is on.
+    ///
+    /// `#[vrf_callback]` puts the VRF program's identity in the accounts and
+    /// requires it to have signed, so this cannot be called by a player.
+    pub fn settle_market_draw(
+        ctx: Context<SettleMarketDraw>,
+        randomness: [u8; 32],
+    ) -> Result<()> {
+        let draw = &mut ctx.accounts.draw;
+        require!(!draw.is_fulfilled(), FogError::DrawAlreadySettled);
+
+        // Range is inclusive, so this yields 0..=DRAW_CANDIDATES-1.
+        let pick = random_u8_with_range(&randomness, 0, (DRAW_CANDIDATES - 1) as u8);
+        draw.chosen = pick as i8;
+        draw.randomness = randomness;
+        draw.fulfilled_ts = Clock::get()?.unix_timestamp;
+
+        msg!("market draw {} settled on candidate {}", draw.draw_id, pick);
+        Ok(())
+    }
+
     pub fn init_treasury(ctx: Context<InitTreasury>) -> Result<()> {
         ctx.accounts.treasury.bump = ctx.bumps.treasury;
         Ok(())
@@ -859,6 +943,38 @@ pub struct SettleMatch<'info> {
     pub stats_joiner: Box<Account<'info, PlayerStats>>,
 
     pub system_program: Program<'info, System>,
+}
+
+#[vrf]
+#[derive(Accounts)]
+#[instruction(draw_id: u64)]
+pub struct RequestMarketDraw<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + MarketDraw::INIT_SPACE,
+        seeds = [b"draw", payer.key().as_ref(), &draw_id.to_le_bytes()],
+        bump
+    )]
+    pub draw: Account<'info, MarketDraw>,
+
+    /// The VRF queue the request is posted to. Caller-chosen, so the macro
+    /// leaves it to us; everything else in this struct it adds itself.
+    /// CHECK: validated by the VRF program.
+    #[account(mut)]
+    pub oracle_queue: UncheckedAccount<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[vrf_callback]
+#[derive(Accounts)]
+pub struct SettleMarketDraw<'info> {
+    #[account(mut)]
+    pub draw: Account<'info, MarketDraw>,
 }
 
 #[derive(Accounts)]

@@ -36,4 +36,12 @@ pub enum FogError {
     PriceTooSoon,
     #[msg("Price moved further in one push than the rate limit allows")]
     PriceJump,
+    #[msg("This market draw has already been settled")]
+    DrawAlreadySettled,
+    #[msg("This market draw has not been settled yet")]
+    DrawNotSettled,
+    #[msg("This market draw has already opened a match")]
+    DrawAlreadyUsed,
+    #[msg("Not the wallet that opened this draw")]
+    NotTheDrawOpener,
 }

@@ -31,7 +31,8 @@
     "join": "tsx scripts/join-as.mts",
     "check:fog:wire": "tsx scripts/check-fog-wire.mts",
     "state": "tsx scripts/state.mts",
-    "crank": "tsx scripts/crank-settle.mts"
+    "crank": "tsx scripts/crank-settle.mts",
+    "check:vrf": "tsx scripts/check-vrf.mts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",

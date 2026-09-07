@@ -1,121 +1,153 @@
-# 100 IDEAS — ranked by impact × feasibility × fit
+# 100 ideas, ranked
 
-Scored 1–5 each. **Fit** asks whether it strengthens the one-line pitch
-("private during the fight, public after") or just adds clutter — a feature
-that dilutes the pitch scores low even if it's easy and flashy.
+For **MagicBlock Solana Blitz v8**. The pitch is: *private during the fight,
+public after* — two traders stake a pot, trade the same market with their
+positions delegated to an Ephemeral Rollup and sealed by an on-chain ACL, and
+settle on Solana at the buzzer.
 
-Context that drives the ranking: the ER half is proved, the **privacy half is
-not**, and that is the entire differentiator. Anything that proves, visualises
-or dramatises privacy ranks above everything else. Anything that adds a second
-product (social feed, quests economy) ranks low — VERSUS and Fomo already do
-those better, and the brief says not to clone them.
+Ranked by **impact × feasibility × fit**. Impact is "would a judge notice";
+feasibility is "can this be built for real, here, now"; fit is "does it
+strengthen *this* pitch or just add surface". Ideas already built are excluded.
 
-| # | Idea | Imp | Fea | Fit | Score | Status |
-|---|---|---|---|---|---|---|
-| 1 | Prove permission ACL on the local ER via the L1 `create_permission` + `delegate_permission` path | 5 | 3 | 5 | 75 | BUILT — ACL on chain; enforcement is TEE-side, proved and documented |
-| 2 | `prove-privacy` script — the on-camera artifact: opponent read refused mid-round, allowed after settle | 5 | 4 | 5 | 100 | BUILT |
-| 3 | Live delegation inspector — show each account's real on-chain owner flipping to `DELeGG…` and back | 5 | 5 | 5 | 125 | BUILT |
-| 4 | ER-vs-L1 latency benchmark, measured live, not claimed | 5 | 5 | 4 | 100 | BUILT |
-| 5 | Explorer links + live transaction feed for every signed tx | 4 | 5 | 4 | 80 | BUILT |
-| 6 | Buzzer moment — full-screen reveal at 0:00 | 4 | 4 | 5 | 80 | BUILT |
-| 7 | Fog dissolve animation on reveal (curtain lifts, scanlines retract) | 4 | 4 | 5 | 80 | BUILT |
-| 8 | Error taxonomy → human messages + pixel toast system | 4 | 5 | 4 | 80 | BUILT |
-| 9 | On-chain `PlayerStats` (wins/losses/volume/streak), feeding a real leaderboard | 4 | 4 | 4 | 64 | BUILT |
-| 10 | Judge mode — one click runs a complete match end to end | 5 | 4 | 4 | 80 | BUILT |
-| 11 | Wallet/network/balance guard states with real preflight checks | 4 | 5 | 4 | 80 | BUILT |
-| 12 | Deep link to a match + shareable tape URL | 3 | 5 | 3 | 45 | BUILT |
-| 13 | PnL odometer + per-tick price flash | 3 | 4 | 4 | 48 | BUILT |
-| 14 | Clock urgency: pulse and color shift under 30s/10s | 3 | 5 | 4 | 60 | BUILT |
-| 15 | Tape chart draws in progressively on reveal | 3 | 4 | 4 | 48 | BUILT |
-| 16 | Session keys — trade without signing every fill | 5 | 2 | 4 | 40 | SKIPPED — time |
-| 17 | Magic Router `sendMagicTransaction` routing | 4 | 2 | 3 | 24 | SKIPPED (time) |
-| 18 | Rematch wired on-chain against the same opponent | 3 | 3 | 3 | 27 | SKIPPED — rematch re-enters matchmaking; on-chain rematch not built |
-| 19 | Fade-the-winner: challenge a tape's winner directly | 3 | 3 | 4 | 36 | SKIPPED — time |
-| 20 | Match expiry + permissionless cancel of stale opens | 3 | 4 | 3 | 36 | BUILT |
-| 21 | Error boundary so one bad render never blanks the demo | 4 | 5 | 3 | 60 | BUILT |
-| 22 | Reduced-motion support | 2 | 5 | 3 | 30 | BUILT |
-| 23 | Spectator mode — watch a live match, both sides fogged | 4 | 2 | 4 | 32 | SKIPPED (time) |
-| 24 | VRF blind-token select | 4 | 2 | 3 | 24 | SKIPPED (time) |
-| 25 | Position size slider instead of a fixed fill | 2 | 4 | 3 | 24 | BUILT — fillSize is state; no slider UI yet |
-| 26 | Health/status route showing every dependency | 3 | 5 | 2 | 30 | BUILT |
-| 27 | Build/version info in the UI | 2 | 5 | 2 | 20 | BUILT |
-| 28 | Optimistic fill with rollback on failure | 3 | 3 | 3 | 27 | SKIPPED (redundant with toasts) |
-| 29 | RPC failover between endpoints | 3 | 3 | 2 | 18 | SKIPPED (time) |
-| 30 | Transaction retry with backoff | 3 | 4 | 2 | 24 | BUILT — withRetry, retryable-only |
-| 31 | Match state reconciliation on reload | 3 | 3 | 3 | 27 | BUILT — book poll reconciles open matches |
-| 32 | Winner celebration in pixel blocks | 3 | 4 | 3 | 36 | SKIPPED — curtain covers the moment |
-| 33 | Loss CRT glitch | 3 | 4 | 3 | 36 | SKIPPED — curtain covers the moment |
-| 34 | Orb color reacts to live PnL | 3 | 4 | 4 | 48 | BUILT |
-| 35 | Opponent "materializes" on match found | 3 | 3 | 3 | 27 | SKIPPED (time) |
-| 36 | Pixel skeleton loaders | 2 | 4 | 2 | 16 | SKIPPED (toasts cover it) |
-| 37 | Ticker reacts to live match state | 2 | 4 | 3 | 24 | SKIPPED (low value) |
-| 38 | Sound design (8-bit SFX) | 3 | 3 | 3 | 27 | SKIPPED (silent demos are safer) |
-| 39 | Keyboard shortcuts for L/C/settle | 2 | 5 | 2 | 20 | SKIPPED — time |
-| 40 | Beach parallax | 2 | 3 | 2 | 12 | SKIPPED |
-| 41 | Day/night backdrop from wall clock | 2 | 3 | 2 | 12 | SKIPPED |
-| 42 | Landing attract mode | 2 | 3 | 2 | 12 | SKIPPED |
-| 43 | Cursor trail on landing | 1 | 3 | 1 | 3 | SKIPPED (clutter) |
-| 44 | Best-of-3 series | 3 | 2 | 2 | 12 | SKIPPED |
-| 45 | Practice mode vs bot | 2 | 3 | 1 | 6 | SKIPPED (reintroduces a fake opponent) |
-| 46 | SPL-token stakes instead of SOL | 3 | 2 | 3 | 18 | SKIPPED (time) |
-| 47 | Ephemeral SPL positions | 4 | 1 | 3 | 12 | SKIPPED (time) |
-| 48 | Token whitelist per match | 2 | 3 | 2 | 12 | SKIPPED |
-| 49 | Variable round duration presets | 2 | 4 | 2 | 16 | BUILT — durationSecs is a parameter, seeded at 30s |
-| 50 | On-chain quest claims | 2 | 2 | 1 | 4 | SKIPPED (second product) |
-| 51 | Referral codes | 1 | 3 | 1 | 3 | SKIPPED |
-| 52 | ELO rating on-chain | 3 | 2 | 2 | 12 | SKIPPED |
-| 53 | Streak tracking | 3 | 4 | 3 | 36 | BUILT (in PlayerStats) |
-| 54 | Multi-match per wallet | 2 | 3 | 2 | 12 | SKIPPED |
-| 55 | Per-wallet match history | 3 | 4 | 3 | 36 | BUILT — via PlayerStats |
-| 56 | Region select for the ER validator | 3 | 4 | 3 | 36 | BUILT — VALIDATORS map, cluster-selectable |
-| 57 | TEE attestation display (`verifyTeeRpcIntegrity`) | 4 | 3 | 5 | 60 | SKIPPED — verifyTeeRpcIntegrity needs a TEE to verify against |
-| 58 | Auth-token session panel | 3 | 2 | 4 | 24 | SKIPPED (needs TEE) |
-| 59 | Commit-frequency control + live commit indicator | 3 | 3 | 3 | 27 | BUILT — commit_frequency_ms is a delegate parameter |
-| 60 | On-chain crank for auto-settle | 3 | 2 | 3 | 18 | SKIPPED (time) |
-| 61 | Undelegate-on-timeout safety | 3 | 2 | 3 | 18 | SKIPPED |
-| 62 | Magic fee vault handling | 2 | 2 | 2 | 8 | SKIPPED |
-| 63 | Ephemeral balance top-up UX | 3 | 3 | 3 | 27 | SKIPPED (not needed on this path) |
-| 64 | Account inspector showing raw bytes + owner | 4 | 4 | 5 | 80 | BUILT (part of #3) |
-| 65 | Interactive "how it works" diagram | 3 | 3 | 3 | 27 | SKIPPED (static copy is fine) |
-| 66 | Seed script for demo data | 3 | 5 | 3 | 45 | BUILT |
-| 67 | Two-wallet demo harness | 4 | 4 | 4 | 64 | BUILT |
-| 68 | OG images for sharing | 2 | 3 | 2 | 12 | SKIPPED |
-| 69 | PWA manifest | 1 | 4 | 1 | 4 | SKIPPED |
-| 70 | i18n scaffolding | 1 | 3 | 1 | 3 | SKIPPED |
-| 71 | Analytics events | 2 | 4 | 1 | 8 | SKIPPED |
-| 72 | Offline detection | 2 | 4 | 2 | 16 | BUILT (in #26) |
-| 73 | Accessibility labels on every control | 3 | 4 | 2 | 24 | BUILT — roles/labels on new controls |
-| 74 | Config validation on boot | 3 | 4 | 2 | 24 | BUILT |
-| 75 | Chart timeframe toggle | 1 | 3 | 1 | 3 | SKIPPED |
-| 76 | Screen shake on a large move | 2 | 3 | 2 | 12 | SKIPPED |
-| 77 | Fill row slide-in | 2 | 3 | 3 | 18 | SKIPPED — time |
-| 78 | Route transition (CRT power) | 2 | 3 | 3 | 18 | SKIPPED |
-| 79 | Live PnL sparkline in the tab bar | 2 | 2 | 2 | 8 | SKIPPED |
-| 80 | Podium rise animation | 2 | 3 | 2 | 12 | SKIPPED |
-| 81 | Stake picker press animation | 1 | 4 | 1 | 4 | SKIPPED (bevel already does this) |
-| 82 | Haptics on native | 2 | 3 | 1 | 6 | SKIPPED (web demo) |
-| 83 | Match-found "opponent found" sting | 2 | 3 | 2 | 12 | SKIPPED |
-| 84 | Rate-limit protection on polling | 2 | 4 | 2 | 16 | BUILT — all pollers are interval-bounded |
-| 85 | Insufficient-balance preflight | 3 | 5 | 3 | 45 | BUILT (in #11) |
-| 86 | Wrong-cluster detection | 3 | 5 | 3 | 45 | BUILT (in #11) |
-| 87 | Copy-a-tape (replay a winner's fills) | 3 | 2 | 3 | 18 | SKIPPED (time) |
-| 88 | Public match browser with live filters | 3 | 4 | 3 | 36 | BUILT |
-| 89 | Settlement proof panel (which tx did what) | 4 | 4 | 5 | 80 | BUILT |
-| 90 | Fog integrity assertion — client refuses to render opponent data mid-round | 4 | 4 | 5 | 80 | BUILT |
-| 91 | Tape permalink page | 2 | 3 | 2 | 12 | SKIPPED (deep link covers it) |
-| 92 | Auto-reconnect on RPC drop | 3 | 3 | 2 | 18 | BUILT — pollers retry through transient RPC failure |
-| 93 | Idle timeout warning | 1 | 4 | 1 | 4 | SKIPPED |
-| 94 | Match chat | 1 | 2 | 1 | 2 | SKIPPED (leaks signal) |
-| 95 | Emoji reactions | 1 | 3 | 1 | 3 | SKIPPED (no emoji rule) |
-| 96 | NFT trophy for wins | 2 | 1 | 1 | 2 | SKIPPED |
-| 97 | Tournament bracket | 3 | 1 | 2 | 6 | SKIPPED |
-| 98 | Mobile-responsive duel screen | 3 | 4 | 2 | 24 | SKIPPED — not re-verified at mobile width this pass |
-| 99 | Cluster switcher in the UI | 3 | 4 | 3 | 36 | BUILT — CLUSTERS map + EXPO_PUBLIC_CLUSTER; no in-UI switcher |
-| 100 | README demo script (exact click path for judges) | 4 | 5 | 4 | 80 | BUILT |
+The biggest single gap: the submission form says **VRF — not attempted**, and
+the local stack preloads the VRF program (`Vrf1RNUj…`) and ships a `vrf-oracle`
+binary. That is a whole MagicBlock primitive sitting unused, and it is the
+first thing on this list.
 
-## Build order actually followed
+---
 
-Descending score, with dependencies pulled forward:
-3 → 2 → 1 → 4 → 89 → 90 → 5 → 57 → 8 → 21 → 11 → 10 → 67 → 66 → 6 → 7 → 32 →
-33 → 34 → 13 → 14 → 15 → 77 → 9 → 53 → 55 → 88 → 18 → 19 → 20 → 12 → 99 → 56 →
-59 → 49 → 25 → 26 → 72 → 74 → 27 → 30 → 31 → 84 → 92 → 39 → 73 → 22 → 98 → 100
+## Tier 1 — build first
+
+| # | Idea | Why it ranks here |
+|---|---|---|
+| 1 | **VRF-drawn market**: the round's market is picked on chain by MagicBlock VRF from a shortlist, so neither player chooses it | Third MagicBlock primitive, turns "not attempted" into "used". Verifiable on chain. |
+| 2 | **Session keys** so fills don't prompt the wallet every time | The single biggest UX flaw on camera: every LONG is a signature. Uses another MagicBlock program. |
+| 3 | **Spectator mode** — watch a live duel from public data only, opponent fogged for the viewer too | Lets a judge see the product without a wallet. Proves the fog from outside. |
+| 4 | **Rematch that works** — the button exists and does nothing real | A dead button in a demo is worse than no button. |
+| 5 | **BLIND DRAFT as a second live mode** — VRF picks 3 markets, each player privately picks one | Makes the mode grid honest, and is the natural showcase for #1. |
+| 6 | **Live duel list on `/proof`** with a link into spectating each | Turns the evidence page into something interactive. |
+| 7 | **Round timeline on the reveal** — every fill of both players on one shared time axis | The "reveal" is the emotional beat and currently it is two numbers. |
+| 8 | **Fill flash + impact readout** — pressing LONG shows what the book actually charged you | Makes the private AMM legible instead of invisible. |
+| 9 | **Settlement progress** — commit, undelegate, settle shown as real stages with real signatures | Turns 20 seconds of dead air into the most MagicBlock-looking moment in the app. |
+| 10 | **Sound**: buzzer, fill, reveal | Nothing else in the room will have it. Cheap, memorable. |
+
+## Tier 2 — strong, build after
+
+| # | Idea | Note |
+|---|---|---|
+| 11 | Shareable reveal card at a permanent URL (`/tape/<match>`) | Judges can be sent a link. |
+| 12 | Head-to-head record between two wallets, on chain | Rivalry is the loop. |
+| 13 | `/proof` shows the actual delegation transaction signatures, clickable | Evidence, not assertion. |
+| 14 | Mark sparkline on every market row in the picker | Makes the picker feel alive. |
+| 15 | "What you would have made" — counterfactual PnL if you had done nothing | A real trading insight, cheap to compute from the tape. |
+| 16 | Opponent's fill *count* animating live as a heartbeat | The one thing the fog does leak, made into drama. |
+| 17 | Keyboard controls (L to long, C to close, space to settle) | Demo speed. |
+| 18 | Round-over-round streak visual on the leaderboard | Uses `best_streak`, already on chain. |
+| 19 | Auto-settle any expired match the app notices, not just your own | Turns the crank into a product behaviour. |
+| 20 | Market search / filter in the picker | 12 rows now; a real list needs it. |
+| 21 | Per-market all-time stats (duels, volume, biggest pot) | Real aggregate over tapes. |
+| 22 | `/proof` "run this yourself" — the exact commands, copyable | Judges verify in five commands. |
+| 23 | Position-size control (quarter / half / max) rather than a fixed fraction | Makes the book matter. |
+| 24 | Slippage preview before a fill lands | Shows the curve is real. |
+| 25 | Live mark ticking with a direction flash green/red | Cheap motion, high legibility. |
+| 26 | Reveal curtain that tears rather than fades | Signature moment. |
+| 27 | Match invite links — open a match and send someone the URL | Makes 1v1 actually playable with a judge. |
+| 28 | Wallet balance change animation on settle | Money moving is the point. |
+| 29 | Explorer links on every signature in the tx feed | Standard, missing. |
+| 30 | Honest "what this costs" panel — real fees paid per round | Nobody else will show this. |
+
+## Tier 3 — good, opportunistic
+
+| # | Idea |
+|---|---|
+| 31 | Persisted per-wallet settings (last market, last stake) |
+| 32 | Reduced-motion support honoured across new animations |
+| 33 | Round history for the connected wallet, paginated |
+| 34 | Copy-trade button that opens a match on the same market |
+| 35 | "Fade winner" that actually opens a match against them |
+| 36 | Toast stacking with a queue rather than overlap |
+| 37 | Idle-state attract mode on the landing hero |
+| 38 | Market cap / volume sort toggle in the picker |
+| 39 | Loading skeletons that match final layout, not spinners |
+| 40 | Error boundary per screen rather than one global |
+| 41 | Offline detection and a real banner |
+| 42 | Retry-with-backoff on every chain read |
+| 43 | A `/stats` route: protocol-wide numbers from chain |
+| 44 | Treasury balance and rake taken, shown honestly |
+| 45 | Position PnL sparkline during the round, not just price |
+| 46 | Confetti/pixel-burst on a win, restrained |
+| 47 | Chart crosshair with the mark at that moment |
+| 48 | Tape row expands to show every fill |
+| 49 | Relative time that updates without a reload |
+| 50 | Deep-link straight into a market: `/play?market=<mint>` |
+| 51 | Wallet disconnect confirmation when mid-round |
+| 52 | Warn before navigating away from a live round |
+| 53 | Sound toggle, persisted |
+| 54 | Colour-blind-safe win/loss palette option |
+| 55 | Focus rings and full keyboard navigation |
+| 56 | `aria-live` on the clock and PnL |
+| 57 | Match duration choice (60s / 5m) at open time |
+| 58 | Stake presets driven by wallet balance |
+| 59 | "Insufficient balance" that offers the max affordable stake |
+| 60 | Show the rake explicitly in the pot pill |
+
+## Tier 4 — real but lower priority
+
+| # | Idea |
+|---|---|
+| 61 | 2v2 Squad Fog (team ACL, pot 200, split 50/50) |
+| 62 | Chicken mode (first seller pays a penalty) |
+| 63 | Hot Potato mode (empty-handed at buzzer loses) |
+| 64 | Sudden Reveal mode (fog for 4m, public for 60s) |
+| 65 | Copy Ban mode (see that they traded, not what) |
+| 66 | Ghost Royale (multi-player, bottom cut) |
+| 67 | Thesis Fight (commit a hashed thesis, reveal with the tape) |
+| 68 | Assassination (beat a marked wallet) |
+| 69 | Hold the Line (early exit pays the table) |
+| 70 | Fade Me (opponent must take the opposite side) |
+| 71 | Tournament bracket over several rounds |
+| 72 | ELO-style rating from on-chain results |
+| 73 | Daily leaderboard reset with a real window |
+| 74 | Achievements as on-chain flags |
+| 75 | Referral attribution on chain |
+| 76 | Pyth integration for majors settlement |
+| 77 | Switchboard as a second oracle |
+| 78 | Jupiter quote shown beside the private book's price |
+| 79 | Token metadata from Metaplex for logos |
+| 80 | Priority-fee awareness on congested clusters |
+| 81 | Address lookup tables to shrink transactions |
+| 82 | Compressed accounts for tapes |
+| 83 | Websocket subscriptions instead of polling |
+| 84 | Optimistic UI on fills with rollback |
+| 85 | Multi-region rollup selection (us/eu/as validators) |
+| 86 | Mobile-native build via Expo |
+| 87 | Mobile Wallet Adapter for native |
+| 88 | PWA install + offline shell |
+| 89 | Screenshot/GIF export of a reveal |
+| 90 | OG image generation per tape |
+| 91 | Twitter intent with the reveal card |
+| 92 | Embeddable duel widget |
+| 93 | Public API for tapes |
+| 94 | Webhook on settlement |
+| 95 | Discord bot posting reveals |
+| 96 | i18n scaffolding |
+| 97 | Analytics that respect privacy |
+| 98 | Load test / soak script for the rollup |
+| 99 | Fuzz tests on the book maths |
+| 100 | Formal invariant tests (pot conservation, rake exactness) |
+
+---
+
+## Deliberately not doing
+
+- **Anything that fakes a MagicBlock primitive.** If VRF cannot be made to work
+  for real, it stays "not attempted" rather than being simulated.
+- **Devnet deploy / demo video.** Blocked on faucet funding, which no amount of
+  code fixes.
+- **Ten variations of one idea to reach 100.** Tier 4 is genuinely lower
+  priority, and several of those modes would clutter the pitch rather than
+  strengthen it — a grid of half-built modes reads worse than one that works.
+
+## Build log
+
+Filled in as each is built and verified.

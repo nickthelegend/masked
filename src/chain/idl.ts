@@ -977,9 +977,6 @@ export const FOGDUEL_IDL = {
     },
     {
       "name": "init_treasury",
-      "docs": [
-        "One-time protocol treasury init."
-      ],
       "discriminator": [
         105,
         152,
@@ -1382,6 +1379,133 @@ export const FOGDUEL_IDL = {
       ]
     },
     {
+      "name": "request_market_draw",
+      "docs": [
+        "One-time protocol treasury init.",
+        "Ask MagicBlock's VRF which of three markets this duel will be fought on.",
+        "",
+        "A trading duel where one side picks the market is a duel about",
+        "preparation: the opener chooses the coin they have been watching all",
+        "week and the other player is behind before a fill is placed. Here the",
+        "opener nominates three and verifiable randomness picks one.",
+        "",
+        "This only *requests*. The answer arrives later, in a transaction the",
+        "VRF program signs, and `settle_market_draw` refuses it from anyone",
+        "else — which is the whole difference between this and shuffling an",
+        "array in the client."
+      ],
+      "discriminator": [
+        231,
+        159,
+        59,
+        206,
+        73,
+        137,
+        122,
+        107
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "draw",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  114,
+                  97,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "payer"
+              },
+              {
+                "kind": "arg",
+                "path": "draw_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracle_queue",
+          "docs": [
+            "The VRF queue the request is posted to. Caller-chosen, so the macro",
+            "leaves it to us; everything else in this struct it adds itself."
+          ],
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "program_identity",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vrf_program",
+          "address": "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz"
+        },
+        {
+          "name": "slot_hashes",
+          "address": "SysvarS1otHashes111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "draw_id",
+          "type": "u64"
+        },
+        {
+          "name": "candidates",
+          "type": {
+            "array": [
+              {
+                "defined": {
+                  "name": "MarketRef"
+                }
+              },
+              3
+            ]
+          }
+        },
+        {
+          "name": "caller_seed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
       "name": "request_settle",
       "docs": [
         "Flip the match into settling once the clock has run out. Permissionless",
@@ -1435,6 +1559,50 @@ export const FOGDUEL_IDL = {
         }
       ],
       "args": []
+    },
+    {
+      "name": "settle_market_draw",
+      "docs": [
+        "The oracle's answer: which market the duel is on.",
+        "",
+        "`#[vrf_callback]` puts the VRF program's identity in the accounts and",
+        "requires it to have signed, so this cannot be called by a player."
+      ],
+      "discriminator": [
+        108,
+        93,
+        230,
+        64,
+        164,
+        93,
+        64,
+        170
+      ],
+      "accounts": [
+        {
+          "name": "vrf_program_identity",
+          "docs": [
+            "Scoped VRF identity PDA, bound to this program. Its presence as a signer proves",
+            "the callback was issued by the VRF program for this program."
+          ],
+          "signer": true
+        },
+        {
+          "name": "draw",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "randomness",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "settle_match",
@@ -1698,6 +1866,19 @@ export const FOGDUEL_IDL = {
   ],
   "accounts": [
     {
+      "name": "MarketDraw",
+      "discriminator": [
+        78,
+        206,
+        61,
+        45,
+        93,
+        224,
+        197,
+        79
+      ]
+    },
+    {
       "name": "Match",
       "discriminator": [
         236,
@@ -1874,6 +2055,26 @@ export const FOGDUEL_IDL = {
       "code": 6016,
       "name": "PriceJump",
       "msg": "Price moved further in one push than the rate limit allows"
+    },
+    {
+      "code": 6017,
+      "name": "DrawAlreadySettled",
+      "msg": "This market draw has already been settled"
+    },
+    {
+      "code": 6018,
+      "name": "DrawNotSettled",
+      "msg": "This market draw has not been settled yet"
+    },
+    {
+      "code": 6019,
+      "name": "DrawAlreadyUsed",
+      "msg": "This market draw has already opened a match"
+    },
+    {
+      "code": 6020,
+      "name": "NotTheDrawOpener",
+      "msg": "Not the wallet that opened this draw"
     }
   ],
   "types": [
@@ -1952,6 +2153,132 @@ export const FOGDUEL_IDL = {
           {
             "name": "ts",
             "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MarketDraw",
+      "docs": [
+        "A market chosen by MagicBlock's VRF rather than by a player.",
+        "",
+        "A trading duel where one side picks the market is a duel about preparation,",
+        "not trading — the opener can choose the coin they have been watching all",
+        "week. Here the opener nominates three and verifiable randomness picks one,",
+        "so neither player knows the market until it is drawn and neither could have",
+        "arranged it.",
+        "",
+        "`chosen` stays -1 until the oracle calls back, which is what makes this a",
+        "real draw rather than a client-side shuffle: the value arrives in a",
+        "transaction signed by the VRF program's identity, and the program will not",
+        "accept it from anybody else."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "opener",
+            "docs": [
+              "Who opened the draw. Only they may create the match from its result."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "draw_id",
+            "docs": [
+              "Ties the draw to one intended match, so a result cannot be reused."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "candidates",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "MarketRef"
+                  }
+                },
+                3
+              ]
+            }
+          },
+          {
+            "name": "chosen",
+            "docs": [
+              "Index into `candidates`, or -1 while the oracle has not answered."
+            ],
+            "type": "i8"
+          },
+          {
+            "name": "randomness",
+            "docs": [
+              "The randomness the oracle returned, kept so the result is checkable."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "requested_ts",
+            "type": "i64"
+          },
+          {
+            "name": "fulfilled_ts",
+            "type": "i64"
+          },
+          {
+            "name": "consumed",
+            "docs": [
+              "Set once the match is created, so one draw cannot open two matches."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MarketRef",
+      "docs": [
+        "One market a draw can land on."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "symbol",
+            "type": {
+              "array": [
+                "u8",
+                12
+              ]
+            }
+          },
+          {
+            "name": "market_type",
+            "type": {
+              "defined": {
+                "name": "MarketType"
+              }
+            }
+          },
+          {
+            "name": "start_px",
+            "docs": [
+              "Lamports per token x PRICE_SCALE, snapshotted when the draw was opened."
+            ],
+            "type": "u64"
           }
         ]
       }
