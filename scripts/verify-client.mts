@@ -122,7 +122,7 @@ const wrap = (kp: Keypair) => ({
   ]);
   assert.ok(
     (a === null) !== (b === null),
-    `exactly one crank should land, got ${JSON.stringify([a, b])}`
+    `exactly one crank should land, got [${a ?? 'null'}, ${b ?? 'null'}]`
   );
   console.log('   one landed, one was declined without erroring');
 

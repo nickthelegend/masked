@@ -522,15 +522,24 @@ impl Position {
 
         self.avg_px = if new == 0 {
             0
-        } else if closing > 0 && signed_base.abs() > closing {
-            // Crossed through zero: what is open now was opened at this price.
-            exec_px
-        } else if (old > 0) == (new > 0) && closing == 0 {
-            // Added to the same side: volume-weighted average.
+        } else if closing == 0 {
+            // Opening, or adding to the side already held. A volume-weighted
+            // average covers both: from flat the previous notional is zero, so
+            // this collapses to the execution price.
+            //
+            // Keyed on `closing`, not on the signs of `old` and `new` — the
+            // sign test read false when `old` was zero, which is every first
+            // fill of a round, and left `avg_px` at zero so the position
+            // recorded no entry price at all.
             let prev = old.abs() * (self.avg_px as i128);
             let add = signed_base.abs() * (exec_px as i128);
             (((prev + add) / new.abs()).max(0)) as u64
+        } else if signed_base.abs() > closing {
+            // Crossed through zero: what is open now was opened at this price.
+            exec_px
         } else {
+            // Reduced, but not through zero. What remains was bought at the
+            // same average it always was.
             self.avg_px
         };
 
