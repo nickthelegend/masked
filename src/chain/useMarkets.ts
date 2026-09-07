@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchMajorMarkets, fetchMemeMarkets, type TradableMarket } from './markets';
 import type { MarketKind } from './client';
+import { explainRead } from './errors';
 
 /** How often the list re-prices itself while the picker is open. */
 const REFRESH_MS = 20_000;
@@ -47,7 +48,7 @@ export function useMarkets(kind: MarketKind, limit = 12): MarketsState {
         loadedOnce.current = true;
       } catch (e) {
         if (!alive || ac.signal.aborted) return;
-        setError(e instanceof Error ? e.message : String(e));
+        setError(explainRead(e, 'Could not reach the price service.'));
       } finally {
         if (alive) setLoading(false);
       }

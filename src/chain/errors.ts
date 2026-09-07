@@ -167,5 +167,9 @@ export function explainRead(err: unknown, fallback = 'Could not reach the cluste
     return 'That address is a Solana account, but not a duel.';
   }
   if (/did not answer in/.test(message)) return message;
+  // Everything else, the caller's own sentence. That covers the Fetch API's
+  // "Failed to fetch" (and Safari's "Load failed"), which is the browser
+  // saying it never reached the host — true, and useless to read, because it
+  // cannot name which host. The caller can: the cluster, or the price service.
   return fallback;
 }
