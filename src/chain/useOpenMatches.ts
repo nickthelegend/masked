@@ -22,6 +22,13 @@ export interface OpenMatch {
   ageSecs: number;
 }
 
+/** A match already under way. Both positions exist and are delegated. */
+export interface LiveMatch {
+  address: PublicKey;
+  creator: PublicKey;
+  joiner: PublicKey;
+}
+
 const readOnlyWallet = {
   publicKey: null,
   signTransaction: async <T,>(t: T) => t,
@@ -30,6 +37,10 @@ const readOnlyWallet = {
 
 export function useOpenMatches(pollMs = 4000) {
   const [matches, setMatches] = useState<OpenMatch[]>([]);
+  // Live matches come from the same read. /proof probes one to show the read
+  // gate refusing a sealed position, and a second RPC sweep for that would be
+  // the same query twice.
+  const [live, setLive] = useState<LiveMatch[]>([]);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -60,7 +71,17 @@ export function useOpenMatches(pollMs = 4000) {
           }))
           .sort((a: OpenMatch, b: OpenMatch) => a.entry - b.entry);
 
+        /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+        const running: LiveMatch[] = all
+          .filter((m: any) => Object.keys(m.account.status)[0] === 'live' && m.account.joiner)
+          .map((m: any) => ({
+            address: m.publicKey,
+            creator: m.account.creator,
+            joiner: m.account.joiner as PublicKey,
+          }));
+
         setMatches(open);
+        setLive(running);
         setLoaded(true);
       } catch {
         if (alive) setLoaded(true);
@@ -75,5 +96,5 @@ export function useOpenMatches(pollMs = 4000) {
     };
   }, [pollMs]);
 
-  return { matches, loaded };
+  return { matches, live, loaded };
 }

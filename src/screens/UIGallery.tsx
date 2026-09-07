@@ -396,15 +396,23 @@ export default function UIGallery() {
           <Row gap={space.md} align="center">
             <TokenLogo mint="So11111111111111111111111111111111111111112" symbol="SOL" size={40} />
             <TokenLogo mint="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" symbol="USDC" size={40} />
-            {/* A mint with no logo: the tile is keyed off the address, so a
-                given coin always gets the same colour. */}
+            {/* A real remote logo, from the URL pump.fun publishes for this
+                coin. If the CDN has dropped it, this renders the fallback
+                instead — which is the third state and worth seeing. */}
+            <TokenLogo
+              mint="qX4gjQfLB6CYkbyiuhJWN4dtAc3N2vxmKzkJF6Apump"
+              symbol="WOTF"
+              uri="https://pbs.twimg.com/media/HRRQ4cMa8AEH3q2?format=png&name=small"
+              size={40}
+            />
+            {/* No logo at all: the tile colour is keyed off the mint, so a
+                given coin always gets the same one. */}
             <TokenLogo mint="ujpDypnBtY8hEFvPSJyo7uP6Ds8a18qPJxhZVQRpump" symbol="NTDA" size={40} />
-            <TokenLogo mint="ARtjW78Jy285Np4f2K1fM2zNCskezrnK1YJehjbFpump" symbol="WOFI" size={40} />
-            <TokenLogo mint="9cRCn9rGrRKn5Vc8kQpnvcRmXQZm7dHFLzsKgC5WfwUT" symbol="ANSEM" size={40} />
+            <TokenLogo mint="9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump" symbol="ANSEM" size={40} />
           </Row>
           <PixelText variant="bodySmall" size={10} color={color.textFaint}>
             SOL and USDC are drawn — neither feed carries a logo for them.
-            Everything else loads a real image and falls back to a tile.
+            Third is a real remote image; the rest fall back to a tile.
           </PixelText>
         </Stack>
       </Section>

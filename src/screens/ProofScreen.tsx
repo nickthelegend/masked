@@ -23,6 +23,8 @@ import {
 } from '../ui';
 import { ACTIVE_CLUSTER, DELEGATION_PROGRAM_ID, FOGDUEL_PROGRAM_ID, PERMISSION_PROGRAM_ID } from '../chain/config';
 import { useDelegationStatus } from '../chain/useDelegationStatus';
+import { useGateProbe } from '../chain/useGateProbe';
+import { useOpenMatches } from '../chain/useOpenMatches';
 import { useLatency } from '../chain/useLatency';
 import { useChainStats } from '../chain/useChainStats';
 import { useTxFeed, explorerUrl } from '../chain/useTxFeed';
@@ -33,6 +35,7 @@ import { PublicKey as PK } from '@solana/web3.js';
 
 const shortKey = (k: PublicKey | null) => (k ? `${k.toBase58().slice(0, 6)}…${k.toBase58().slice(-4)}` : '—');
 const ms = (n: number | null) => (n === null ? '—' : `${n.toFixed(1)}ms`);
+const rate = (n: number | null) => (n === null ? 'measuring…' : `${n.toFixed(1)} slots/s`);
 
 export default function ProofScreen() {
   const stats = useChainStats(8000);
@@ -63,6 +66,37 @@ export default function ProofScreen() {
   }, [tapes]);
   const { accounts: acls } = useDelegationStatus(aclWatch, 6000);
 
+  // Probe the front door for real: a delegated position should be refused
+  // while an undelegated account on the same rollup is served. Candidates come
+  // from live matches first — those are the ones actually sealed right now —
+  // and fall back to the most recent settled duel's positions.
+  const { live: liveMatches } = useOpenMatches(8000);
+  const gateCandidates = useMemo(() => {
+    const out: PublicKey[] = [];
+    // Live matches first: those are the positions that are sealed right now.
+    for (const m of liveMatches) {
+      out.push(positionPda(m.address, m.creator), positionPda(m.address, m.joiner));
+    }
+    // A settled duel's positions have come home and are readable by design, so
+    // the probe will skip them — but including them means the panel says
+    // "nothing sealed" rather than nothing at all when the table is quiet.
+    const t = tapes[0];
+    if (t) {
+      const k = new PK(t.match);
+      out.push(positionPda(k, t.winner), positionPda(k, t.loser));
+    }
+    return out;
+  }, [liveMatches, tapes]);
+  const gate = useGateProbe(gateCandidates, FOGDUEL_PROGRAM_ID, 6000);
+
+  const GATE_ROW: Record<typeof gate.verdict, { value: string; tone: 'good' | 'bad' | undefined }> = {
+    enforced: { value: 'YES — sealed position refused, control served', tone: 'good' },
+    shut: { value: 'unproven — the door refused everything', tone: undefined },
+    open: { value: 'NO — a sealed position was served', tone: 'bad' },
+    'nothing-sealed': { value: 'no delegated position to probe', tone: undefined },
+    unreachable: { value: 'rollup front door unreachable', tone: 'bad' },
+  };
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: color.bg }}
@@ -91,24 +125,40 @@ export default function ProofScreen() {
           { label: 'rollup', value: ACTIVE_CLUSTER.er, mono: true },
           { label: 'validator', value: shortKey(ACTIVE_CLUSTER.validator), mono: true },
           {
-            label: 'privacy enforced',
-            value: ACTIVE_CLUSTER.tee ? 'YES — TEE ingress' : 'NO — needs a TEE',
-            tone: ACTIVE_CLUSTER.tee ? 'good' : 'bad',
+            label: 'read gate',
+            value: gate.loaded ? GATE_ROW[gate.verdict].value : 'probing…',
+            tone: gate.loaded ? GATE_ROW[gate.verdict].tone : undefined,
+          },
+          {
+            label: 'gate attested',
+            // Enforcement and attestation are different claims. This gate does
+            // read the ACL — the row above proves it against a control — but
+            // it is a process we run, and only a TEE makes that checkable by
+            // somebody who does not trust us.
+            value: ACTIVE_CLUSTER.tee ? 'YES — TEE ingress' : 'NO — not a TEE',
+            tone: ACTIVE_CLUSTER.tee ? 'good' : undefined,
           },
         ]}
       />
 
       <ProofPanel
-        title="MEASURED LATENCY"
-        note={`Median of the last ${latency.samples} getSlot round trips against each endpoint.`}
+        title="MEASURED SPEED"
+        note={
+          `Block rate is what a rollup is for and what the speedup divides. ` +
+          `Round trip is ${latency.samples} getSlot calls, median — on a laptop ` +
+          `that is mostly IPC, and the rollup's includes the hop through the ` +
+          `permission-checking front door, so it is usually the slower number.`
+        }
         rows={[
-          { label: 'base layer', value: ms(latency.l1Ms) },
-          { label: 'ephemeral rollup', value: ms(latency.erMs), tone: 'good' },
+          { label: 'base block rate', value: rate(latency.l1SlotsPerSec) },
+          { label: 'rollup block rate', value: rate(latency.erSlotsPerSec), tone: 'good' },
           {
             label: 'speedup',
             value: latency.speedup ? `${latency.speedup.toFixed(1)}x` : '—',
-            tone: latency.speedup && latency.speedup > 1 ? 'good' : 'neutral',
+            tone: latency.speedup && latency.speedup > 1 ? 'good' : undefined,
           },
+          { label: 'base round trip', value: ms(latency.l1Ms) },
+          { label: 'rollup round trip', value: ms(latency.erMs) },
         ]}
       />
 
@@ -183,14 +233,15 @@ export default function ProofScreen() {
 
       <Stack gap={space.sm}>
         <PixelText variant="label" size={8}>
-          WHAT THIS CLUSTER DOES NOT DO
+          WHAT THIS CLUSTER DOES AND DOES NOT PROVE
         </PixelText>
         <PixelText variant="bodySmall" size={10} color={color.textDim}>
           {ACTIVE_CLUSTER.tee
-            ? 'This is a TEE validator. Opponent position reads are refused at ingress for non-members.'
-            : 'This is a local validator with no TEE. The access-control list is created on chain and delegated, but reads are not gated. The client refuses to read opponent state anyway (src/chain/fog.ts) — that protects this app, not the RPC.'}
+            ? 'This is a TEE validator. Opponent reads are refused at ingress, and the ingress itself is attestable.'
+            : 'Reads are gated. The rollup sits behind a query-filtering-service that reads the permission program, and the row above probes it live: a sealed position is refused while an undelegated account on the same rollup is served, so the door is checking the ACL rather than being shut. What is missing is attestation — the gate is a process we run, and only a TEE makes it checkable by someone who does not trust us.'}
         </PixelText>
         <Row gap={space.sm} wrap>
+          <Badge label="npm run check:gate" tone="quiet" variant="bodySmall" />
           <Badge label="npm run prove:privacy" tone="quiet" variant="bodySmall" />
           <Badge label="npm run check:fog" tone="quiet" variant="bodySmall" />
         </Row>
