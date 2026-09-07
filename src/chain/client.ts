@@ -51,20 +51,48 @@ export interface FillRecord {
   ts: number;
 }
 
+/** One player's chosen market, as written on chain. */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+const decodeLegRaw = (raw: any): MatchLeg => ({
+  mint: raw.mint,
+  marketType: decodeMarketType(raw.marketType),
+  symbol: decodeFixed(raw.symbol),
+  name: decodeFixed(raw.name),
+  startPx: BigInt(raw.startPx.toString()),
+});
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+export interface MatchLeg {
+  mint: PublicKey;
+  /** Where the mark comes from: a pump.fun curve, or an aggregator. */
+  marketType: MarketKind;
+  /** Ticker, as written on chain when this side was set. */
+  symbol: string;
+  /** Full market name. */
+  name: string;
+  /** The mark this side opened on. */
+  startPx: bigint;
+}
+
+/** An empty leg — a match nobody has joined yet has no second market. */
+export const EMPTY_LEG: MatchLeg = {
+  mint: PublicKey.default,
+  marketType: 'meme',
+  symbol: '',
+  name: '',
+  startPx: 0n,
+};
+
 export interface MatchState {
   address: PublicKey;
   creator: PublicKey;
   joiner: PublicKey | null;
-  /** The market this duel is fought over. */
-  mint: PublicKey;
-  /** Where the mark comes from: a pump.fun curve, or an aggregator. */
-  marketType: MarketKind;
-  /** Ticker, as written on chain at create time. */
-  symbol: string;
+  /** The creator's market. */
+  legA: MatchLeg;
+  /** The joiner's. Blank until somebody joins and names their own. */
+  legB: MatchLeg;
   /** When the match was opened, from the chain's clock. */
   createdTs: number;
-  /** Full market name, as written on chain at create time. */
-  name: string;
   matchId: number;
   startTs: number;
   duration: number;
@@ -463,6 +491,16 @@ export class FogduelClient {
         () => isDelegated(positionPda(match, s.owner))
       );
     }
+    // The public status account goes to the rollup too, but deliberately
+    // without a permission: `liquidate` runs there and has to write it, and
+    // both players plus any spectator have to be able to read it. It is the
+    // one account in a live round that is not sealed.
+    await ensure(
+      await isDelegated(statusPda(match)),
+      () => this.delegateStatus(match, payer),
+      () => isDelegated(statusPda(match))
+    );
+
     // Each player's book travels inside their Position, so delegating the
     // positions delegates the books — and sealing the positions seals them.
   }
@@ -629,6 +667,15 @@ export class FogduelClient {
           .rpc()
       );
     }
+
+    // The status account comes home too, or `settle_match` cannot read the
+    // liquidation flags off it — on L1 a delegated account is owned by the
+    // delegation program and the whole settle transaction is rejected.
+    const statusOnL1 = await this.l1.getAccountInfo(statusPda(match));
+    if (statusOnL1 && statusOnL1.owner.equals(DELEGATION_PROGRAM_ID)) {
+      sigs.push(await this.commitAndUndelegateStatusSig(match, payer));
+    }
+
     return sigs;
   }
 
@@ -636,6 +683,59 @@ export class FogduelClient {
 
   async requestSettle(match: PublicKey, cranker: PublicKey): Promise<void> {
     await this.l1Program.methods.requestSettle().accounts({ cranker, matchAccount: match }).rpc();
+  }
+
+  /**
+   * Force-close a position that has run out of equity.
+   *
+   * Runs on the rollup, where the position lives. Permissionless and safe to
+   * call blind: a solvent position is left alone, so the crank fires this at
+   * both sides on every beat without needing to know anything private.
+   */
+  async liquidate(match: PublicKey, cranker: PublicKey, owner: PublicKey): Promise<void> {
+    await (await this.erProgramAuthed()).methods
+      .liquidate(owner)
+      .accounts({
+        cranker,
+        matchAccount: match,
+        priceFeed: feedPda(match, owner),
+        position: positionPda(match, owner),
+        roundStatus: statusPda(match),
+      })
+      .rpc();
+  }
+
+  /**
+   * Who has blown up this round.
+   *
+   * The one thing about a live round that is public — this account is
+   * deliberately never given a permission, so both players and any spectator
+   * read it the same way. Everything else about a position stays sealed.
+   */
+  async fetchRoundStatus(
+    match: PublicKey,
+    fromEr: boolean
+  ): Promise<{ liquidatedA: boolean; liquidatedB: boolean } | null> {
+    const program = fromEr ? await this.erProgramAuthed() : this.l1Program;
+    const raw = await program.account.roundStatus.fetchNullable(statusPda(match)).catch(() => null);
+    return raw ? { liquidatedA: raw.liquidatedA, liquidatedB: raw.liquidatedB } : null;
+  }
+
+  /** Delegate the public status account so `liquidate` can write it. */
+  async delegateStatus(match: PublicKey, payer: PublicKey): Promise<void> {
+    await this.l1Program.methods
+      .delegateStatusToEr(this.cluster.validator ? new PublicKey(this.cluster.validator) : null, 0)
+      .accounts({ payer, matchAccount: match, roundStatus: statusPda(match) })
+      .rpc();
+  }
+
+  /** Bring the status account home so `settle_match` can read it on L1. */
+  async commitAndUndelegateStatusSig(match: PublicKey, payer: PublicKey): Promise<string> {
+    const program = await this.erProgramAuthed();
+    return program.methods
+      .commitAndUndelegateStatus()
+      .accounts({ payer, roundStatus: statusPda(match) })
+      .rpc();
   }
 
   async settleMatch(match: PublicKey, cranker: PublicKey, creator: PublicKey, joiner: PublicKey): Promise<void> {
@@ -847,10 +947,8 @@ export class FogduelClient {
       address,
       creator: a.creator,
       joiner: a.joiner ?? null,
-      mint: a.mint,
-      marketType: decodeMarketType(a.marketType),
-      symbol: decodeFixed(a.symbol),
-      name: decodeFixed(a.name),
+      legA: decodeLegRaw(a.legA),
+      legB: decodeLegRaw(a.legB),
       createdTs: a.createdTs.toNumber(),
       matchId: a.matchId.toNumber(),
       startTs: a.startTs.toNumber(),

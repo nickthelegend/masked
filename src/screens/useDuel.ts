@@ -22,8 +22,8 @@ import { explainError, withRetry } from '../chain/errors';
 import { checkBalance, checkCluster, checkProgram, checkWallet, firstFailure } from '../chain/preflight';
 import { FOGDUEL_PROGRAM_ID } from '../chain/config';
 import { assertFogIntact } from '../chain/fog';
-import { FogduelClient, pnlBps, type MatchState, type PositionState } from '../chain/client';
-import { formatSolPrice, MAX_OPEN_AGE_SECS } from '../chain/units';
+import { FogduelClient, pnlBps, type MatchLeg, type MatchState, type PositionState } from '../chain/client';
+import { formatSolPrice, MAX_OPEN_AGE_SECS, VALUE_DIV } from '../chain/units';
 import type { TapeState } from '../chain/tape';
 import { buyImpact, sellImpact } from '../chain/book';
 import { useHeadToHead, describeRecord } from '../chain/useHeadToHead';
@@ -34,6 +34,18 @@ import { DEMO_MINT, marketLabel } from '../chain/market';
 import { OPPONENT_PENDING, RAKE, ROUND_SECONDS } from './data';
 
 export type DuelPhase = 'lobby' | 'searching' | 'live' | 'reveal';
+
+/**
+ * Which of a match's two markets is mine.
+ *
+ * The creator's is `legA` and the joiner's is `legB`. Every place that used to
+ * say "the match's mint" now has to answer "whose?", because the two players
+ * are no longer trading the same thing.
+ */
+const legFor = (m: MatchState | null, me: PublicKey | null): MatchLeg | null => {
+  if (!m || !me) return null;
+  return m.creator.equals(me) ? m.legA : m.legB;
+};
 
 /**
  * Fraction of remaining quote spent per LONG press.
@@ -66,7 +78,7 @@ const POLL_MS = 1000;
  * Faster than the 5%/second cap would just be rejected, and pump.fun does not
  * thank anyone for a request a second either.
  */
-const MARK_CRANK_MS = 2000;
+const MARK_CRANK_MS = 5000;
 
 /**
  * Settling spans two chains and several transactions, and the first go can
@@ -142,6 +154,13 @@ export interface Duel {
   selectMarket: (m: TradableMarket) => void;
   /** Whether this cluster actually enforces the ACL at read time. */
   teeEnforced: boolean;
+  /**
+   * Whether either side has been force-closed for running out of equity.
+   *
+   * Public during the round, unlike everything else about a position. A
+   * liquidation is announced by design — see `RoundStatus` in state.rs.
+   */
+  liquidated: { me: boolean; opponent: boolean };
   error: string | null;
   matchAddress: string | null;
   myAddress: string | null;
@@ -151,6 +170,8 @@ export interface Duel {
   findMatch: () => void;
   startMatch: () => void;
   openLong: () => void;
+  /** Sell what you do not own — the mirror of openLong. */
+  openShort: () => void;
   closeLong: () => void;
   settleNow: () => void;
   rematch: () => void;
@@ -239,6 +260,11 @@ export function useDuel(): Duel {
   const [phase, setPhase] = useState<DuelPhase>('lobby');
   const [stake, setStake] = useState(0.1); // SOL
   const [fillSize, setFillSize] = useState(DEFAULT_FILL_FRACTION);
+  /**
+   * Who has blown up. The one thing about a live round that is not fogged —
+   * read from the unsealed `RoundStatus`, by deliberate decision.
+   */
+  const [liquidated, setLiquidated] = useState({ me: false, opponent: false });
   const [balance, setBalance] = useState(0);
   const [busy, setBusy] = useState(false);
   /**
@@ -395,12 +421,18 @@ export function useDuel(): Duel {
     let alive = true;
     const id = setInterval(async () => {
       try {
-        const [m, px, mine] = await Promise.all([
+        // My own feed. The opponent has their own token and their own mark,
+        // and neither is any of my business until the reveal.
+        const [m, pxRaw, mine] = await Promise.all([
           client.fetchMatch(match.address),
-          client.fetchPrice(match.address, true),
+          client.fetchPrice(match.address, wallet.publicKey!, true),
           client.fetchPosition(match.address, wallet.publicKey!, true),
         ]);
         if (!alive) return;
+
+        // Displayed and charted, so a double is ample — the exactness that
+        // matters is on chain and in what gets sent there.
+        const px = Number(pxRaw);
 
         if (m) {
           setMatch(m);
@@ -450,11 +482,18 @@ export function useDuel(): Duel {
     if (!client || !match || phase !== 'live' || secondsLeft <= 0 || !wallet.publicKey) {
       return undefined;
     }
-    const mint = match.mint.toBase58();
-    const kind = match.marketType;
+    // My market, not the match's — there is no such thing any more.
+    const mine = legFor(match, wallet.publicKey);
+    if (!mine || !mine.symbol) return undefined;
+    const mint = mine.mint.toBase58();
+    const kind = mine.marketType;
 
     let alive = true;
     const ac = new AbortController();
+
+    const opponent = match.creator.equals(wallet.publicKey)
+      ? match.joiner
+      : match.creator;
 
     const tick = async () => {
       try {
@@ -464,10 +503,35 @@ export function useDuel(): Duel {
         // only the positions are — so the rollup rejects a write to it with
         // InvalidWritableAccount, and every mark was silently failing. The
         // rollup clones the feed for reads, so fills there see the new mark.
-        await client.crankPrice(match.address, wallet.publicKey!, px, false);
+        await client.crankPrice(match.address, wallet.publicKey!, px, wallet.publicKey!, false);
       } catch {
         // The market API or the rate limit said no. The next tick tries again;
         // a failed crank must never interrupt a round in progress.
+      }
+
+      // Then look for a blow-up, on both sides.
+      //
+      // On the rollup, because that is where positions live. Permissionless
+      // and harmless against a solvent position, so this fires blind rather
+      // than reading anything private first — which it could not do anyway,
+      // since the opponent's position is sealed to us.
+      try {
+        if (!alive) return;
+        await Promise.all(
+          [wallet.publicKey!, opponent]
+            .filter((k): k is PublicKey => !!k)
+            .map((owner) => client.liquidate(match.address, wallet.publicKey!, owner).catch(() => {}))
+        );
+        const status = await client.fetchRoundStatus(match.address, true);
+        if (alive && status) {
+          const iAmCreator = match.creator.equals(wallet.publicKey!);
+          setLiquidated({
+            me: iAmCreator ? status.liquidatedA : status.liquidatedB,
+            opponent: iAmCreator ? status.liquidatedB : status.liquidatedA,
+          });
+        }
+      } catch {
+        // Same rule as the crank: never interrupt a round in progress.
       }
     };
 
@@ -718,7 +782,7 @@ export function useDuel(): Duel {
       // Resume from where the clock actually is: a match that was joined while
       // we were polling has already been running for a second or two.
       setSecondsLeft(Math.max(0, m.duration - (Math.floor(Date.now() / 1000) - m.startTs)));
-      setPrice(await client!.fetchPrice(m.address, true));
+      setPrice(Number(await client!.fetchPrice(m.address, wallet.publicKey!, true)));
       setPhase('live');
     },
     [client]
@@ -759,7 +823,7 @@ export function useDuel(): Duel {
           setSeries([]);
           setEquity([0]);
           setSecondsLeft(Math.max(0, live.duration - (Math.floor(Date.now() / 1000) - live.startTs)));
-          setPrice(await client.fetchPrice(live.address, true));
+          setPrice(Number(await client.fetchPrice(live.address, me, true)));
           setPhase('live');
           return;
         }
@@ -878,61 +942,71 @@ export function useDuel(): Duel {
         (m) =>
           !m.creator.equals(me) &&
           m.entry === entryLamports &&
-          nowSecs - m.createdTs <= MAX_OPEN_AGE_SECS &&
-          (!selectedMarket || m.mint.toBase58() === selectedMarket.mint)
+          nowSecs - m.createdTs <= MAX_OPEN_AGE_SECS
+        // No market filter any more. Each player brings their own token, so
+        // there is nothing the two sides have to agree on except the stake —
+        // which makes the book far livelier than when a join required both
+        // people to have independently wanted the same coin.
       );
+
+      // Whichever way this goes, I am bringing my own market, so resolve it
+      // once. The lobby lands on a market while it is mounted, but reaching
+      // matchmaking before the feed answers leaves the selection null — so ask
+      // the feed the same question the lobby would have.
+      let market = selectedMarket;
+      if (!market) {
+        try {
+          market = (await fetchMemeMarkets())[0] ?? null;
+        } catch {
+          market = null;
+        }
+        if (market) setSelectedMarket(market);
+      }
+      if (!market) {
+        toast.error('NO MARKET TO TRADE', 'The market feed is not answering, so there is nothing to open a duel on.');
+        setError('The market feed is not answering.');
+        return 'noop';
+      }
+
+      // Re-read the price rather than using the one in the list. The list
+      // refreshes every 20 seconds and freezes at whatever it last saw when
+      // the feed goes down, so a cached number could be any age — and this one
+      // becomes my round's opening mark and seeds my private book. If the feed
+      // cannot answer, the match does not open.
+      let startPx: bigint;
+      try {
+        startPx = await livePxFor(market);
+      } catch (e) {
+        const why = e instanceof Error ? e.message : String(e);
+        // This used to `setError` and return, after which the guard toasted
+        // MATCH READY over the top of it — the app announcing success for a
+        // match it had just failed to open.
+        toast.error(`NO PRICE FOR ${market.symbol}`, why);
+        setError(`Could not read a live price for ${market.symbol}: ${why}`);
+        return 'noop';
+      }
+
+      const myLeg = {
+        mint: new PublicKey(market.mint),
+        startPx,
+        marketType: market.kind,
+        symbol: market.symbol,
+        name: market.name,
+      };
 
       let target: PublicKey;
       let creator: PublicKey;
 
       if (joinable) {
-        await client!.joinMatch(joinable.address, me, joinable.creator);
+        await client!.joinMatch(joinable.address, me, joinable.creator, myLeg);
         target = joinable.address;
         creator = joinable.creator;
       } else {
-        // The lobby lands on the top market, but it only does so while it is
-        // mounted — reach matchmaking before the feed answers and the selection
-        // is still null, even though the lobby was showing a market. Rather
-        // than dying on a race, ask the feed the same question the lobby would
-        // have. If the feed cannot answer, the match does not open.
-        let market = selectedMarket;
-        if (!market) {
-          try {
-            market = (await fetchMemeMarkets())[0] ?? null;
-          } catch {
-            market = null;
-          }
-          if (market) setSelectedMarket(market);
-        }
-        if (!market) {
-          toast.error('NO MARKET TO TRADE', 'The market feed is not answering, so there is nothing to open a duel on.');
-          setError('The market feed is not answering.');
-          return 'noop';
-        }
         const matchId = Math.floor(Date.now() / 1000);
-
-        // Re-read the price rather than using the one in the list. The list
-        // refreshes every 20 seconds and freezes at whatever it last saw when
-        // the feed goes down, so a cached number could be any age — and this
-        // one becomes the round's opening mark and seeds both private books.
-        // If the feed cannot answer, the match does not open.
-        let startPx: number;
-        try {
-          startPx = await livePxFor(market);
-        } catch (e) {
-          const why = e instanceof Error ? e.message : String(e);
-          // This used to `setError` and return, after which the guard toasted
-          // MATCH READY over the top of it — the app announcing success for a
-          // match it had just failed to open.
-          toast.error(`NO PRICE FOR ${market.symbol}`, why);
-          setError(`Could not read a live price for ${market.symbol}: ${why}`);
-          return 'noop';
-        }
-
         target = await client!.createMatch({
           creator: me,
           matchId,
-          mint: new PublicKey(market.mint),
+          mint: myLeg.mint,
           durationSecs: ROUND_SECONDS,
           entryLamports,
           startPx,
@@ -1007,7 +1081,7 @@ export function useDuel(): Duel {
    * round continues; a session is an optimisation, never a requirement.
    */
   const fill = useCallback(
-    async (side: 'buy' | 'sell', amount: number, markBefore: number) => {
+    async (side: 'buy' | 'sell', amount: number, markBefore: bigint) => {
       const me = wallet.publicKey!;
       const address = match!.address;
 
@@ -1032,7 +1106,7 @@ export function useDuel(): Duel {
       const mine = await client!.fetchPosition(address, me, true);
       if (mine) {
         setMyPosition(mine);
-        noteFill(mine, markBefore, side);
+        noteFill(mine, Number(markBefore), side);
       }
     },
     [client, match, wallet.publicKey, session, noteFill]
@@ -1051,34 +1125,89 @@ export function useDuel(): Duel {
         toast.error('NOTHING LEFT TO LONG', 'Your whole entry is already in the position. Close some of it first.');
         return 'noop';
       }
-      const markBefore = await client!.fetchPrice(match.address, true);
+      const markBefore = await client!.fetchPrice(match.address, wallet.publicKey!, true);
       await fill('buy', spend, markBefore);
     });
   }, [guard, client, match, myPosition, wallet.publicKey, fillSize, noteFill, toast]);
 
+  /**
+   * Sell what you do not own.
+   *
+   * The mirror of LONG. LONG spends a slice of the quote you are holding;
+   * SHORT sells a slice of the largest position your equity can carry, which
+   * is the same one-times-collateral bound the program enforces. Sizing it off
+   * anything else would let the picker offer a trade the chain then refuses.
+   */
+  const openShort = useCallback(() => {
+    void guard('SHORT FILLED', async () => {
+      if (!match) return 'noop';
+      const markBefore = await client!.fetchPrice(match.address, wallet.publicKey!, true);
+      const mark = Number(markBefore);
+      if (mark <= 0) {
+        toast.error('NO MARK YET', 'The round has no posted price to short against.');
+        return 'noop';
+      }
+      const equity = myPosition
+        ? myPosition.quoteBalance + (myPosition.baseQty * mark) / VALUE_DIV
+        : match.entry;
+      // Room left before the program's own cap, in base units.
+      const capacity = (equity * VALUE_DIV) / mark - Math.abs(myPosition?.baseQty ?? 0);
+      const qty = Math.floor(capacity * fillSize);
+      if (qty <= 0) {
+        toast.error('NO ROOM TO SHORT', 'Your equity is already fully committed. Close some of it first.');
+        return 'noop';
+      }
+      await fill('sell', qty, markBefore);
+    });
+  }, [guard, client, match, myPosition, wallet.publicKey, fillSize, noteFill, toast]);
+
+  /**
+   * Reduce whatever is open, whichever way it points.
+   *
+   * A long closes by selling and a short closes by buying, so the side depends
+   * on the position rather than on the button. Buying back a short spends
+   * quote, so the amount handed to the program is quote for that direction and
+   * base for the other — the two sides of `apply_fill` take different units.
+   */
   const closeLong = useCallback(() => {
     void guard('POSITION CLOSED', async () => {
       if (!match) return 'noop';
-      if (!myPosition || myPosition.baseQty <= 0) {
-        toast.info('NOTHING TO CLOSE', 'You are flat — there is no position to sell.');
+      if (!myPosition || myPosition.baseQty === 0) {
+        toast.info('NOTHING TO CLOSE', 'You are flat — there is no position to close.');
         return 'noop';
       }
       // The same size control governs both directions, so a partial close is
-      // a real move rather than all-or-nothing. MAX sells the exact remaining
+      // a real move rather than all-or-nothing. MAX closes the exact remaining
       // base — a rounded-down fraction of it would strand dust that the
       // program would then have to close at the buzzer.
       const whole = fillSize >= 1;
-      const qty = whole
-        ? myPosition.baseQty
-        : Math.max(1, Math.floor(myPosition.baseQty * fillSize));
-      const markBefore = await client!.fetchPrice(match.address, true);
-      await fill('sell', qty, markBefore);
+      const open = Math.abs(myPosition.baseQty);
+      const qty = whole ? open : Math.max(1, Math.floor(open * fillSize));
+      const markBefore = await client!.fetchPrice(match.address, wallet.publicKey!, true);
+
+      if (myPosition.baseQty > 0) {
+        await fill('sell', qty, markBefore);
+      } else {
+        // Buying back: `apply_fill`'s buy side consumes quote, so the size has
+        // to be converted at the mark. Rounded up, because covering slightly
+        // more than the notional is what actually clears the position.
+        const mark = Number(markBefore);
+        const quoteIn = Math.ceil((qty * mark) / VALUE_DIV);
+        const spend = Math.min(quoteIn, myPosition.quoteBalance);
+        if (spend <= 0) {
+          toast.error('NOT ENOUGH TO COVER', 'There is no quote left to buy the short back with.');
+          return 'noop';
+        }
+        await fill('buy', spend, markBefore);
+      }
       // Only MAX actually leaves you flat.
-      return whole ? undefined : { label: `SOLD ${Math.round(fillSize * 100)}% OF POSITION` };
+      return whole
+        ? undefined
+        : { label: `CLOSED ${Math.round(fillSize * 100)}% OF POSITION` };
     });
   }, [guard, client, match, myPosition, wallet.publicKey, fillSize, toast]);
 
-  /** Take a specific match off the book. */
+  /** Take a specific match off the book, on whatever market I have picked. */
   const joinMatchByAddress = useCallback(
     (address: string, creator: string) => {
       void guard('MATCH JOINED', async () => {
@@ -1086,7 +1215,29 @@ export function useDuel(): Duel {
         const target = new PublicKey(address);
         const creatorKey = new PublicKey(creator);
 
-        await client!.joinMatch(target, me, creatorKey);
+        // I bring my own token. Joining says nothing about what the creator
+        // chose — that is the point of the new matchmaking.
+        const market = selectedMarket ?? (await fetchMemeMarkets())[0] ?? null;
+        if (!market) {
+          toast.error('NO MARKET TO TRADE', 'The market feed is not answering, so there is nothing to trade with.');
+          return 'noop';
+        }
+        let startPx: bigint;
+        try {
+          startPx = await livePxFor(market);
+        } catch (e) {
+          const why = e instanceof Error ? e.message : String(e);
+          toast.error(`NO PRICE FOR ${market.symbol}`, why);
+          return 'noop';
+        }
+
+        await client!.joinMatch(target, me, creatorKey, {
+          mint: new PublicKey(market.mint),
+          startPx,
+          marketType: market.kind,
+          symbol: market.symbol,
+          name: market.name,
+        });
         const m = await client!.fetchMatch(target);
         if (!m || !m.joiner) return;
         // Taking someone else's match takes their size; show it.
@@ -1138,26 +1289,27 @@ export function useDuel(): Duel {
 
     if (previous) {
       setStake(previous.entry / LAMPORTS_PER_SOL);
+      const prevLeg = legFor(previous, wallet.publicKey);
       setSelectedMarket((current) =>
-        current && current.mint === previous.mint.toBase58()
+        !prevLeg || (current && current.mint === prevLeg.mint.toBase58())
           ? current
           : {
-              kind: previous.marketType,
-              mint: previous.mint.toBase58(),
-              symbol: previous.symbol,
-              name: previous.name,
+              kind: prevLeg.marketType,
+              mint: prevLeg.mint.toBase58(),
+              symbol: prevLeg.symbol,
+              name: prevLeg.name,
               imageUri: null,
               priceSol: 0,
               priceUsd: 0,
               // Re-read at open time; never reused from the finished round.
-              startPx: 0,
-              source: previous.marketType === 'major' ? 'jupiter' : 'pump.fun',
+              startPx: 0n,
+              source: prevLeg.marketType === 'major' ? 'jupiter' : 'pump.fun',
               usdMarketCap: 0,
             }
       );
     }
     setPhase('searching');
-  }, [match]);
+  }, [match, wallet.publicKey]);
 
   const backToLobby = useCallback(() => {
     setSession(null);
@@ -1184,6 +1336,9 @@ export function useDuel(): Duel {
    * of a size a closed form. check:tape asserts these against the execution
    * prices really recorded on every settled tape.
    */
+  /** My side's market. Null in the lobby, where there is no match yet. */
+  const myLeg = useMemo(() => legFor(match, wallet.publicKey ?? null), [match, wallet.publicKey]);
+
   const sizeNote = useMemo(() => {
     if (!match) return undefined;
     const holding = (myPosition?.baseQty ?? 0) > 0;
@@ -1247,14 +1402,14 @@ export function useDuel(): Duel {
     sealed,
     // Straight off the match account. The old lookup table could only name
     // three mints and called everything else by its address.
-    market: match?.symbol || marketLabel(match?.mint ?? DEMO_MINT),
-    marketMint: match?.mint.toBase58() ?? '',
+    market: myLeg?.symbol || marketLabel(myLeg?.mint ?? DEMO_MINT),
+    marketMint: myLeg?.mint.toBase58() ?? '',
     // The logo is not on chain — only the symbol, name and mint are. It comes
     // from whichever market list the player picked from, matched by mint.
-    marketImageUri: selectedMarket && match && selectedMarket.mint === match.mint.toBase58()
+    marketImageUri: selectedMarket && myLeg && selectedMarket.mint === myLeg.mint.toBase58()
       ? selectedMarket.imageUri
       : null,
-    marketSource: match?.marketType === 'major' ? 'jupiter' : 'pump.fun',
+    marketSource: myLeg?.marketType === 'major' ? 'jupiter' : 'pump.fun',
     // In SOL, not USD: the entry, the pot and the PnL are all lamports, so a
     // mark in dollars would be the only number on the screen in a different
     // currency. The picker quotes USD, where market cap is what identifies a
@@ -1272,6 +1427,7 @@ export function useDuel(): Duel {
     duration: match?.duration ?? 0,
     selectedMarket,
     selectMarket: setSelectedMarket,
+    liquidated,
     teeEnforced: ACTIVE_CLUSTER.tee,
     error,
     matchAddress: match?.address.toBase58() ?? null,
@@ -1282,6 +1438,7 @@ export function useDuel(): Duel {
     findMatch,
     startMatch,
     openLong,
+    openShort,
     closeLong,
     settleNow: () => void settle(),
     rematch,
