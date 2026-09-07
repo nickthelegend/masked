@@ -28,7 +28,8 @@
     "check:gate": "tsx scripts/check-gate.mts",
     "proxy": "node server/market-proxy.mjs",
     "hold": "tsx scripts/hold-live.mts",
-    "join": "tsx scripts/join-as.mts"
+    "join": "tsx scripts/join-as.mts",
+    "check:fog:wire": "tsx scripts/check-fog-wire.mts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",

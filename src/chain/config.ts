@@ -47,12 +47,23 @@ export interface ClusterConfig {
   tee: boolean;
 }
 
+/**
+ * Endpoint overrides.
+ *
+ * A deployment does not run on 127.0.0.1, and neither does a test that wants
+ * to watch what the app asks the rollup for — pointing it at a recorder is the
+ * only way to see the request bodies, since the RPC client captures `fetch`
+ * before anything in the page can wrap it.
+ */
+const envL1 = process.env.EXPO_PUBLIC_L1_URL;
+const envEr = process.env.EXPO_PUBLIC_ER_URL;
+
 export const CLUSTERS: Record<ClusterName, ClusterConfig> = {
   local: {
     name: 'local',
-    l1: 'http://127.0.0.1:8999',
+    l1: envL1 || 'http://127.0.0.1:8999',
     // The query-filtering-service. See scripts/localnet.sh.
-    er: 'http://127.0.0.1:6699',
+    er: envEr || 'http://127.0.0.1:6699',
     erRaw: 'http://127.0.0.1:7799',
     validator: VALIDATORS.local,
     // The local ephemeral-validator is not a TEE: the permission gate in front
@@ -63,8 +74,8 @@ export const CLUSTERS: Record<ClusterName, ClusterConfig> = {
   },
   devnet: {
     name: 'devnet',
-    l1: 'https://api.devnet.solana.com',
-    er: 'https://devnet-tee.magicblock.app',
+    l1: envL1 || 'https://api.devnet.solana.com',
+    er: envEr || 'https://devnet-tee.magicblock.app',
     validator: VALIDATORS.tee,
     tee: true,
   },
