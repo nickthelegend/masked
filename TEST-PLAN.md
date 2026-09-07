@@ -215,7 +215,7 @@ observed result matched the row above exactly.
 
 ### What had to be fixed
 
-Twenty-three defects were found and fixed during the run. In rough order of
+Twenty-four defects were found and fixed during the run. In rough order of
 severity:
 
 | # | Defect | Found by |
@@ -243,6 +243,7 @@ severity:
 | 21 | The landing page said "five minutes" in three places while rounds ran 60 seconds. | B-series |
 | 22 | The leaderboard was headed "24H" over lifetime counters and showed the top-ranked player's streak as the board's best (1 where the chain said 2). | K3 |
 | 23 | A closed wallet picker stayed mounted, so a screen reader would read out a chooser that was not on screen. | D4 |
+| 24 | The orb's lattice pixel had a floor wider than a small orb has room for, so at the 22px size used on the live round screen its core radius came out as -1 and the browser refused to draw it. | Final console sweep |
 
 Two things were also true of pump.fun's data and had to be handled rather than
 fixed: its bonding-curve price freezes at graduation, so every coin anyone has
@@ -267,8 +268,10 @@ same reason as M4.
 - **Real chain throughout**: a deployed program, real signed transactions, real
   escrow movement, verified against balances after each run.
 - **Real market data**: live pump.fun and Jupiter over HTTP, no fallback list.
-- **Console**: exactly three errors on the market pages, every one a token logo
-  404 at a third-party CDN (`ipfs.io` x3 at time of writing). Checked
-  individually rather than assumed: 9 of 12 logos load, the 3 that do not fall
-  back to a tile. Zero application errors, zero failed requests to our own
-  services, on every route.
+- **Console**: two to three errors on the market pages, every one a token logo
+  blocked or 404 at a third-party CDN (`ipfs.io` at time of writing). Checked
+  individually rather than assumed: 9 of 12 logos load and the rest fall back
+  to a tile. `/proof`, `/health` and `/gallery` produce **none at all**. Zero
+  application errors and zero failed requests to our own services, on every
+  route — the last application error in the run was the orb's negative radius,
+  fixed above.
