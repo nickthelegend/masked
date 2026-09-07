@@ -16,7 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LAMPORTS_PER_SOL, PublicKey } from '@solana/web3.js';
 import { useWallet } from '@solana/wallet-adapter-react';
 import type { AnchorWallet } from '@solana/wallet-adapter-react';
-import { mmss, useToast } from '../ui';
+import { mmss, playSound, useToast } from '../ui';
 import type { Fill } from '../ui';
 import { explainError, withRetry } from '../chain/errors';
 import { checkBalance, checkCluster, checkProgram, checkWallet, firstFailure } from '../chain/preflight';
@@ -258,6 +258,7 @@ export function useDuel(): Duel {
       // Buying above the mark and selling below it are both a cost, so the
       // sign is normalised: impact is always what it took out of you.
       const raw = (fill.px - markBefore) / markBefore;
+      playSound(side === 'buy' ? 'fill' : 'close');
       setLastFill({
         side,
         px: fill.px,
@@ -269,6 +270,48 @@ export function useDuel(): Duel {
     },
     []
   );
+
+  /* -------------------------------- sound -------------------------------- */
+  /**
+   * The closing seconds and the buzzer.
+   *
+   * `secondsLeft` is recomputed from the chain's own clock on each poll rather
+   * than counted down locally, so it can step by more than one — the tick is
+   * therefore driven off the value changing, not off a timer of its own, and
+   * the buzzer is fired once per round by remembering that it has.
+   */
+  const lastTick = useRef<number | null>(null);
+  const buzzed = useRef(false);
+  useEffect(() => {
+    if (phase !== 'live') {
+      lastTick.current = null;
+      buzzed.current = false;
+      return;
+    }
+    if (secondsLeft === 0) {
+      if (!buzzed.current) {
+        buzzed.current = true;
+        playSound('buzzer');
+      }
+      return;
+    }
+    if (secondsLeft <= 5 && lastTick.current !== secondsLeft) {
+      lastTick.current = secondsLeft;
+      playSound('tick');
+    }
+  }, [phase, secondsLeft]);
+
+  /** The fog coming down, once, when the positions are actually sealed. */
+  const sealAnnounced = useRef(false);
+  useEffect(() => {
+    if (!sealed) {
+      sealAnnounced.current = false;
+      return;
+    }
+    if (sealAnnounced.current) return;
+    sealAnnounced.current = true;
+    playSound('seal');
+  }, [sealed]);
 
   const entryLamports = Math.round(stake * 1e9);
   /**

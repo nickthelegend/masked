@@ -79,3 +79,10 @@ export {
   type RoundTimelineProps,
   type TimelinePlayer,
 } from './RoundTimeline';
+export {
+  play as playSound,
+  soundEnabled,
+  setSoundEnabled,
+  useSoundEnabled,
+  type SoundName,
+} from './sound';

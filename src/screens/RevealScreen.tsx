@@ -11,6 +11,7 @@ import {
   Row,
   Stack,
   color,
+  playSound,
   sol,
   space,
 } from '../ui';
@@ -82,6 +83,12 @@ export default function RevealScreen({
     const id = setTimeout(() => setUnsealed(true), 1400);
     return () => clearTimeout(id);
   }, []);
+
+  // The sting lands with the curtain, not with the mount, so the result is
+  // heard at the moment it is seen.
+  useEffect(() => {
+    if (unsealed) playSound(won ? 'win' : 'loss');
+  }, [unsealed, won]);
 
   // Both sides replayed from the tape the program wrote. No fallback: if the
   // tape has not been read back yet the timeline says so rather than drawing

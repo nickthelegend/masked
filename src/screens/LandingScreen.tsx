@@ -137,7 +137,7 @@ export default function LandingScreen() {
       <PocketShell screenHeight={HERO_SHELL_HEIGHT}>
         {/* Preview shell. Balance is 0 until a wallet connects — it used to
             display a hardcoded 50. */}
-        <AppHeader balance={0} onHome={goPlay} onMenu={goPlay} />
+        <AppHeader balance={0} onHome={goPlay} />
         <Ticker items={tickerItems} />
         <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
           <DuelLobbyScreen

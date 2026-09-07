@@ -54,6 +54,8 @@ import {
   FillReceipt,
   SettleProgress,
   RoundTimeline,
+  playSound,
+  useSoundEnabled,
   LiveDuelRow,
   type MarketKindKey,
   type PickableMarket,
@@ -148,6 +150,7 @@ export default function UIGallery() {
   const [curtain, setCurtain] = useState(false);
   const [galleryKind, setGalleryKind] = useState<MarketKindKey>('meme');
   const [odo, setOdo] = useState(4.12);
+  const [soundOn] = useSoundEnabled();
   const toast = useToast();
 
   return (
@@ -564,6 +567,25 @@ export default function UIGallery() {
               { id: 'settle', label: 'SETTLE', note: 'PnL compared, pot paid, tape written', state: 'waiting' },
             ]}
           />
+        </Stack>
+      </Section>
+
+      <Section title="SOUND" note="every voice, synthesized live">
+        <Stack gap={space.sm}>
+          <PixelText variant="bodySmall" size={9} color={color.textDim}>
+            {soundOn ? 'SOUND IS ON — TAP TO AUDITION' : 'SOUND IS OFF — THESE WILL BE SILENT'}
+          </PixelText>
+          <Row gap={space.sm} style={{ flexWrap: 'wrap' }}>
+            {(['fill', 'close', 'seal', 'tick', 'buzzer', 'win', 'loss'] as const).map((name) => (
+              <PixelButton
+                key={name}
+                tone="quiet"
+                size={8}
+                label={name.toUpperCase()}
+                onPress={() => playSound(name)}
+              />
+            ))}
+          </Row>
         </Stack>
       </Section>
 

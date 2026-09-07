@@ -126,6 +126,38 @@ const make = (grid: string[]) =>
     return <PixelIcon grid={grid} size={size} color={color} />;
   };
 
+/** A speaker with two waves — sound on. */
+const SOUND_ON = [
+  '............',
+  '............',
+  '.......#....',
+  '......##.#..',
+  '..######.#.#',
+  '..######.#.#',
+  '..######.#.#',
+  '..######.#.#',
+  '......##.#..',
+  '.......#....',
+  '............',
+  '............',
+];
+
+/** The same speaker with the waves struck out — sound off. */
+const SOUND_OFF = [
+  '............',
+  '............',
+  '.......#....',
+  '......##....',
+  '..######.#.#',
+  '..######..#.',
+  '..######.#.#',
+  '..######....',
+  '......##....',
+  '.......#....',
+  '............',
+  '............',
+];
+
 export const FeedIcon = make(FEED);
 export const RankIcon = make(RANK);
 export const DuelIcon = make(DUEL);
@@ -133,6 +165,8 @@ export const ModesIcon = make(MODES);
 export const QuestIcon = make(QUEST);
 export const ResetIcon = make(RESET);
 export const MenuIcon = make(MENU);
+export const SoundOnIcon = make(SOUND_ON);
+export const SoundOffIcon = make(SOUND_OFF);
 
 export type PixelIconComponent = (props: PixelIconProps) => React.ReactElement;
 
@@ -145,6 +179,8 @@ export const ICONS = {
   quest: QuestIcon,
   reset: ResetIcon,
   menu: MenuIcon,
+  soundOn: SoundOnIcon,
+  soundOff: SoundOffIcon,
 } as const;
 
 export type IconName = keyof typeof ICONS;
