@@ -27,7 +27,7 @@ import { formatSolPrice } from '../chain/units';
 import type { TapeState } from '../chain/tape';
 import { buyImpact, sellImpact } from '../chain/book';
 import { useHeadToHead, describeRecord } from '../chain/useHeadToHead';
-import { livePxFor, type TradableMarket } from '../chain/markets';
+import { fetchMemeMarkets, livePxFor, type TradableMarket } from '../chain/markets';
 import { ACTIVE_CLUSTER } from '../chain/config';
 import { DEMO_MINT, marketLabel } from '../chain/market';
 import { OPPONENT_PENDING, RAKE, ROUND_SECONDS } from './data';
@@ -741,9 +741,24 @@ export function useDuel(): Duel {
         target = joinable.address;
         creator = joinable.creator;
       } else {
-        if (!selectedMarket) {
-          setError('Pick a market first.');
-          return;
+        // The lobby lands on the top market, but it only does so while it is
+        // mounted — reach matchmaking before the feed answers and the selection
+        // is still null, even though the lobby was showing a market. Rather
+        // than dying on a race, ask the feed the same question the lobby would
+        // have. If the feed cannot answer, the match does not open.
+        let market = selectedMarket;
+        if (!market) {
+          try {
+            market = (await fetchMemeMarkets())[0] ?? null;
+          } catch {
+            market = null;
+          }
+          if (market) setSelectedMarket(market);
+        }
+        if (!market) {
+          toast.error('NO MARKET TO TRADE', 'The market feed is not answering, so there is nothing to open a duel on.');
+          setError('The market feed is not answering.');
+          return 'noop';
         }
         const matchId = Math.floor(Date.now() / 1000);
 
@@ -754,25 +769,27 @@ export function useDuel(): Duel {
         // If the feed cannot answer, the match does not open.
         let startPx: number;
         try {
-          startPx = await livePxFor(selectedMarket);
+          startPx = await livePxFor(market);
         } catch (e) {
-          setError(
-            `Could not read a live price for ${selectedMarket.symbol}: ` +
-              `${e instanceof Error ? e.message : String(e)}`
-          );
-          return;
+          const why = e instanceof Error ? e.message : String(e);
+          // This used to `setError` and return, after which the guard toasted
+          // MATCH READY over the top of it — the app announcing success for a
+          // match it had just failed to open.
+          toast.error(`NO PRICE FOR ${market.symbol}`, why);
+          setError(`Could not read a live price for ${market.symbol}: ${why}`);
+          return 'noop';
         }
 
         target = await client!.createMatch({
           creator: me,
           matchId,
-          mint: new PublicKey(selectedMarket.mint),
+          mint: new PublicKey(market.mint),
           durationSecs: ROUND_SECONDS,
           entryLamports,
           startPx,
-          marketType: selectedMarket.kind,
-          symbol: selectedMarket.symbol,
-          name: selectedMarket.name,
+          marketType: market.kind,
+          symbol: market.symbol,
+          name: market.name,
         });
         creator = me;
         // An unjoined match cannot start. Stay in matchmaking until someone
