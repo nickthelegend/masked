@@ -31,8 +31,12 @@ export interface LiveMatch {
   address: PublicKey;
   creator: PublicKey;
   joiner: PublicKey;
+  /** The creator's market. */
   symbol: string;
   mint: PublicKey;
+  /** The joiner's, which is a different token. */
+  joinerSymbol: string;
+  joinerMint: PublicKey;
   entry: number;
   startTs: number;
   duration: number;
@@ -79,8 +83,10 @@ export function useOpenMatches(pollMs = 4000) {
           .map((m: any) => ({
             address: m.publicKey,
             creator: m.account.creator,
-            mint: m.account.mint,
-            symbol: decodeFixed(m.account.symbol),
+            // The creator's leg. An open match has no second one yet — the
+            // joiner names their own market when they take it.
+            mint: m.account.legA.mint,
+            symbol: decodeFixed(m.account.legA.symbol),
             entry: m.account.entry.toNumber(),
             duration: m.account.duration.toNumber(),
             matchId: m.account.matchId.toNumber(),
@@ -95,8 +101,11 @@ export function useOpenMatches(pollMs = 4000) {
             address: m.publicKey,
             creator: m.account.creator,
             joiner: m.account.joiner as PublicKey,
-            symbol: decodeFixed(m.account.symbol),
-            mint: m.account.mint,
+            symbol: decodeFixed(m.account.legA.symbol),
+            mint: m.account.legA.mint,
+            // The joiner's market, which is a different token.
+            joinerSymbol: decodeFixed(m.account.legB.symbol),
+            joinerMint: m.account.legB.mint,
             entry: m.account.entry.toNumber(),
             startTs: m.account.startTs.toNumber(),
             duration: m.account.duration.toNumber(),
