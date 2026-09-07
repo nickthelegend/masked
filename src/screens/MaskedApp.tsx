@@ -106,7 +106,7 @@ export default function MaskedApp() {
               <RevealScreen
                 won={duel.won}
                 pot={duel.pot}
-                stake={duel.stake}
+                stake={duel.entrySol}
                 equity={duel.equity}
                 myPnl={duel.myPnl}
                 opponentPnl={duel.opponentPnl}

@@ -71,6 +71,14 @@ export interface Duel {
   opponentPnl: number;
   opponentFills: number;
   pot: number;
+  /**
+   * What this round actually put at risk, in SOL.
+   *
+   * Not the stake picker's value: joining somebody else's match takes their
+   * size, and after a reload the picker is back at its default. The reveal was
+   * reporting a 0.05 loss as -0.10 because it read the picker.
+   */
+  entrySol: number;
   won: boolean;
   /* chain-aware additions */
   connected: boolean;
@@ -619,6 +627,8 @@ export function useDuel(): Duel {
         await client!.joinMatch(target, me, creatorKey);
         const m = await client!.fetchMatch(target);
         if (!m || !m.joiner) return;
+        // Taking someone else's match takes their size; show it.
+        setStake(m.entry / LAMPORTS_PER_SOL);
 
         await client!.sealAndDelegateMatch(target, creatorKey, m.joiner, me);
         if (ACTIVE_CLUSTER.tee) {
@@ -707,6 +717,7 @@ export function useDuel(): Duel {
     // side or price. After settlement the committed position is public.
     opponentFills: opponentPosition?.fillCount ?? 0,
     pot,
+    entrySol: match ? match.entry / LAMPORTS_PER_SOL : stake,
     won: match?.winner ? !!(wallet.publicKey && match.winner.equals(wallet.publicKey)) : false,
     connected,
     busy,
