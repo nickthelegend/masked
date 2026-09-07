@@ -401,28 +401,28 @@ standings board, a result board, and a tier ladder. Every one of them has to
 hold the fog rule as well as look right, which is where most of these items
 actually bite.
 
-| # | What | Correct means |
-|---|---|---|
-| T1 | HUD balance | Reads the wallet's real SOL to 2dp and moves when a fill settles |
-| T2 | HUD trophies | Equals `wins` on this wallet's on-chain player account, not a local tally |
-| T3 | HUD back plate | Returns to the feed; the plate dims when it has no action |
-| T4 | Match-found card | Fires once per duel, names both wallets and both tickers, dismisses on TRADE NOW or after 4s |
-| T5 | Match-found honesty | Says the round is LIVE NOW — never counts down to a start that already happened |
-| T6 | Match-found on reload | Does **not** re-show when a round already in progress is reopened (>20s elapsed) |
-| T7 | Countdown | `ENDING IN hh:mm:ss`, turns red and pulses inside the last 15s |
-| T8 | Arena axis | Six labels, symmetric about zero, enough decimals to separate adjacent gridlines |
-| T9 | Arena curve | Plots **PnL percent**, not the price tape; one series only |
-| T10 | Arena puck | Rides the leading edge, tagged with the live PnL, clamped inside the card |
-| T11 | Potential earnings | Pot net of rake; identical all round; never derived from the opponent |
-| T12 | Live standings rank | Both rows show `#?` — a rank needs both PnLs and one is sealed |
-| T13 | Live opponent PnL | Fog bar and the word FOGGED. Never `0.00%` |
-| T14 | Live opponent side | Padlock and SEALED. Never a direction |
-| T15 | Live opponent token | **Shown** — each leg is in the match account on L1, so hiding it would imply a secret the chain does not keep. Asserted against the chain by `npm run check:legs`, not by reading the program |
-| T16 | Your side chip | `▲ LONG` / `▼ SHORT` / `FLAT`, matching the position on chain |
-| T17 | Result board | 1V1, settle date, entry fee, both rows ranked by PnL, trophy on #1 and skull on last |
-| T18 | Result sides | Read off the tape via `carriedSide` — opening fills only, so a buzzer close does not report everyone flat |
-| T19 | Result headline | `YOU TOOK THE POT` or `OOF… SO CLOSE` with the exact gap in percentage points |
-| T20 | Tier ladder | Five tiers derived from the same on-chain `wins` the HUD prints |
+| # | What | Correct means | |
+|---|---|---|---|
+| T1 | HUD balance | Reads the wallet's real SOL to 2dp and moves when a fill settles | **P** |
+| T2 | HUD trophies | Equals `wins` on this wallet's on-chain player account, not a local tally | **P** |
+| T3 | HUD back plate | Returns to the feed; the plate dims when it has no action | **P** |
+| T4 | Match-found card | Fires once per duel, names both wallets and both tickers, dismisses on TRADE NOW or after 4s | **P** |
+| T5 | Match-found honesty | Says the round is LIVE NOW — never counts down to a start that already happened | **P** |
+| T6 | Match-found on reload | Does **not** re-show when a round already in progress is reopened (>20s elapsed) | **P** |
+| T7 | Countdown | `ENDING IN hh:mm:ss`, turns red and pulses inside the last 15s | **P** |
+| T8 | Arena axis | Six labels, symmetric about zero, enough decimals to separate adjacent gridlines | **P** |
+| T9 | Arena curve | Plots **PnL percent**, not the price tape; one series only | **P** |
+| T10 | Arena puck | Rides the leading edge, tagged with the live PnL, clamped inside the card | **P** |
+| T11 | Potential earnings | Pot net of rake; identical all round; never derived from the opponent | **P** |
+| T12 | Live standings rank | Both rows show `#?` — a rank needs both PnLs and one is sealed | **P** |
+| T13 | Live opponent PnL | Fog bar and the word FOGGED. Never `0.00%` | **P** |
+| T14 | Live opponent side | Padlock and SEALED. Never a direction | **P** |
+| T15 | Live opponent token | **Shown** — each leg is in the match account on L1, so hiding it would imply a secret the chain does not keep. Asserted against the chain by `npm run check:legs`, not by reading the program | **P** |
+| T16 | Your side chip | `▲ LONG` / `▼ SHORT` / `FLAT`, matching the position on chain | **P** |
+| T17 | Result board | 1V1, settle date, entry fee, both rows ranked by PnL, trophy on #1 and skull on last | **P** |
+| T18 | Result sides | Read off the tape via `carriedSide` — opening fills only, so a buzzer close does not report everyone flat | **P** |
+| T19 | Result headline | `YOU TOOK THE POT` or `OOF… SO CLOSE` with the exact gap in percentage points | **P** |
+| T20 | Tier ladder | Five tiers derived from the same on-chain `wins` the HUD prints | **P** |
 
 **Executed** against the running app across six duels, two wallets, two
 origins. T1–T20 **P**, with the defects below found and fixed in the same run.
