@@ -79,6 +79,8 @@ const POLL_MS = 1000;
  * thank anyone for a request a second either.
  */
 const MARK_CRANK_MS = 5000;
+/** How often the header balance is re-read. */
+const BALANCE_POLL_MS = 5000;
 
 /**
  * Settling spans two chains and several transactions, and the first go can
@@ -246,23 +248,49 @@ export function useDuel(): Duel {
   const toast = useToast();
   const connected = wallet.connected && !!wallet.publicKey;
 
+  /**
+   * The adapter, readable without depending on the identity of its methods.
+   *
+   * `useWallet()` hands back fresh `signTransaction` / `signAllTransactions` /
+   * `signMessage` closures on most renders. Listing them as memo dependencies
+   * rebuilt the client — and its web3 `Connection` objects — on nearly every
+   * render, and every effect keyed on `client` churned with it. Measured: 51
+   * five-second intervals created in 25 seconds.
+   */
+  const walletRef = useRef(wallet);
+  walletRef.current = wallet;
+
+  /** Stable identity for the connected wallet: the key, not the object. */
+  const meKey = wallet.publicKey ? wallet.publicKey.toBase58() : null;
+
   const client = useMemo(() => {
-    if (!wallet.publicKey || !wallet.signTransaction || !wallet.signAllTransactions) return null;
+    const w = walletRef.current;
+    if (!w.publicKey || !w.signTransaction || !w.signAllTransactions) return null;
+    // Signing is delegated through the ref rather than captured, so the client
+    // survives the adapter handing out new closures while still using the
+    // current ones.
     const anchorWallet: AnchorWallet = {
-      publicKey: wallet.publicKey,
-      signTransaction: wallet.signTransaction,
-      signAllTransactions: wallet.signAllTransactions,
+      publicKey: w.publicKey,
+      signTransaction: ((tx: never) =>
+        walletRef.current.signTransaction!(tx)) as AnchorWallet['signTransaction'],
+      signAllTransactions: ((txs: never[]) =>
+        walletRef.current.signAllTransactions!(txs)) as AnchorWallet['signAllTransactions'],
     };
     // signMessage unlocks reads of your own sealed position on the rollup: the
     // front door refuses everybody without a token, owner included. A wallet
     // that cannot sign a message can still trade, it just cannot read back
     // what it did until the round is committed to L1.
-    const signer =
-      wallet.signMessage && wallet.publicKey
-        ? { publicKey: wallet.publicKey, signMessage: wallet.signMessage }
-        : undefined;
+    const signer = w.signMessage
+      ? {
+          publicKey: w.publicKey,
+          signMessage: (m: Uint8Array) => walletRef.current.signMessage!(m),
+        }
+      : undefined;
     return new FogduelClient(anchorWallet as never, ACTIVE_CLUSTER, signer);
-  }, [wallet.publicKey, wallet.signTransaction, wallet.signAllTransactions, wallet.signMessage]);
+    // Keyed on the wallet's address alone: a different wallet is a different
+    // client, and the same wallet re-rendering is not.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meKey]);
 
   const [selectedMarket, setSelectedMarket] = useState<TradableMarket | null>(null);
   const [phase, setPhase] = useState<DuelPhase>('lobby');
@@ -417,23 +445,25 @@ export function useDuel(): Duel {
 
   /* ------------------------------- balance ------------------------------- */
   useEffect(() => {
-    if (!client || !wallet.publicKey) return;
+    const me = walletRef.current.publicKey;
+    if (!client || !me) return;
     let alive = true;
     const read = async () => {
       try {
-        const lamports = await client.balance(wallet.publicKey!);
+        const lamports = await client.balance(me);
         if (alive) setBalance(lamports / 1e9);
       } catch {
         /* RPC hiccup; the next poll will pick it up */
       }
     };
     read();
-    const id = setInterval(read, 5000);
+    const id = setInterval(read, BALANCE_POLL_MS);
     return () => {
       alive = false;
       clearInterval(id);
     };
-  }, [client, wallet.publicKey]);
+    // Keyed on the address string, not the PublicKey object: see `meKey`.
+  }, [client, meKey]);
 
   /* ------------------------ live round: poll chain ----------------------- */
   useEffect(() => {
@@ -484,10 +514,10 @@ export function useDuel(): Duel {
       alive = false;
       clearInterval(id);
     };
-    // Keyed on the match's address, not the object: the poll replaces that
-    // object once a second, and depending on it rebuilt this interval — and
-    // every other second-scale timer — once a second too.
-  }, [client, matchKey, phase, wallet.publicKey]);
+    // Keyed entirely on strings and memos. The match object is replaced by the
+    // poll once a second and `wallet.publicKey` is an object too, so anything
+    // holding either identity rebuilds this interval on nearly every render.
+  }, [client, matchKey, phase, meKey]);
 
   /* ---------------------- live round: crank the mark --------------------- */
   //

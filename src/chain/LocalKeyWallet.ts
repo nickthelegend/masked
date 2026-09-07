@@ -61,6 +61,18 @@ export class LocalKeyWalletAdapter extends BaseMessageSignerWalletAdapter {
   readyState = WalletReadyState.Installed;
 
   private keypair: Keypair | null = null;
+  /**
+   * The address, held once.
+   *
+   * `Keypair.publicKey` is a getter that constructs a fresh `PublicKey` on
+   * every access, so returning it directly gave this adapter a different
+   * `publicKey` identity on every read. React sees that as a changed value:
+   * every `useMemo` and `useEffect` keyed on `wallet.publicKey` re-ran on
+   * essentially every render. In the live round that rebuilt the price-crank
+   * interval about twice a second — 63 five-second timers created in 25
+   * seconds — so the crank ran at roughly one hertz instead of 0.2.
+   */
+  private cachedPublicKey: PublicKey | null = null;
 
   constructor() {
     super();
@@ -74,17 +86,19 @@ export class LocalKeyWalletAdapter extends BaseMessageSignerWalletAdapter {
   }
 
   get publicKey(): PublicKey | null {
-    return this.keypair?.publicKey ?? null;
+    return this.cachedPublicKey;
   }
 
   async connect(): Promise<void> {
     if (this.keypair) return;
     this.keypair = loadOrCreate();
-    this.emit('connect', this.keypair.publicKey);
+    this.cachedPublicKey = this.keypair.publicKey;
+    this.emit('connect', this.cachedPublicKey);
   }
 
   async disconnect(): Promise<void> {
     this.keypair = null;
+    this.cachedPublicKey = null;
     this.emit('disconnect');
   }
 
