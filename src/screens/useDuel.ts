@@ -13,7 +13,7 @@
  * commit back to L1, PnL is compared, and the winner takes the pot less rake.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { PublicKey } from '@solana/web3.js';
+import { LAMPORTS_PER_SOL, PublicKey } from '@solana/web3.js';
 import { useWallet } from '@solana/wallet-adapter-react';
 import type { AnchorWallet } from '@solana/wallet-adapter-react';
 import { mmss, useToast } from '../ui';
@@ -159,7 +159,16 @@ export function useDuel(): Duel {
   const settleAttempts = useRef(0);
 
   const entryLamports = Math.round(stake * 1e9);
-  const pot = stake * 2 * (1 - RAKE);
+  /**
+   * What the winner takes.
+   *
+   * Once there is a match, this is the pot the chain is actually holding less
+   * the rake — not twice whatever the stake picker happens to be showing. They
+   * differ after a reload, when the picker is back at its default and the
+   * running match was opened at some other size: the screen claimed 0.20 over
+   * a 0.10 pot.
+   */
+  const pot = match ? (match.pot / LAMPORTS_PER_SOL) * (1 - RAKE) : stake * 2 * (1 - RAKE);
 
   /* ------------------------------- balance ------------------------------- */
   useEffect(() => {
@@ -360,6 +369,63 @@ export function useDuel(): Duel {
     },
     [client]
   );
+
+  /**
+   * Pick the round back up after a reload.
+   *
+   * A round runs for minutes and browsers get refreshed. Without this the
+   * player lands in the lobby while their entry is still escrowed in a match
+   * that is running without them — and the only thing that would eventually
+   * free it is the settlement crank.
+   *
+   * Runs once per connected wallet. The positions are already sealed and
+   * delegated by this point, so nothing is re-sent; this only restores what
+   * the screen forgot.
+   */
+  const resumedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!client || !wallet.publicKey || phase !== 'lobby') return;
+    const me = wallet.publicKey;
+    const key = me.toBase58();
+    if (resumedFor.current === key) return;
+    resumedFor.current = key;
+
+    let alive = true;
+    void (async () => {
+      try {
+        const live = await client.fetchMyLiveMatch(me);
+        if (alive && live) {
+          settledRef.current = false;
+          settleAttempts.current = 0;
+          setMatch(live);
+          // The picker is back at its default after a reload; put it back on
+          // the size this round was actually opened at.
+          setStake(live.entry / LAMPORTS_PER_SOL);
+          setSealed(await client.isPositionSealed(live.address, live.creator));
+          setSeries([]);
+          setEquity([0]);
+          setSecondsLeft(Math.max(0, live.duration - (Math.floor(Date.now() / 1000) - live.startTs)));
+          setPrice(await client.fetchPrice(live.address, true));
+          setPhase('live');
+          return;
+        }
+        // No live round, but perhaps an unclaimed one still waiting.
+        const open = await client.fetchMyOpenMatch(me);
+        if (alive && open) {
+          setMatch(open);
+          setStake(open.entry / LAMPORTS_PER_SOL);
+          setPhase('searching');
+        }
+      } catch {
+        // Nothing to resume, or the cluster is unreachable. The lobby is a
+        // fine place to land either way.
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [client, wallet.publicKey, phase]);
 
   /* ----------------------------- transitions ----------------------------- */
   const guard = useCallback(

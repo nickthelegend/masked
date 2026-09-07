@@ -736,6 +736,42 @@ export class FogduelClient {
       );
   }
 
+  /**
+   * A live match this wallet is in, if there is one.
+   *
+   * Rounds last minutes and a browser can be refreshed, so "what was I doing"
+   * has to be answerable from chain. Without this a reload drops the player in
+   * the lobby while their entry is still escrowed in a running match.
+   */
+  async fetchMyLiveMatch(owner: PublicKey): Promise<MatchState | null> {
+    const now = Math.floor(Date.now() / 1000);
+    const all = await this.l1Program.account.match.all();
+    const mine = all
+      .map((m: { publicKey: PublicKey; account: Record<string, any> }) =>
+        this.toMatchState(m.publicKey, m.account))
+      .filter(
+        (m: MatchState) =>
+          m.status === 'live' &&
+          m.joiner !== null &&
+          (m.creator.equals(owner) || m.joiner.equals(owner)) &&
+          // Still running. An expired one belongs to settlement, not to a
+          // resumed round.
+          now < m.startTs + m.duration
+      )
+      .sort((a: MatchState, b: MatchState) => b.startTs - a.startTs);
+    return mine[0] ?? null;
+  }
+
+  /** An open match this wallet created and nobody has taken yet. */
+  async fetchMyOpenMatch(owner: PublicKey): Promise<MatchState | null> {
+    const open = await this.fetchOpenMatches();
+    return (
+      open
+        .filter((m) => m.creator.equals(owner))
+        .sort((a, b) => b.createdTs - a.createdTs)[0] ?? null
+    );
+  }
+
   /** Every match that is still open to join. */
   async fetchOpenMatches(): Promise<MatchState[]> {
     const all = await this.l1Program.account.match.all();
