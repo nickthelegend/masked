@@ -10,6 +10,8 @@ pub enum FogError {
     MatchNotSettling,
     #[msg("Cannot join your own match")]
     SelfJoin,
+    #[msg("This match was opened too long ago — its price is stale. Ask the creator to reopen it.")]
+    MatchStale,
     #[msg("Match has not reached its end time")]
     MatchStillRunning,
     #[msg("Match clock has already expired")]

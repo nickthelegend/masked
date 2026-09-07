@@ -1,11 +1,29 @@
-/** Proves the error taxonomy maps real failures to human messages. */
+/**
+ * Proves the error taxonomy maps real failures to human messages.
+ *
+ * Codes are looked up by name from the deployed IDL rather than written in.
+ * Inserting one error in the middle of errors.rs shifts every code after it,
+ * and a test that hardcodes numbers then passes while the app mislabels
+ * failures — or fails for the wrong reason, which is what happened here.
+ */
 import assert from 'node:assert/strict';
 import { explainError, withRetry } from '../src/chain/errors';
+import { FOGDUEL_IDL } from '../src/chain/idl';
+
+const IDL_ERRORS = (FOGDUEL_IDL as { errors?: Array<{ code: number; name: string }> }).errors ?? [];
+/** The on-chain code for a named program error. */
+const codeFor = (name: string): number => {
+  const e = IDL_ERRORS.find((x) => x.name === name);
+  if (!e) throw new Error(`the program has no error named ${name}`);
+  return e.code;
+};
+const hexFor = (name: string) => `custom program error: 0x${codeFor(name).toString(16)}`;
 
 let n = 0;
 const cases: Array<[unknown, string]> = [
-  [{ error: { errorCode: { number: 6003 } } }, 'CANNOT JOIN YOUR OWN MATCH'],
-  [new Error('custom program error: 0x1777'), 'NOT ENOUGH QUOTE'],
+  [{ error: { errorCode: { number: codeFor('SelfJoin') } } }, 'CANNOT JOIN YOUR OWN MATCH'],
+  [new Error(hexFor('InsufficientQuote')), 'NOT ENOUGH QUOTE'],
+  [new Error(hexFor('MatchStale')), 'THAT MATCH IS STALE'],
   [new Error('User rejected the request'), 'SIGNATURE DECLINED'],
   [new Error('Attempt to debit an account but found no record of a prior credit'), 'NOT ENOUGH SOL'],
   [new Error('transaction verification error: This account may not be used to pay transaction fees'), 'FEE PAYER NOT DELEGATED'],
@@ -19,9 +37,20 @@ for (const [input, expected] of cases) {
   n += 1;
 }
 
-// 0x1777 = 6007 -> NOT ENOUGH QUOTE, confirming hex decoding.
-assert.equal(explainError(new Error('custom program error: 0x1770')).title, 'MATCH NOT OPEN');
+// Hex decoding, against the code the program really uses.
+assert.equal(explainError(new Error(hexFor('MatchNotOpen'))).title, 'MATCH NOT OPEN');
 n += 1;
+
+// Every error the program declares must map to something a human can read —
+// never a bare hex code, and never another error's message.
+const titles = new Set<string>();
+for (const e of IDL_ERRORS) {
+  const friendly = explainError({ error: { errorCode: { number: e.code } } });
+  assert.ok(friendly.title && !/0x/.test(friendly.title), `${e.name} has no readable title`);
+  assert.ok(!titles.has(friendly.title), `${e.name} reuses the message of another error`);
+  titles.add(friendly.title);
+  n += 1;
+}
 
 // Unknown errors keep a diagnosable fragment.
 assert.ok(explainError(new Error('weird failure xyz')).detail?.includes('weird failure xyz'));

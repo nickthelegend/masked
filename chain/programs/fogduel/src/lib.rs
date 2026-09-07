@@ -142,6 +142,17 @@ pub mod fogduel {
             FogError::SelfJoin
         );
 
+        // Both books are seeded from the mid snapshotted at *create* time, so a
+        // match that has sat on the book while the market moved would hand its
+        // joiner a position priced at a number that is no longer true, and the
+        // rate-limited crank would then correct it onto them mid-round. See
+        // MAX_OPEN_AGE.
+        let joined_at = Clock::get()?.unix_timestamp;
+        require!(
+            joined_at - ctx.accounts.match_account.created_ts <= MAX_OPEN_AGE,
+            FogError::MatchStale
+        );
+
         system_program::transfer(
             CpiContext::new(
                 ctx.accounts.system_program.to_account_info(),

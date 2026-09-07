@@ -1,5 +1,6 @@
 import { Badge, MatchRow, Orb, PixelButton, PixelText, Row, Stack, TokenLogo, color, sol, space } from '../ui';
 import { short } from '../chain/useTapes';
+import { MAX_OPEN_AGE_SECS } from '../chain/units';
 import { useOpenMatches } from '../chain/useOpenMatches';
 
 
@@ -71,6 +72,7 @@ export default function MatchmakingScreen({
 
         {matches.map((m) => {
           const mine = !!myAddress && m.creator.toBase58() === myAddress;
+          const stale = m.ageSecs > MAX_OPEN_AGE_SECS;
           return (
             <MatchRow
               key={m.address.toBase58()}
@@ -81,6 +83,7 @@ export default function MatchmakingScreen({
               durationSecs={m.duration}
               ageLabel={ago(m.ageSecs)}
               mine={mine}
+              stale={stale}
               busy={busy}
               onJoin={() => onJoin?.(m.address.toBase58(), m.creator.toBase58())}
               onCancel={() => onCancel?.(m.address.toBase58())}

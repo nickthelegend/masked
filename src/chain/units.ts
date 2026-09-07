@@ -86,3 +86,12 @@ export function formatCap(usd: number): string {
   if (usd >= 1e3) return `$${(usd / 1e3).toFixed(0)}K`;
   return `$${usd.toFixed(0)}`;
 }
+
+/**
+ * Mirrors `MAX_OPEN_AGE` in state.rs: how long an unjoined match may sit on
+ * the book before the program refuses a join.
+ *
+ * Both books are seeded from the price snapshotted when the match was opened,
+ * so a stale one starts its joiner at a number the market has left behind.
+ */
+export const MAX_OPEN_AGE_SECS = 300;

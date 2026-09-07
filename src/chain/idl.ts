@@ -1993,86 +1993,91 @@ export const FOGDUEL_IDL = {
     },
     {
       "code": 6004,
+      "name": "MatchStale",
+      "msg": "This match was opened too long ago — its price is stale. Ask the creator to reopen it."
+    },
+    {
+      "code": 6005,
       "name": "MatchStillRunning",
       "msg": "Match has not reached its end time"
     },
     {
-      "code": 6005,
+      "code": 6006,
       "name": "MatchExpired",
       "msg": "Match clock has already expired"
     },
     {
-      "code": 6006,
+      "code": 6007,
       "name": "NotAParticipant",
       "msg": "Not a participant in this match"
     },
     {
-      "code": 6007,
+      "code": 6008,
       "name": "InsufficientQuote",
       "msg": "Insufficient quote balance for this fill"
     },
     {
-      "code": 6008,
+      "code": 6009,
       "name": "InsufficientBase",
       "msg": "Insufficient base quantity for this fill"
     },
     {
-      "code": 6009,
+      "code": 6010,
       "name": "ZeroQuantity",
       "msg": "Fill quantity must be greater than zero"
     },
     {
-      "code": 6010,
+      "code": 6011,
       "name": "InvalidPrice",
       "msg": "Price feed is not initialized or is stale"
     },
     {
-      "code": 6011,
+      "code": 6012,
       "name": "InvalidDuration",
       "msg": "Duration out of allowed range"
     },
     {
-      "code": 6012,
+      "code": 6013,
       "name": "InvalidEntry",
       "msg": "Entry amount must be greater than zero"
     },
     {
-      "code": 6013,
+      "code": 6014,
       "name": "MathOverflow",
       "msg": "Math overflow"
     },
     {
-      "code": 6014,
+      "code": 6015,
       "name": "VaultUnderfunded",
       "msg": "Vault has insufficient lamports"
     },
     {
-      "code": 6015,
+      "code": 6016,
       "name": "PriceTooSoon",
       "msg": "Price posted too soon after the last one"
     },
     {
-      "code": 6016,
+      "code": 6017,
       "name": "PriceJump",
       "msg": "Price moved further in one push than the rate limit allows"
     },
     {
-      "code": 6017,
+      "code": 6018,
       "name": "DrawAlreadySettled",
       "msg": "This market draw has already been settled"
     },
     {
-      "code": 6018,
+      "code": 6019,
       "name": "DrawNotSettled",
       "msg": "This market draw has not been settled yet"
     },
     {
-      "code": 6019,
+      "code": 6020,
       "name": "DrawAlreadyUsed",
       "msg": "This market draw has already opened a match"
     },
     {
-      "code": 6020,
+      "code": 6021,
       "name": "NotTheDrawOpener",
       "msg": "Not the wallet that opened this draw"
     }

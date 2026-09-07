@@ -38,6 +38,31 @@ pub const MAX_PUSH_BPS: u64 = 500;
 /// Minimum seconds between two pushes, which is what gives the cap its teeth.
 pub const MIN_PUSH_INTERVAL: i64 = 1;
 
+/// How long an unjoined match may sit on the book before it can no longer be
+/// joined.
+///
+/// Both books are seeded from `start_px`, the market mid snapshotted when the
+/// match was *created*. That is right for a duel joined promptly and a trap for
+/// one joined an hour later: the mark is re-anchored to the live price by the
+/// permissionless crank, which is rate-limited to MAX_PUSH_BPS a second, so a
+/// stale open match corrects itself *during* the round — at the expense of
+/// whoever just joined it.
+///
+/// It really happens. A match seeded at 0.00090 SOL and joined 86 minutes
+/// later, by which time the token was worth 0.000088, settled its joiner at
+/// -90.22% on a single fill whose own impact was 1.53%. That is not trading,
+/// it is a stale number being corrected onto somebody.
+///
+/// The rate limit cannot simply be lifted for the first push of a round: a
+/// joiner could then post a mark near zero, buy, and ride the correction back
+/// up. Bounding the staleness instead removes the trap without opening that
+/// door — the creator cancels and reopens at a fresh price, which costs them
+/// nothing but a transaction.
+///
+/// Five minutes is comfortably longer than a match waits in practice and short
+/// enough that no realistic move can accumulate behind it.
+pub const MAX_OPEN_AGE: i64 = 300;
+
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug, InitSpace)]
 pub enum MatchStatus {
     Open,
