@@ -11,6 +11,7 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import { AnchorProvider, Program, type Idl } from '@coral-xyz/anchor';
 import { FOGDUEL_IDL } from './idl';
 import { ACTIVE_CLUSTER } from './config';
+import { withDeadline } from './rpcTimeout';
 
 export interface OpenMatch {
   address: PublicKey;
@@ -52,7 +53,7 @@ export function useOpenMatches(pollMs = 4000) {
         const provider = new AnchorProvider(connection, readOnlyWallet as never, { commitment: 'confirmed' });
         /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
         const program = new Program(FOGDUEL_IDL as Idl, provider) as any;
-        const all = await program.account.match.all();
+        const all = (await withDeadline(program.account.match.all(), 'the base layer')) as any[];
         if (!alive) return;
 
         const now = Math.floor(Date.now() / 1000);

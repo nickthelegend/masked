@@ -11,6 +11,7 @@ import { AnchorProvider, Program, type Idl } from '@coral-xyz/anchor';
 import { FOGDUEL_IDL } from './idl';
 import { ACTIVE_CLUSTER } from './config';
 import { PRICE_SCALE } from './client';
+import { withDeadline } from './rpcTimeout';
 
 export interface TapeSummary {
   match: string;
@@ -72,7 +73,7 @@ export function useTapes(pollMs = 10_000) {
         const connection = new Connection(ACTIVE_CLUSTER.l1, 'confirmed');
         const provider = new AnchorProvider(connection, readOnlyWallet as never, { commitment: 'confirmed' });
         const program = new Program(FOGDUEL_IDL as Idl, provider) as any;
-        const all = await program.account.tape.all();
+        const all = (await withDeadline(program.account.tape.all(), 'the base layer')) as any[];
         if (!alive) return;
 
         const mapped: TapeSummary[] = all

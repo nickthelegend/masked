@@ -17,9 +17,25 @@ export interface HealthCheck {
   detail: string;
 }
 
+/**
+ * A dependency that stops answering does not fail — it hangs.
+ *
+ * A paused validator leaves getSlot pending forever, and with no bound on it
+ * the whole Promise.all never resolved: the page showed DEGRADED above an
+ * empty list, which is the one thing it exists not to do. Every check gets a
+ * deadline, and a missed deadline is an answer.
+ */
+const CHECK_TIMEOUT_MS = 6000;
+
 const check = async (name: string, fn: () => Promise<string>): Promise<HealthCheck> => {
   try {
-    return { name, state: 'up', detail: await fn() };
+    const detail = await Promise.race([
+      fn(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`no answer in ${CHECK_TIMEOUT_MS / 1000}s`)), CHECK_TIMEOUT_MS)
+      ),
+    ]);
+    return { name, state: 'up', detail };
   } catch (e) {
     return { name, state: 'down', detail: e instanceof Error ? e.message.slice(0, 60) : 'unreachable' };
   }

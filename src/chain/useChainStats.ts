@@ -10,6 +10,7 @@ import { Connection } from '@solana/web3.js';
 import { AnchorProvider, Program, type Idl } from '@coral-xyz/anchor';
 import { FOGDUEL_IDL } from './idl';
 import { ACTIVE_CLUSTER } from './config';
+import { withDeadline } from './rpcTimeout';
 
 export interface ChainStats {
   openMatches: number;
@@ -48,7 +49,10 @@ export function useChainStats(pollMs = 15_000): ChainStats {
         /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
         const program = new Program(FOGDUEL_IDL as Idl, provider) as any;
 
-        const [matches, tapes] = await Promise.all([program.account.match.all(), program.account.tape.all()]);
+        const [matches, tapes] = await withDeadline(
+          Promise.all([program.account.match.all(), program.account.tape.all()]),
+          'the base layer'
+        );
         if (!alive) return;
 
         /* eslint-disable @typescript-eslint/no-explicit-any */

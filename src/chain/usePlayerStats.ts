@@ -11,6 +11,7 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import { AnchorProvider, Program, type Idl } from '@coral-xyz/anchor';
 import { FOGDUEL_IDL } from './idl';
 import { ACTIVE_CLUSTER } from './config';
+import { withDeadline } from './rpcTimeout';
 
 export interface BoardEntry {
   owner: PublicKey;
@@ -41,7 +42,7 @@ export function usePlayerStats(pollMs = 10_000) {
         const provider = new AnchorProvider(connection, readOnlyWallet as never, { commitment: 'confirmed' });
         /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
         const program = new Program(FOGDUEL_IDL as Idl, provider) as any;
-        const all = await program.account.playerStats.all();
+        const all = (await withDeadline(program.account.playerStats.all(), 'the base layer')) as any[];
         if (!alive) return;
 
         /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
