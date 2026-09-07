@@ -531,3 +531,73 @@ not a re-run. This is the re-run of everything those six components touch.
    header is the real `AppHeader`, so it named the connected wallet and then
    printed a hardcoded zero balance and zero trophies beside it. It reads the
    chain now, via a `useBalance` that does not drag a whole duel in with it.
+
+---
+
+## U — console and network, every item
+
+The plan has always said to check the console and network on every item. That
+had been done by glancing at a tab and reasoning about what was old, which is
+not the same thing: two error classes were seen earlier in the build, judged
+historical, and left. They were not historical.
+
+Method: arm `console.error`/`console.warn`/`unhandledrejection` and a capturing
+`error` listener on the document immediately after each load, drive the item,
+then read the counters. Resource failures are counted separately from logged
+errors because a blocked `<img>` produces the second without the first.
+
+| # | Surface driven | Console | Resource | Result |
+|---|---|---|---|---|
+| U1 | `/` landing | 0 | 0 | **P** |
+| U2 | `/play` lobby, MEMES | 0 | 0 | **P** |
+| U3 | `/play` lobby, MAJORS (35 logos) | 0 | 0 | **P** |
+| U4 | `/play` search "bonk" | 0 | 0 | **P** |
+| U5 | `/tape/<settled>` | 0 | 0 | **P** |
+| U6 | `/tape/<invalid>` | 0 | 0 | **P** |
+| U7 | `/spectate/<live>` | 0 | 0 | **P** |
+| U8 | `/proof` | 0 | 0 | **P** |
+| U9 | `/health` | 0 | 0 | **P** |
+| U10 | `/this-route-does-not-exist` | 0 | 0 | **P** |
+| U11 | market feed down → honest empty state | 0 | 0 | **P** |
+| U12 | market feed restored → list repopulates | 0 | 0 | **P** |
+| U13 | full duel, creator: open → MAX short → settle → reveal | 0 | 0 | **P** |
+| U14 | full duel, joiner: join → MAX long → partial close → reveal | 0 | 0 | **P** |
+
+### Found while executing U
+
+**Every Jupiter major rendered a letter tile, and logged an error saying so.**
+`logoUrl()` existed to route logos through the market proxy — with a doc
+comment describing this precise failure — and nothing called it, while the
+`/img` route it names had never been built, so the proxy answered it 403.
+Logos therefore loaded straight from whatever CDN a coin's creator had used,
+and the hosts that refuse cross-origin embedding failed with
+`ERR_BLOCKED_BY_RESPONSE.NotSameOrigin`: 35 tiles and 21 errors on one tab.
+
+Three things the fix had to get right, each found by it going wrong first:
+
+- *Not* spoofing a browser user-agent on the relay. The JSON routes must,
+  because pump.fun stalls anything that does not look like a browser. ipfs.io
+  wants the opposite — it answers a plain client 200 and the spoofed Chrome
+  string 403, because a Chrome UA arriving without Chrome's other headers is
+  exactly what it looks like.
+- Guarding on the resolved address rather than a hostname allowlist. A first
+  cut allowlisted eleven known CDNs and immediately turned working logos into
+  403s: `image_uri` is whatever a creator pasted, and one market list spans
+  ipfs.io, irys, filebase, twimg, googleapis and backed.fi. Anything resolving
+  into loopback, link-local, private or reserved space is refused instead —
+  per redirect hop, https only, images only, 8 MB cap. Verified refused:
+  `localhost`, `127.0.0.1`, `169.254.169.254`.
+- Checking a URL with `fetch` before pointing an `<img>` at it. Three majors'
+  metadata genuinely resolves to an HTML page — arweave.net serves 3 MB of
+  document for them — and an `<img>` that lands on one fires `error` and
+  prints to the console however well the tile fallback works. A 415 from
+  `fetch` is a completed request and says the same thing silently.
+
+Result on the majors tab: **35 logos, 35 rendering, 0 errors**, from 35 tiles
+and 21 errors.
+
+**The earlier 429s did not recur.** Measured on a clean load, the lobby calls
+the market proxy twice in 20.002s — one `REFRESH_MS` apart, which is the
+designed rate. The apparent storm seen earlier (28 identical calls) was the
+extension's per-tab buffer accumulating across six navigations, not a live
+rate. Recorded because the wrong conclusion was nearly drawn from it twice.
