@@ -105,181 +105,242 @@ is a FAIL.
 
 | # | Item | Correct means | Status |
 |---|---|---|---|
-| D1 | Open book lists real matches | Every row an on-chain `Match` with status Open | |
-| D2 | Row detail | Symbol, creator, duration and entry match the account | |
-| D3 | Age counts up | "Ns ago" derived from `created_ts`, advancing in real time | |
-| D4 | OPEN A MATCH | Signs `create_match`, escrows the entry, balance drops by entry + fee | |
-| D5 | Your own match | Shown as YOUR MATCH with CANCEL, not JOIN | |
-| D6 | CANCEL | `cancel_if_unjoined` refunds the entry; balance returns | |
-| D7 | Session B sees A's match | B's open book shows A's match within one poll | |
-| D8 | JOIN | B signs `join_match`, escrows, both clients go live | |
-| D9 | Cannot join your own | Your own row offers no JOIN | |
-| D10 | Empty book | With no open matches the book says so rather than rendering an empty frame | |
+| D1 | Open book lists real matches | Every row an on-chain `Match` with status Open | PASS |
+| D2 | Row detail | Symbol, creator, duration and entry match the account | PASS |
+| D3 | Age counts up | "Ns ago" derived from `created_ts`, advancing in real time | PASS |
+| D4 | OPEN A MATCH | Signs `create_match`, escrows the entry, balance drops by entry + fee | **FAIL → fixed** |
+| D5 | Your own match | Shown as YOUR MATCH with CANCEL, not JOIN | PASS |
+| D6 | CANCEL | `cancel_if_unjoined` refunds the entry; balance returns | PASS |
+| D7 | Session B sees A's match | B's open book shows A's match within one poll | PASS |
+| D8 | JOIN | B signs `join_match`, escrows, both clients go live | **FAIL → fixed** |
+| D9 | Cannot join your own | Your own row offers no JOIN | PASS |
+| D10 | Empty book | With no open matches the book says so rather than rendering an empty frame | PASS |
 
 ## E — Live round and trading
 
 | # | Item | Correct means | Status |
 |---|---|---|---|
-| E1 | Both sessions go live | A and B both reach the live screen for the same match | |
-| E2 | Sealed badge | Both show SEALED · ACL ON CHAIN, read back from chain rather than assumed | |
-| E3 | Clock | Counts down from the duration, derived from `start_ts`, agreeing within 1s across sessions | |
-| E4 | Pot | 2× entry less rake | |
-| E5 | Mark ticks | Updates from the live pump.fun feed during the round | |
-| E6 | Mark is shared | A and B see the same mark to the lamport | |
-| E7 | Opponent is fogged | Each session shows the opponent's PnL hidden; only a fill *count* leaks | |
-| E8 | Opponent position unreadable | A direct read of B's position from A's session is refused by the gate | |
-| E9 | SIZE control | 1/4, 1/2, MAX selectable, selection visible | |
-| E10 | Impact quote | The note quotes the impact for the chosen size and matches what the fill really charges | |
-| E11 | LONG fills | Signs `apply_fill` on the rollup; position updates; receipt shows mark vs execution price | |
-| E12 | Bigger size costs more | A MAX fill's impact is materially larger than a 1/4 fill's on the same book | |
-| E13 | Partial CLOSE | CLOSE at 1/2 sells half the base, not all of it | |
-| E14 | MAX CLOSE | CLOSE at MAX sells the exact remaining base, leaving no dust | |
-| E15 | PnL updates | Own PnL moves with the mark and matches the chain's `pnl_bps` | |
-| E16 | Own tape | Own fills listed with side and price, labelled hidden until reveal | |
-| E17 | Insufficient quote | Longing with nothing left is refused legibly, not with a raw Anchor error | |
-| E18 | Close while flat | Does nothing, and says nothing alarming | |
-| E19 | Fill after the buzzer | Refused as expired | |
-| E20 | Reload mid-round | Resumes the round rather than dropping to the lobby | |
+| E1 | Both sessions go live | A and B both reach the live screen for the same match | PASS |
+| E2 | Sealed badge | Both show SEALED · ACL ON CHAIN, read back from chain rather than assumed | PASS |
+| E3 | Clock | Counts down from the duration, derived from `start_ts`, agreeing within 1s across sessions | PASS |
+| E4 | Pot | 2× entry less rake | PASS |
+| E5 | Mark ticks | Updates from the live pump.fun feed during the round | PASS |
+| E6 | Mark is shared | A and B see the same mark to the lamport | PASS |
+| E7 | Opponent is fogged | Each session shows the opponent's PnL hidden; only a fill *count* leaks | PASS |
+| E8 | Opponent position unreadable | A direct read of B's position from A's session is refused by the gate | PASS |
+| E9 | SIZE control | 1/4, 1/2, MAX selectable, selection visible | PASS |
+| E10 | Impact quote | The note quotes the impact for the chosen size and matches what the fill really charges | PASS |
+| E11 | LONG fills | Signs `apply_fill` on the rollup; position updates; receipt shows mark vs execution price | PASS |
+| E12 | Bigger size costs more | A MAX fill's impact is materially larger than a 1/4 fill's on the same book | PASS |
+| E13 | Partial CLOSE | CLOSE at 1/2 sells half the base, not all of it | PASS |
+| E14 | MAX CLOSE | CLOSE at MAX sells the exact remaining base, leaving no dust | PASS |
+| E15 | PnL updates | Own PnL moves with the mark and matches the chain's `pnl_bps` | PASS |
+| E16 | Own tape | Own fills listed with side and price, labelled hidden until reveal | PASS |
+| E17 | Insufficient quote | Longing with nothing left is refused legibly, not with a raw Anchor error | **FAIL → fixed** |
+| E18 | Close while flat | Does nothing, and says nothing alarming | **FAIL → fixed** |
+| E19 | Fill after the buzzer | Refused as expired | PASS |
+| E20 | Reload mid-round | Resumes the round rather than dropping to the lobby | PASS |
 
 ## F — Settlement and reveal
 
 | # | Item | Correct means | Status |
 |---|---|---|---|
-| F1 | Buzzer triggers settlement | At 0:00 both sessions begin settling without a click | |
-| F2 | Settle stages | COMMIT / UNDELEGATE / SETTLE shown with real results, in order | |
-| F3 | Commit count | The real number of rollup transactions (2 when both traded) | |
-| F4 | Undelegation | Both positions come home; ownership returns to the program | |
-| F5 | Pot paid | Winner's balance rises by pot less rake; loser's falls by entry | |
-| F6 | Rake exact | 2% of the pot, displayed without rounding to 0.00 | |
-| F7 | Both sessions reveal | **Both** A and B reach their own reveal; the winner sees YOU TAKE THE POT | |
-| F8 | Reveal numbers mirror | A's "you" equals B's "opponent" and vice versa, to the basis point | |
-| F9 | Reveal matches chain | Both match the tape's `pnl_a_bps` / `pnl_b_bps` exactly | |
-| F10 | Round timeline | Both players' real fills on one time axis, replayed from the tape, nothing synthesised | |
-| F11 | Timeline honesty | A player with no fills draws flat; no line where the tape has no record | |
-| F12 | Head-to-head | Includes the duel that just settled and matches a full scan of tapes | |
-| F13 | SETTLE NOW | Settles early, mid-round, producing a correct reveal | |
-| F14 | REMATCH | Returns to matchmaking, ready to open another | |
-| F15 | COPY TAPE LINK | Copies `/tape/<match>`; a refused clipboard says so and shows the link | |
-| F16 | Draw | Equal PnL pays the creator, as documented, and both screens agree | |
+| F1 | Buzzer triggers settlement | At 0:00 both sessions begin settling without a click | PASS |
+| F2 | Settle stages | COMMIT / UNDELEGATE / SETTLE shown with real results, in order | PASS |
+| F3 | Commit count | The real number of rollup transactions (2 when both traded) | PASS |
+| F4 | Undelegation | Both positions come home; ownership returns to the program | PASS |
+| F5 | Pot paid | Winner's balance rises by pot less rake; loser's falls by entry | PASS |
+| F6 | Rake exact | 2% of the pot, displayed without rounding to 0.00 | PASS |
+| F7 | Both sessions reveal | **Both** A and B reach their own reveal; the winner sees YOU TAKE THE POT | PASS |
+| F8 | Reveal numbers mirror | A's "you" equals B's "opponent" and vice versa, to the basis point | PASS |
+| F9 | Reveal matches chain | Both match the tape's `pnl_a_bps` / `pnl_b_bps` exactly | PASS |
+| F10 | Round timeline | Both players' real fills on one time axis, replayed from the tape, nothing synthesised | PASS |
+| F11 | Timeline honesty | A player with no fills draws flat; no line where the tape has no record | PASS |
+| F12 | Head-to-head | Includes the duel that just settled and matches a full scan of tapes | PASS |
+| F13 | SETTLE NOW | Settles early, mid-round, producing a correct reveal | **FAIL → fixed** |
+| F14 | REMATCH | Returns to matchmaking, ready to open another | PASS |
+| F15 | COPY TAPE LINK | Copies `/tape/<match>`; a refused clipboard says so and shows the link | PASS |
+| F16 | Draw | Equal PnL pays the creator, as documented, and both screens agree | PASS |
 
 ## G — Two-session concurrency
 
 | # | Item | Correct means | Status |
 |---|---|---|---|
-| G1 | Concurrent seal | Both clients seal the same match; neither errors; sealed exactly once | |
-| G2 | Concurrent settle | Both clients settle; the loser of the race still reaches its correct reveal | |
-| G3 | No cross-talk | A's actions reach B only through chain state | |
-| G4 | Independent wallets | Different keys and different balances throughout | |
-| G5 | Both crank the mark | Either session's mark is accepted; the rate limit declines the other without an on-screen error | |
-| G6 | Spectator during the duel | A third view shows the round and neither position | |
-| G7 | Abandoned round | If one session closes mid-round, the other still settles the match | |
+| G1 | Concurrent seal | Both clients seal the same match; neither errors; sealed exactly once | **FAIL → fixed** |
+| G2 | Concurrent settle | Both clients settle; the loser of the race still reaches its correct reveal | **FAIL → fixed** |
+| G3 | No cross-talk | A's actions reach B only through chain state | PASS |
+| G4 | Independent wallets | Different keys and different balances throughout | PASS |
+| G5 | Both crank the mark | Either session's mark is accepted; the rate limit declines the other without an on-screen error | PASS |
+| G6 | Spectator during the duel | A third view shows the round and neither position | PASS |
+| G7 | Abandoned round | If one session closes mid-round, the other still settles the match | PASS |
 
 ## H — Spectate `/spectate/<match>`
 
 | # | Item | Correct means | Status |
 |---|---|---|---|
-| H1 | No wallet needed | Loads and shows a real match with no wallet connected | |
-| H2 | Live round | Clock, pot, mark and market all real and updating | |
-| H3 | Both fogged | Neither position readable; both sides show FOGGED | |
-| H4 | After settlement | Result, pot paid and rake, exact | |
-| H5 | Bad address | A malformed address says so; a real address with no match says so differently | |
-| H6 | `/spectate` bare | Explains what to do rather than erroring | |
+| H1 | No wallet needed | Loads and shows a real match with no wallet connected | PASS |
+| H2 | Live round | Clock, pot, mark and market all real and updating | PASS |
+| H3 | Both fogged | Neither position readable; both sides show FOGGED | PASS |
+| H4 | After settlement | Result, pot paid and rake, exact | PASS |
+| H5 | Bad address | A malformed address says so; a real address with no match says so differently | PASS |
+| H6 | `/spectate` bare | Explains what to do rather than erroring | PASS |
 
 ## I — Tape `/tape/<match>`
 
 | # | Item | Correct means | Status |
 |---|---|---|---|
-| I1 | Settled duel renders | Market, both sides, pot, rake and settle time, all from chain | |
-| I2 | Every fill listed | Both players' fills with side, size, execution price and offset into the round | |
-| I3 | Timeline | Same replay as the reveal, drawn from the tape | |
-| I4 | Conservation | Paid + rake equals the pot, both shown exactly | |
-| I5 | Head-to-head | Stated in both names, matching a full scan | |
-| I6 | Unsettled match | Says the duel has not settled and points at `/spectate` | |
-| I7 | Bad address | Rejected with a clear message | |
-| I8 | `/tape` bare | Explains what to do | |
-| I9 | Permanence | Reloading later shows the identical page | |
+| I1 | Settled duel renders | Market, both sides, pot, rake and settle time, all from chain | PASS |
+| I2 | Every fill listed | Both players' fills with side, size, execution price and offset into the round | PASS |
+| I3 | Timeline | Same replay as the reveal, drawn from the tape | PASS |
+| I4 | Conservation | Paid + rake equals the pot, both shown exactly | PASS |
+| I5 | Head-to-head | Stated in both names, matching a full scan | PASS |
+| I6 | Unsettled match | Says the duel has not settled and points at `/spectate` | PASS |
+| I7 | Bad address | Rejected with a clear message | PASS |
+| I8 | `/tape` bare | Explains what to do | PASS |
+| I9 | Permanence | Reloading later shows the identical page | PASS |
 
 ## J — Feed, leaderboard, modes, quests
 
 | # | Item | Correct means | Status |
 |---|---|---|---|
-| J1 | Feed rows | Every row a real settled tape, newest first | |
-| J2 | Feed sparklines | Replayed from real fills | |
-| J3 | Feed filters | REVEALS / BIG POTS / MINE each filter correctly against real data | |
-| J4 | Leaderboard | Built from real `PlayerStats` accounts | |
-| J5 | Streak | `best_streak` shown from chain | |
-| J6 | Quests | Every quest derived from real `PlayerStats`; no invented progress | |
-| J7 | Modes grid | Modes that are not built are labelled as such rather than implying they work | |
-| J8 | Ticker | Items derived from real chain state | |
+| J1 | Feed rows | Every row a real settled tape, newest first | PASS |
+| J2 | Feed sparklines | Replayed from real fills | PASS |
+| J3 | Feed filters | REVEALS / BIG POTS / MINE each filter correctly against real data | PASS |
+| J4 | Leaderboard | Built from real `PlayerStats` accounts | PASS |
+| J5 | Streak | `best_streak` shown from chain | PASS |
+| J6 | Quests | Every quest derived from real `PlayerStats`; no invented progress | PASS |
+| J7 | Modes grid | Modes that are not built are labelled as such rather than implying they work | PASS |
+| J8 | Ticker | Items derived from real chain state | PASS |
 
 ## K — Evidence pages
 
 | # | Item | Correct means | Status |
 |---|---|---|---|
-| K1 | `/proof` renders | Program, delegation and permission accounts read live | |
-| K2 | Gate probe | A sealed position is refused; a permission-less control on the same rollup is served | |
-| K3 | Lifecycle | A real duel's transitions in slot order with real signatures | |
-| K4 | Explorer links | Each opens the real explorer pointed at this cluster | |
-| K5 | Live duels | Live matches listed with links into spectating | |
-| K6 | `/health` | Every check reflects the real state of its layer | |
-| K7 | Privacy claim | Stated accurately — enforced by an ACL-reading gate, attestation absent without a TEE | |
+| K1 | `/proof` renders | Program, delegation and permission accounts read live | PASS |
+| K2 | Gate probe | A sealed position is refused; a permission-less control on the same rollup is served | PASS |
+| K3 | Lifecycle | A real duel's transitions in slot order with real signatures | PASS |
+| K4 | Explorer links | Each opens the real explorer pointed at this cluster | PASS |
+| K5 | Live duels | Live matches listed with links into spectating | PASS |
+| K6 | `/health` | Every check reflects the real state of its layer | PASS |
+| K7 | Privacy claim | Stated accurately — enforced by an ACL-reading gate, attestation absent without a TEE | PASS |
 
 ## L — Program invariants (on chain)
 
 | # | Item | Correct means | Status |
 |---|---|---|---|
-| L1 | Pot conservation | `pot = 2 × entry`; `paid + rake = pot` on every tape | |
-| L2 | Rake exactness | 2% of pot, integer maths, no drift | |
-| L3 | Client PnL == chain PnL | The client's `pnlBps` equals the program's for the same inputs | |
-| L4 | Tape replay | Replaying a tape's fills lands on the chain's own `pnl_*_bps` | |
-| L5 | Impact closed form | The previewed impact equals what the chain charged, on every real fill | |
-| L6 | Mark recovery | The mark backed out of a fill sits on the correct side of its execution | |
-| L7 | Mark rate limit | A push above 5% or inside 1s is refused | |
-| L8 | Settle needs the buzzer | `request_settle` before the clock expires is refused | |
-| L9 | Fill needs delegation | A fill against an undelegated position is refused | |
-| L10 | Cancel only when unjoined | `cancel_if_unjoined` on a live match is refused | |
-| L11 | VRF draw | `request_market_draw` builds and sends a real VRF request | |
-| L12 | VRF callback | `settle_market_draw` accepted only from the VRF program identity | |
+| L1 | Pot conservation | `pot = 2 × entry`; `paid + rake = pot` on every tape | PASS |
+| L2 | Rake exactness | 2% of pot, integer maths, no drift | PASS |
+| L3 | Client PnL == chain PnL | The client's `pnlBps` equals the program's for the same inputs | PASS |
+| L4 | Tape replay | Replaying a tape's fills lands on the chain's own `pnl_*_bps` | PASS |
+| L5 | Impact closed form | The previewed impact equals what the chain charged, on every real fill | PASS |
+| L6 | Mark recovery | The mark backed out of a fill sits on the correct side of its execution | PASS |
+| L7 | Mark rate limit | A push above 5% or inside 1s is refused | PASS |
+| L8 | Settle needs the buzzer | `request_settle` before the clock expires is refused | PASS |
+| L9 | Fill needs delegation | A fill against an undelegated position is refused | PASS |
+| L10 | Cancel only when unjoined | `cancel_if_unjoined` on a live match is refused | PASS |
+| L11 | VRF draw | `request_market_draw` builds and sends a real VRF request | PASS |
+| L12 | VRF callback | `settle_market_draw` accepted only from the VRF program identity | **UNTESTED** |
 
 ## M — External integrations
 
 | # | Item | Correct means | Status |
 |---|---|---|---|
-| M1 | pump.fun prices | Real HTTP, priced from market cap ÷ supply, not frozen curve reserves | |
-| M2 | Jupiter prices | Real HTTP for majors | |
-| M3 | Price round-trip | Every start price survives conversion to the program's `px` and back within 0.1% | |
-| M4 | Proxy failure | With the proxy down the app says the feed is unavailable rather than showing stale or invented prices | |
-| M5 | Logos | Served from the token's real image host | |
+| M1 | pump.fun prices | Real HTTP, priced from market cap ÷ supply, not frozen curve reserves | PASS |
+| M2 | Jupiter prices | Real HTTP for majors | PASS |
+| M3 | Price round-trip | Every start price survives conversion to the program's `px` and back within 0.1% | PASS |
+| M4 | Proxy failure | With the proxy down the app says the feed is unavailable rather than showing stale or invented prices | PASS |
+| M5 | Logos | Served from the token's real image host | PASS |
 
 ## N — Errors and edge cases
 
 | # | Item | Correct means | Status |
 |---|---|---|---|
-| N1 | Insufficient balance | Refused before sending, with the amount needed | |
-| N2 | Wallet disconnected mid-flow | Signature-requiring actions refused legibly | |
-| N3 | Wrong cluster | Detected and named | |
-| N4 | Program missing | Detected and named | |
-| N5 | RPC timeout | Bounded by a deadline, surfaced as a timeout not a hang | |
-| N6 | Anchor errors translated | Every program error maps to a human message | |
-| N7 | Unknown route | `/nope` renders the not-found page | |
-| N8 | Expired match recovery | `npm run crank` settles an abandoned match and pays out | |
-| N9 | Fog guard | Any attempt to read the opponent pre-reveal throws in the client | |
-| N10 | Console clean | No uncaught errors or React warnings across every route | |
+| N1 | Insufficient balance | Refused before sending, with the amount needed | PASS |
+| N2 | Wallet disconnected mid-flow | Signature-requiring actions refused legibly | PASS |
+| N3 | Wrong cluster | Detected and named | PASS |
+| N4 | Program missing | Detected and named | PASS |
+| N5 | RPC timeout | Bounded by a deadline, surfaced as a timeout not a hang | PASS |
+| N6 | Anchor errors translated | Every program error maps to a human message | **FAIL → fixed** |
+| N7 | Unknown route | `/nope` renders the not-found page | **FAIL → fixed** |
+| N8 | Expired match recovery | `npm run crank` settles an abandoned match and pays out | PASS |
+| N9 | Fog guard | Any attempt to read the opponent pre-reveal throws in the client | PASS |
+| N10 | Console clean | No uncaught errors or React warnings across every route | **FAIL → fixed** |
 
 ## O — Sound, motion, accessibility
 
 | # | Item | Correct means | Status |
 |---|---|---|---|
-| O1 | Fill sound | A confirmed fill plays the two-step voice; nothing plays for a failed one | |
-| O2 | Seal sound | Plays once when the positions are really sealed | |
-| O3 | Countdown and buzzer | Exactly five ticks then the buzzer, once per round | |
-| O4 | Reveal sting | Win and loss stings differ and land with the curtain | |
-| O5 | Sound toggle | Off produces zero oscillators; the choice survives a reload | |
-| O6 | Reduced motion | Honoured by the animated components | |
-| O7 | Gallery | Every component renders in `/gallery` without error | |
+| O1 | Fill sound | A confirmed fill plays the two-step voice; nothing plays for a failed one | PASS |
+| O2 | Seal sound | Plays once when the positions are really sealed | PASS |
+| O3 | Countdown and buzzer | Exactly five ticks then the buzzer, once per round | PASS |
+| O4 | Reveal sting | Win and loss stings differ and land with the curtain | PASS |
+| O5 | Sound toggle | Off produces zero oscillators; the choice survives a reload | PASS |
+| O6 | Reduced motion | Honoured by the animated components | **UNTESTED** |
+| O7 | Gallery | Every component renders in `/gallery` without error | PASS |
 
 ---
 
 ## Results
 
-Filled in during Phase 2. Defects found and fixed are listed at the bottom.
+**139 items: 137 PASS · 0 FAIL outstanding · 2 UNTESTED.**
+
+Eleven items failed on first execution and are marked "FAIL → fixed" above;
+every one was fixed at the root and re-verified against the running product,
+so all eleven now pass. A twelfth defect (the rake rounding to `0.00◎`) was
+found and fixed while working through section I and never had a chance to fail
+its own item. The two untested items are stated below with the dependency that
+blocks them — neither is marked PASS.
+
+### Defects found and fixed
+
+| # | Item | What was wrong | Fix |
+|---|---|---|---|
+| 1 | G1 | Both clients seal a match; `delegate_position_to_er` moves the account to the delegation program, so the loser of the race got `AccountOwnedByWrongProgram` and sat in the lobby with TRANSACTION FAILED for a round that was correctly sealed and running without them | Sealing reads the chain first and skips work already done; a step that still throws is accepted only if the chain confirms the state it wanted. `check:race` |
+| 2 | G2 | Same race in settlement, worse outcome: the player who **won** was shown MATCH NOT LIVE three times, kept on the settling screen, and never saw their reveal — while the pot landed in their wallet | A refused settle re-reads the match; one that comes back Settled goes to the reveal, because it is settled whoever sent the transaction |
+| 3 | D8 | A match left open long enough became a trap. Both books are seeded from the price snapshotted at *creation*; a duel joined 86 minutes later settled its joiner at **−90.22%** on a fill whose own impact was 1.53%, as the rate-limited crank corrected a ten-fold stale mark onto them mid-round | `join_match` refuses a match older than `MAX_OPEN_AGE` (300s) with `MatchStale`; the book marks those rows STALE instead of offering a JOIN. `check:guards` |
+| 4 | D4 | OPEN A MATCH answered "MATCH READY" and opened nothing — `startMatch`'s early returns only set an inline error, and the guard toasted success over them. Triggered by tapping through before the market feed answered | Early returns report `'noop'` so no success is claimed, and raise a real toast; the button now asks the feed the same question the lobby would rather than dying on the race |
+| 5 | F13 | SETTLE NOW mid-round committed both positions **off the rollup** and only then called `request_settle`, which the program refuses before the buzzer — leaving a match that could neither be traded nor settled | The clock is checked before anything is committed; the button reads SETTLES AT THE BUZZER and is disabled until the clock reaches zero |
+| 6 | E18 | Pressing CLOSE while flat answered "POSITION CLOSED" — a confirmation of something that never happened | `guard` accepts `'noop'` and skips the success toast; it says NOTHING TO CLOSE |
+| 7 | E17 | Pressing LONG with the whole entry already in the position did nothing at all, silently firing doomed 1-lamport transactions at the rollup | Refused before signing, with NOTHING LEFT TO LONG; the impact note says the same rather than quoting "0.00%" |
+| 8 | B2 | The landing page labelled every reveal row from a hardcoded `DEMO_MINT`, so a duel fought on WOTF displayed as `$FOG` | Reads the tape's real symbol, as the in-app feed already did |
+| 9 | N6 | Inserting `MatchStale` shifted every later error code by one; the client's hand-numbered table would have mislabelled seven failures silently | The table is keyed by error *name* with codes read from the deployed IDL; `check:errors` does the same and asserts every declared error maps to a unique readable message (14 → 37 assertions) |
+| 10 | N10 | `<Link asChild>` passes a ref to `PixelButton`, which was a plain function component — React warned on every screen with a Link, and the ref was silently dropped | `PixelButton` forwards its ref to the underlying Pressable |
+| 11 | N7 | The 404 page claimed "Every route this app has is below" while omitting `/spectate` and `/tape` | Both listed |
+| 12 | I4 / H4 | `sol()` prints two places, so a 2% rake on a 0.2 pot displayed as `0.00◎` under a heading reading SETTLED ON SOLANA — stating no rake was taken | `solExact` keeps up to four places; the panel reads 0.196 paid and 0.004 raked, which add to the pot in public |
+
+### Untested, and why
+
+| # | Item | Why it cannot be tested here |
+|---|---|---|
+| L12 | VRF callback accepted only from the VRF program | The request path is real and on chain (L11 PASS), but no oracle answers: the queues this validator preloads were dumped from devnet and list oracle identities we do not hold keys for. Registering our own needs the VRF program's `modify_oracles` / `initialize_oracle_queue`, whose instruction encoding is not in the published SDK. `settle_market_draw` is guarded by `#[vrf_callback]`, and nothing simulates a draw. |
+| O6 | Reduced motion honoured | The mechanism is real and wired — `AccessibilityInfo.isReduceMotionEnabled` maps to `prefers-reduced-motion`, which this browser reports as supported, and every animated component consumes `useReducedMotion`. But the browser tooling here cannot emulate the OS setting, so the behaviour was not observed and is not claimed. |
+
+### Standing checks
+
+Everything above is re-runnable. `npm run check` is the whole suite:
+
+```
+tokens    61 values identical across 7 groups
+series    30 toEnd cases land exactly
+fog       14 assertions: opponent state unreadable in every pre-reveal phase
+errors    37 assertions across the failure taxonomy
+preflight 15 assertions against the live cluster
+tape      1602 assertions over 92 real tapes, every replay landing on the chain's own bps
+h2h       145 assertions, offsets derived from a real account, 35 pairings agreeing filtered vs scanned
+race      22 assertions, two real clients sealing and settling one match concurrently
+guards    6 refusals, every one enforced by the deployed program
+```
+
+### Mocks, stubs and console errors
+
+- **Zero mocks and zero stubs** in the tested surface. Three pieces of invented
+  data were found and removed during this run (the landing page's market label,
+  and before it the reveal's synthesized opponent curve and the feed's
+  interpolated sparkline). The gallery's fixtures are a real settled tape
+  copied verbatim off chain, and are run through the same `replayEquity` the
+  product uses.
+- **Zero console errors** on a clean load of every route, with the one stated
+  exception: token logos that a third-party CDN blocks or 404s. Those URLs come
+  from pump.fun's own feed and point at hosts we do not control; the required
+  behaviour is the letter-tile fallback, and 0 broken images render.
+- **Zero failed network requests** other than those same third-party images.
