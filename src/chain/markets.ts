@@ -18,6 +18,7 @@ import {
   type JupToken,
 } from './jupiter';
 import { pxFromSolPerToken } from './units';
+import { rememberLogos } from './logos';
 import type { MarketKind } from './client';
 
 export interface TradableMarket {
@@ -77,9 +78,13 @@ const toTradable = (
 /** Live meme markets, most valuable first. */
 export async function fetchMemeMarkets(limit = 12, signal?: AbortSignal): Promise<TradableMarket[]> {
   const raw: PumpMarket[] = await fetchTopMarkets(limit, signal);
-  return raw
+  const markets = raw
     .map((m) => toTradable('meme', m, 'pump.fun'))
     .filter((m): m is TradableMarket => m !== null);
+  // Every list deposits what it already knows, so a board that only has a
+  // mint never has to go and ask for art this call already had in hand.
+  rememberLogos(markets);
+  return markets;
 }
 
 /**
@@ -168,11 +173,13 @@ const verifiedTokens = async (signal?: AbortSignal): Promise<JupToken[]> => {
 
 export async function fetchMajorMarkets(signal?: AbortSignal): Promise<TradableMarket[]> {
   const [solUsd, tokens] = await Promise.all([solPriceUsd(signal), verifiedTokens(signal)]);
-  return tokens
+  const markets = tokens
     .map((t) => fromJupToken(t, solUsd))
     .filter((m): m is TradableMarket => m !== null)
     .sort((a, b) => b.usdMarketCap - a.usdMarketCap)
     .slice(0, 40);
+  rememberLogos(markets);
+  return markets;
 }
 
 /**
@@ -242,7 +249,7 @@ export async function searchMarkets(
     return score;
   };
 
-  return scored
+  const results = scored
     .sort((a, b) => {
       const byRank = rank(b) - rank(a);
       if (byRank !== 0) return byRank;
@@ -250,6 +257,8 @@ export async function searchMarkets(
     })
     .map((x) => x.market)
     .slice(0, 25);
+  rememberLogos(results);
+  return results;
 }
 
 /**

@@ -454,6 +454,16 @@ Four defects, all in the running app, all fixed and re-verified:
    hide — two positioned siblings paint in document order — so the one piece of
    theatre in the app had never actually played. It has a `zIndex` now.
 
+5. **Token logos were missing everywhere the chain is the only source.** A
+   `Leg` stores a mint, a symbol and a name and no image, so every surface
+   built from chain state alone — the standings board, the result board, the
+   lock-in card, a settled tape — drew a coloured letter tile beside markets
+   that have real art. `chain/logos.ts` is the missing lookup: market lists
+   deposit the `imageUri` they already fetched, anything holding a mint can
+   ask, and a mint no feed has art for resolves to null and keeps its tile.
+   Verified live: three real images on the live board, two on the result
+   board, including the opponent's row.
+
 ### Not built, and why
 
 The reference set includes a **squad / RUSH mode**: three or more players, five

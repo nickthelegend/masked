@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Image, type ViewStyle } from 'react-native';
 import Box from './Box';
 import PixelText from './PixelText';
 import { SolanaMark, UsdcMark } from './icons';
 import { border, color } from './theme';
+import { cachedLogo, onLogosChanged, resolveLogo } from '../chain/logos';
 
 /** Mints whose mark is drawn rather than fetched. */
 const WSOL = 'So11111111111111111111111111111111111111112';
@@ -50,6 +51,35 @@ export interface TokenLogoProps {
  */
 export default function TokenLogo({ mint, symbol, uri, size = 32, style }: TokenLogoProps) {
   const [broken, setBroken] = useState(false);
+  /**
+   * The logo for this mint when the caller has none.
+   *
+   * A `Leg` on chain carries a mint, a symbol and a name — never an image — so
+   * every surface built from chain state alone (the standings board, the
+   * result board, the lock-in card, a settled tape) had nothing to pass here
+   * and drew a letter tile next to markets that have real art. The registry
+   * resolves it once per mint and tells every mounted logo when it lands.
+   */
+  const [found, setFound] = useState<string | null>(() => cachedLogo(mint) ?? null);
+  useEffect(() => {
+    if (uri) return undefined;
+    setBroken(false);
+    const known = cachedLogo(mint);
+    if (known !== undefined) {
+      setFound(known);
+      // Already looked up, and already null: nothing more to ask for.
+      if (known === null) return undefined;
+    }
+    let alive = true;
+    const stop = onLogosChanged(() => alive && setFound(cachedLogo(mint) ?? null));
+    void resolveLogo(mint).then((u) => alive && setFound(u));
+    return () => {
+      alive = false;
+      stop();
+    };
+  }, [mint, uri]);
+
+  const src = uri ?? found;
 
   const plate = (children: React.ReactNode) => (
     <Box
@@ -69,10 +99,10 @@ export default function TokenLogo({ mint, symbol, uri, size = 32, style }: Token
   if (mint === WSOL) return plate(<SolanaMark size={Math.round(size * 0.78)} />);
   if (mint === USDC) return plate(<UsdcMark size={Math.round(size * 0.78)} />);
 
-  if (uri && !broken) {
+  if (src && !broken) {
     return plate(
       <Image
-        source={{ uri }}
+        source={{ uri: src }}
         // Nearest-neighbour would be ideal on a pixel grid, but RN Web only
         // honours it through CSS; `contain` at least keeps the art unstretched.
         resizeMode="contain"
