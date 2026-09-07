@@ -1,10 +1,10 @@
 /** Opens N unjoined matches so the book has something in it for a demo. */
 import { Keypair, LAMPORTS_PER_SOL, type Transaction } from '@solana/web3.js';
 import { readFileSync } from 'node:fs';
+import { PublicKey } from '@solana/web3.js';
 import { FogduelClient } from '../src/chain/client';
-import { DEMO_MINT } from '../src/chain/market';
 import { CLUSTERS } from '../src/chain/config';
-import { pxFromSolPerToken } from '../src/chain/units';
+import { fetchMajorMarkets, fetchMemeMarkets } from '../src/chain/markets';
 import nacl from 'tweetnacl';
 
 /** A keypair, presented as something that can sign a login challenge. */
@@ -33,16 +33,24 @@ async function main() {
     await client.l1.confirmTransaction(sig, 'confirmed');
   }
 
+  // Real markets, so the book reads like a book somebody is actually using
+  // rather than three rows of the same placeholder ticker.
+  const markets = [...(await fetchMemeMarkets(6)), ...(await fetchMajorMarkets())];
+  if (markets.length === 0) throw new Error('no live markets — cannot open a book');
+
   const stakes = [0.05, 0.1, 0.25];
   for (let i = 0; i < count; i += 1) {
     const entry = Math.round(stakes[i % stakes.length] * LAMPORTS_PER_SOL);
     const matchId = Math.floor(Date.now() / 1000) * 1000 + 700 + i;
+    const market = markets[i % markets.length];
     const m = await client.createMatch({
-      creator: kp.publicKey, matchId, mint: DEMO_MINT,
-      durationSecs: 120, entryLamports: entry, startPx: pxFromSolPerToken(0.1),
-      marketType: 'meme', symbol: 'FOG', name: 'Fog Demo Market',
+      creator: kp.publicKey, matchId, mint: new PublicKey(market.mint),
+      durationSecs: 120, entryLamports: entry, startPx: market.startPx,
+      marketType: market.kind, symbol: market.symbol, name: market.name,
     });
-    console.log(`opened ${m.toBase58().slice(0, 8)}… at ${entry / LAMPORTS_PER_SOL}◎`);
+    console.log(
+      `opened ${m.toBase58().slice(0, 8)}… ${market.symbol} at ${entry / LAMPORTS_PER_SOL}◎`
+    );
   }
 
   const open = await client.fetchOpenMatches();

@@ -16,6 +16,9 @@ import { withDeadline } from './rpcTimeout';
 export interface OpenMatch {
   address: PublicKey;
   creator: PublicKey;
+  /** What the duel is over — a player should see this before joining. */
+  mint: PublicKey;
+  symbol: string;
   entry: number;
   duration: number;
   matchId: number;
@@ -29,6 +32,14 @@ export interface LiveMatch {
   creator: PublicKey;
   joiner: PublicKey;
 }
+
+/** A zero-padded on-chain string back to a JS one. */
+const decodeFixed = (bytes: number[] | Uint8Array | undefined): string => {
+  if (!bytes) return '';
+  const arr = Array.from(bytes);
+  const end = arr.indexOf(0);
+  return new TextDecoder().decode(new Uint8Array(end === -1 ? arr : arr.slice(0, end)));
+};
 
 const readOnlyWallet = {
   publicKey: null,
@@ -63,6 +74,8 @@ export function useOpenMatches(pollMs = 4000) {
           .map((m: any) => ({
             address: m.publicKey,
             creator: m.account.creator,
+            mint: m.account.mint,
+            symbol: decodeFixed(m.account.symbol),
             entry: m.account.entry.toNumber(),
             duration: m.account.duration.toNumber(),
             matchId: m.account.matchId.toNumber(),

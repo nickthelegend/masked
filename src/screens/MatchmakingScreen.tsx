@@ -75,6 +75,8 @@ export default function MatchmakingScreen({
             <MatchRow
               key={m.address.toBase58()}
               creator={mine ? 'YOUR MATCH' : short(m.creator)}
+              symbol={m.symbol}
+              mint={m.mint.toBase58()}
               entrySol={m.entry / 1e9}
               durationSecs={m.duration}
               ageLabel={ago(m.ageSecs)}

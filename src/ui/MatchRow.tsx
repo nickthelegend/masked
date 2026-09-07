@@ -4,6 +4,7 @@ import Stack from './Stack';
 import PixelText from './PixelText';
 import PixelButton from './PixelButton';
 import MaskAvatar from './MaskAvatar';
+import TokenLogo from './TokenLogo';
 import { border, color, space } from './theme';
 
 export interface MatchRowProps {
@@ -13,6 +14,15 @@ export interface MatchRowProps {
   entrySol: number;
   durationSecs: number;
   ageLabel: string;
+  /**
+   * The market this duel is over.
+   *
+   * Not decoration: without it a player takes a 1-SOL match on a coin they
+   * cannot see, which is the one thing they would want to know first.
+   */
+  symbol?: string;
+  mint?: string;
+  imageUri?: string | null;
   /** True when the connected wallet opened this one. */
   mine?: boolean;
   busy?: boolean;
@@ -27,6 +37,9 @@ export default function MatchRow({
   entrySol,
   durationSecs,
   ageLabel,
+  symbol,
+  mint,
+  imageUri = null,
   mine = false,
   busy = false,
   onJoin,
@@ -42,11 +55,15 @@ export default function MatchRow({
       outlineWidth={border.base}
       style={style}
     >
-      <MaskAvatar size={30} ring={mine ? color.yellow : color.panelLight} glyphSize={11} />
+      {mint ? (
+        <TokenLogo mint={mint} symbol={symbol ?? '?'} uri={imageUri} size={30} />
+      ) : (
+        <MaskAvatar size={30} ring={mine ? color.yellow : color.panelLight} glyphSize={11} />
+      )}
 
       <Stack flex={1} gap={2}>
         <PixelText variant="bodySmall" size={11} color={color.white} numberOfLines={1}>
-          {creator}
+          {symbol ? `${symbol} · ${creator}` : creator}
         </PixelText>
         <PixelText variant="bodySmall" size={10} color={color.textFaint}>
           {durationSecs}s · {ageLabel}

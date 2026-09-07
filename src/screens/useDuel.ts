@@ -671,6 +671,8 @@ export function useDuel(): Duel {
   const myPnl = match && myPosition ? pnlBps(myPosition, price, match.entry) / 100 : 0;
 
   const iAmCreator = !!(match && wallet.publicKey && match.creator.equals(wallet.publicKey));
+  const opponentKey =
+    match && wallet.publicKey && match.joiner ? (iAmCreator ? match.joiner : match.creator) : null;
   const opponentPnl = match
     ? bpsToPct(iAmCreator ? match.pnlBBps : match.pnlABps)
     : 0;
@@ -696,9 +698,10 @@ export function useDuel(): Duel {
         ? `LONG FROM ${formatSolPrice(myPosition.avgPx)}`
         : 'FLAT',
     fills,
-    opponentName: match?.joiner && wallet.publicKey && !match.joiner.equals(wallet.publicKey)
-      ? `${match.joiner.toBase58().slice(0, 6)}…`
-      : OPPONENT_PENDING,
+    // Whichever side of the match is not you. It used to name the joiner and
+    // nobody else, so a player who had *joined* someone's match spent the whole
+    // round being told they were still AWAITING OPPONENT.
+    opponentName: opponentKey ? `${opponentKey.toBase58().slice(0, 6)}…` : OPPONENT_PENDING,
     opponentPnl,
     // Mid-round this is all the opponent ever exposes: a count, never a size,
     // side or price. After settlement the committed position is public.
