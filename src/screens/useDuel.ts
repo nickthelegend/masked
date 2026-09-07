@@ -465,17 +465,31 @@ export function useDuel(): Duel {
   }, [client, match, phase, secondsLeft, wallet.publicKey]);
 
   /**
-   * Settle somebody else's abandoned round.
+   * Settle this player's own abandoned round.
    *
-   * Settlement is permissionless once the clock expires, which until now only
-   * `npm run crank` took advantage of — so a player who closed their tab left a
-   * pot escrowed until somebody ran a script. The lobby is the natural place to
-   * do it: it is the one screen with nothing else happening.
+   * Settlement is permissionless once the clock expires, so a player who closed
+   * their tab mid-round leaves a pot escrowed until somebody settles it. The
+   * lobby is the natural place to do that: it is the one screen with nothing
+   * else happening.
+   *
+   * Permissionless does not mean free, though, and this used to sweep whatever
+   * expired match it found first. Each settle costs the signer roughly 0.01 SOL
+   * in rollup commit and undelegation fees and pays them nothing back — the pot
+   * goes to the two participants — so a player idling in the lobby was quietly
+   * spending their own SOL on strangers' pots, every 20 seconds, with nothing
+   * on screen to say so. A freshly funded wallet lost 0.019 SOL to two of them
+   * between connecting and pressing FIND MATCH. On mainnet that is somebody
+   * else's money.
+   *
+   * So: only rounds this player was actually in. That is the one case where the
+   * fee buys them something — their own escrow, released — and the one they can
+   * be assumed to consent to. `npm run crank` still sweeps the whole book for
+   * whoever runs the cluster, which is where that cost belongs.
    *
    * One match per sweep, and only from the lobby, so this can never compete
-   * with the player's own settlement or fire mid-round. A failure is silent by
-   * design: it is somebody else's round, the next sweep will try again, and
-   * there is nothing for this player to act on.
+   * with the player's own live settlement or fire mid-round. A failure is
+   * silent by design: the next sweep tries again, and a round that is already
+   * settled needs nothing from this player.
    */
   useEffect(() => {
     if (!client || !wallet.publicKey || phase !== 'lobby') return undefined;
@@ -483,8 +497,11 @@ export function useDuel(): Duel {
 
     const sweep = async () => {
       try {
+        const me = wallet.publicKey!;
         const expired = await client.fetchExpiredMatches();
-        const target = expired.find((m) => m.joiner);
+        const target = expired.find(
+          (m) => m.joiner && (m.creator.equals(me) || m.joiner.equals(me))
+        );
         if (!alive || !target || !target.joiner) return;
         await client.commitAndUndelegate(
           target.address, wallet.publicKey!, target.creator, target.joiner
