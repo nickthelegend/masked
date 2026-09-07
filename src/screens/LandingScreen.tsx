@@ -28,6 +28,7 @@ import {
   Ticker,
   Wordmark,
   color,
+  solExact,
   space,
 } from '../ui';
 import AppHeader from './AppHeader';
@@ -254,7 +255,7 @@ export default function LandingScreen() {
                 // $FOG whatever market it had actually been fought over — the
                 // in-app feed had been reading the real symbol all along.
                 token={t.symbol || marketLabel(t.mint)}
-                pot={`${(t.potPaid / 1e9).toFixed(2)}◎`}
+                pot={solExact((t.potPaid + t.rake) / 1e9)}
                 ago={`${Math.max(0, Math.floor((Date.now() / 1000 - t.settledTs) / 60))}m ago`}
                 winner={short(t.winner)}
                 loser={short(t.loser)}

@@ -11,6 +11,7 @@ import { useTapes } from './useTapes';
 import { usePlayerStats } from './usePlayerStats';
 import { useOpenMatches } from './useOpenMatches';
 import { useChainStats } from './useChainStats';
+import { solExact } from '../ui/format';
 
 const short = (k: { toBase58(): string }) => {
   const s = k.toBase58();
@@ -27,7 +28,7 @@ export function useTickerItems(): string[] {
     const lines: string[] = [];
 
     for (const t of tapes.slice(0, 3)) {
-      lines.push(`${short(t.winner)} TOOK ${(t.potPaid / 1e9).toFixed(2)}◎`);
+      lines.push(`${short(t.winner)} TOOK ${solExact(t.potPaid / 1e9)}`);
     }
 
     const streaking = board.find((b) => b.streak >= 2);
