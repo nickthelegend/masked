@@ -13,6 +13,7 @@ import {
   color,
   playSound,
   sol,
+  solExact,
   space,
 } from '../ui';
 import { marketMove, replayEquity, type TapeState } from '../chain/tape';
@@ -123,7 +124,7 @@ export default function RevealScreen({
     <RevealCurtain
       active
       label={won ? 'YOU TAKE THE POT' : 'POT LOST'}
-      sublabel={won ? `+${sol(pot)}` : `-${sol(stake)}`}
+      sublabel={won ? `+${solExact(pot)}` : `-${sol(stake)}`}
       onDone={() => setUnsealed(true)}
     />
     <Stack pad={space.lg} gap={space.md}>
@@ -132,7 +133,7 @@ export default function RevealScreen({
       </PixelText>
 
       <Badge
-        label={won ? `+${sol(pot)}` : `-${sol(stake)}`}
+        label={won ? `+${solExact(pot)}` : `-${sol(stake)}`}
         tone={won ? 'win' : 'loss'}
         variant="numeric"
         style={{ alignSelf: 'center' }}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Badge, Box, MarketPicker, PixelButton, PixelText, Row, Stack, StakePicker, TokenLogo,
-  color, sol, onInk, space, type MarketKindKey, type PickableMarket,
+  color, solExact, onInk, space, type MarketKindKey, type PickableMarket,
 } from '../ui';
 import { useMarkets } from '../chain/useMarkets';
 import { formatCap, formatUsdPrice } from '../chain/units';
@@ -126,7 +126,7 @@ export default function DuelLobbyScreen({
         onRetry={refresh}
       />
 
-      <StakePicker value={stake} onChange={onStakeChange} note={`WINNER TAKES ${sol(pot)} · 2% RAKE`} />
+      <StakePicker value={stake} onChange={onStakeChange} note={`WINNER TAKES ${solExact(pot)} · 2% RAKE`} />
 
       <PixelButton
         tone="primary"
