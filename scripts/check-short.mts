@@ -53,7 +53,9 @@ const asSigner = (kp: Keypair) => ({
 });
 
 const ENTRY = 0.05;
-const DURATION = 240;
+// Long enough to short, walk the mark far enough to blow the position up and
+// still have the buzzer arrive inside one run.
+const DURATION = 150;
 
 async function main() {
   const cluster = CLUSTERS.local;
@@ -196,9 +198,45 @@ async function main() {
   );
   console.log('   status served, position refused: the hole in the fog is exactly one flag wide');
 
+  console.log('8. the liquidation reaches the permanent record');
+  // The flag lives on RoundStatus during the round; settle_match copies it onto
+  // the Tape. Until this ran, that copy had never executed — every settled tape
+  // on the cluster read `liquidated: false` because no liquidated round had
+  // ever been settled.
+  const started = (await clientA.fetchMatch(match))!.startTs;
+  while (Date.now() / 1000 < started + DURATION + 2) {
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  await clientA.commitAndUndelegate(match, a.publicKey, a.publicKey, b.publicKey);
+  await clientA.waitForUndelegation(match, a.publicKey, b.publicKey);
+  await clientA.requestSettle(match, a.publicKey);
+  await clientA.settleMatch(match, a.publicKey, a.publicKey, b.publicKey);
+
+  const tape = await clientA.fetchTape(match);
+  ok(!!tape, 'no tape was written for the liquidated round');
+  ok(tape!.liquidatedA, 'the tape does not record that player A was liquidated');
+  ok(!tape!.liquidatedB, 'the tape flagged the wrong side');
+  ok(
+    tape!.fillsA.some((f) => f.side === 'liquidation'),
+    'the tape has no LIQUIDATION fill on the liquidated side'
+  );
+  // Wiped is exactly -100%: the entry is the most anyone can lose.
+  ok(
+    tape!.pnlABps === -10_000,
+    `a liquidated player should settle at -100%, tape says ${tape!.pnlABps}bps`
+  );
+  ok(
+    tape!.winner.equals(b.publicKey),
+    'the surviving player should have taken the pot'
+  );
+  console.log(
+    `   tape: liquidatedA=true, LIQUIDATION fill recorded, pnlA ${tape!.pnlABps}bps, winner is the survivor`
+  );
+
   console.log(
     `\nshort ok — ${checks} assertions: a real negative position, a real margin cap, ` +
-      `a real liquidation, announced without leaking what was behind it`
+      `a real liquidation, announced without leaking what was behind it, ` +
+      `and written onto the permanent record`
   );
 }
 
