@@ -1,277 +1,285 @@
 # MASKED — test plan
 
-Every component and every flow, with the specific result that counts as
-correct. This is the checklist; nothing is a PASS unless the real, running
-product produces exactly what is written here.
+Every component and every flow, with an explicit definition of "correct" for
+each. Written before testing; statuses filled in as each item is executed
+against the **running product in a real browser**.
 
-**Rules for this run**
+## How this run is different
 
-- Tested against the real app in a browser, not against the source.
-- Console and network are read on every item. Any error fails it, with one
-  stated exception: a token logo that 404s at a third-party CDN. Those URLs
-  come from pump.fun's feed and point at CDNs we do not control, some of which
-  serve a browser and refuse a server — relaying them through our own proxy was
-  tried and broke logos that currently work. The product's required behaviour
-  there is C3 (fall back to a tile), and it is verified. Every console error is
-  checked individually against this: anything that is not a third-party image
-  URL is a FAIL.
-- Real chain: real deployed program, real signed transactions, real escrow
-  movement. No mocks, no fixtures, no fallback data anywhere.
-- Real market feeds: live pump.fun and Jupiter over HTTP.
-- "Close enough" is a FAIL.
+The previous run drove one browser and used a CLI script as the second player.
+That is not two people playing, and it hid two real bugs in the exact path a
+judge takes. This run uses **two independent browser sessions**:
 
-**The stack under test**
-
-| Layer | URL | What it is |
+| | Session A | Session B |
 |---|---|---|
-| base L1 | `http://127.0.0.1:8999` | `mb-test-validator` — escrow, settlement, `DELeGG…`, `ACLseo…` |
-| rollup | `http://127.0.0.1:7799` | `ephemeral-validator` — delegated positions. Answers anyone. |
-| public front | `http://127.0.0.1:6699` | `query-filtering-service` — reads the ACL. **The app only ever talks to this one.** |
-| market proxy | `http://127.0.0.1:8788` | CORS shim for pump.fun / Jupiter. No secrets, two upstreams only. |
-| app | `http://localhost:8081` | Expo web |
+| origin | `http://localhost:8081` | `http://127.0.0.1:8081` |
+| wallet | in-page key, own `localStorage` | in-page key, own `localStorage` |
 
-Program: `3K3v1bp6uUGVdzRfZmkwZGK82BHgCJxAroXJ3ZRs1Rj1`
+Separate origins mean separate `localStorage`, which means genuinely separate
+wallets. Every duel below is opened by one session and joined by the other
+through the game's own open book — no script standing in for a player.
+
+`/proof` and `/health` are evidence pages and are tested as pages. They are
+**not** used to decide whether the game works; game behaviour is verified in
+the game.
+
+## What is real, stated plainly
+
+- **Prices**: live HTTP to pump.fun `frontend-api-v3` and Jupiter — real
+  mainnet mints, real market caps, real logos. Proxied through `:8791` for CORS
+  only; the proxy forwards, it does not synthesise.
+- **Chain**: a local validator stack. Real deployed program, real PDAs, real
+  ed25519 signatures, real lamport movement, real delegation to a real
+  Ephemeral Rollup behind a real ACL-reading gate.
+- **Not mainnet, and not a mainnet fork.** Fills do **not** route to pump.fun or
+  Jupiter. Each executes against a constant-product book held inside the
+  player's own `Position`. That is a decision in the program, not a testing
+  shortcut: a public swap print would leak wallet, mint and size, which is the
+  whole thing the fog exists to hide. The program contains no CPI into either
+  venue, so forking mainnet would not change what any item below tests.
+
+## The stack under test
+
+| Layer | Port | What it is |
+|---|---|---|
+| base | 8999 | `mb-test-validator`, holds the fogduel program |
+| rollup | 7799 | `ephemeral-validator` |
+| gate | 6699 | `query-filtering-service` — reads the ACL; the only ER endpoint the app talks to |
+| proxy | 8791 | CORS forwarder to pump.fun and Jupiter |
+| app | 8081 | Expo / Metro |
+
+**Status key** — **PASS**: the real result matched the stated expectation
+exactly. **FAIL**: anything else, including a correct-looking UI with a console
+or network error. **UNTESTED**: genuinely blocked on something that does not
+exist here, stated as such rather than quietly passed.
+
+**Console rule**: any error fails the item, with one stated exception — a token
+logo that 404s or is blocked at a third-party CDN. Those URLs come from
+pump.fun's own feed and point at hosts we do not control, several of which
+serve a browser and refuse a server; relaying them through our proxy was tried
+and broke logos that currently work. The required behaviour there is C5 (fall
+back to a letter tile) and it is verified separately. Every console error is
+checked individually against this: anything that is not a third-party image URL
+is a FAIL.
 
 ---
 
-## A — Routes and shell
+## A — Stack and infrastructure
 
-| # | Item | Correct means | Result |
+| # | Item | Correct means | Status |
 |---|---|---|---|
-| A1 | `/` landing renders | Wordmark, hero pocket device, live stat tiles, no placeholder copy. HTTP 200, zero console errors. | **PASS** |
-| A2 | `/play` renders the app | Pocket shell, header, ticker, lobby, tab bar. Zero console errors. | **PASS** |
-| A3 | `/gallery` renders | Every component section draws, including the four market states. Zero console errors. | **PASS** |
-| A4 | `/proof` renders | Evidence panels populated from chain **without a wallet connected**. | **PASS** |
-| A5 | `/health` renders | Cluster/endpoint readout, live. | **PASS** |
-| A6 | Unknown route | `/nope` shows the not-found screen, not a crash or a blank page. | **PASS** |
-| A7 | No horizontal overflow | No route scrolls sideways at 1280px or at 390px. | **PASS** |
+| A1 | Base validator | `getHealth` returns `ok` on :8999 | |
+| A2 | Rollup validator | :7799 answers RPC | |
+| A3 | ACL gate | :6699 answers, and refuses an unauthenticated read of a sealed position | |
+| A4 | Market proxy identity | `/whoami` returns `masked-market-proxy` — not another project's server on the same port | |
+| A5 | Program deployed | fogduel program account exists on :8999 and is executable | |
+| A6 | Metro serves the app | :8081 returns 200 and the bundle loads with no build error | |
 
-## B — Landing page (`/`)
+## B — Landing page `/`
 
-| # | Item | Correct means | Result |
+| # | Item | Correct means | Status |
 |---|---|---|---|
-| B1 | Stats are real | Duels settled / volume / players match what `chain-truth` reports from the program's own accounts. Not a constant. | **PASS** |
-| B2 | Ticker is real | Entries are settled tapes with real winners and amounts, matching chain. | **PASS** |
-| B3 | Hero preview lists live markets | The embedded lobby shows the same pump.fun markets `/play` shows. | **PASS** |
-| B4 | CTA navigates | "PLAY" / hero device reaches `/play`. | **PASS** |
-| B5 | Empty chain | With zero settled matches the stats read 0 and the ticker says so — never a fabricated number. | **PASS** |
+| B1 | Page renders | Wordmark, hero and pitch render; no console error | |
+| B2 | Live tape rows | Reveal rows come from real settled tapes on chain, not constants | |
+| B3 | Sparklines are real | Each row's curve is replayed from that tape's real fills — dips on its own impact rather than a straight ramp | |
+| B4 | Hero market | A real market at a real price from the live feed | |
+| B5 | CTA into the app | Navigates to `/play` | |
+| B6 | Empty state | With no settled tapes the feed says so rather than rendering blanks | |
 
-## C — Market discovery (the pump.fun / Jupiter integration)
+## C — Lobby and market picker (`/play`, duel tab)
 
-| # | Item | Correct means | Result |
+| # | Item | Correct means | Status |
 |---|---|---|---|
-| C1 | Memes tab lists live coins | ≥8 rows, each with a real mint, symbol, name, USD price and market cap that match a direct call to `frontend-api-v3.pump.fun/coins`. | **PASS** |
-| C2 | Logos load | Rows whose feed carries a working `image_uri` show the real image. | **PASS** |
-| C3 | Broken logos fall back | A row whose image 404s shows a coloured tile with the ticker's initial — never a broken-image icon, never a blank box. | **PASS** |
-| C4 | Majors tab | SOL and USDC, priced from Jupiter, each within 1% of a direct call to `api.jup.ag/price/v3`. Drawn pixel marks, not remote images. | **PASS** |
-| C5 | Source is attributed | Every major row and the selected-market hero name their feed (`pump.fun` / `jupiter`). | **PASS** |
-| C6 | Prices refresh | Left open, prices change within ~20s without a reload and without the list blanking. | **PASS** |
-| C7 | Selection | Tapping a row selects it: row highlights, hero shows that market's logo, ticker and price. | **PASS** |
-| C8 | Feed down | With the proxy stopped, the picker shows `MARKET FEED DOWN` with the upstream's own message and a RETRY that works once it is back. Never a silent empty list, never invented prices. | **PASS** |
-| C9 | Price is representable on chain | The selected market's `startPx` is a positive safe integer, and round-trips back to the feed's price within 0.1%. | **PASS** |
-| C10 | Tab switch | Memes ⇄ Majors swaps the list with no stale rows from the other tab. | **PASS** |
+| C1 | Wallet disconnected | Lobby renders, balance 0.00, CONNECT offered | |
+| C2 | Wallet picker | Offers Solflare and Local Key (dev); picking one connects and shows the real pubkey | |
+| C3 | Balance is real | Matches `getBalance` for that pubkey on :8999 | |
+| C4 | Market list | ≥10 rows, every symbol/price/cap from the live pump.fun feed | |
+| C5 | Market logos | Real images from the token's metadata; a failed load falls back to a letter tile, never a broken image | |
+| C6 | MEMES / MAJORS | MAJORS shows Jupiter-priced majors; switching re-renders with the right source badge | |
+| C7 | Selecting a market | Row highlights and the hero updates to that market | |
+| C8 | Stake picker | 0.05 / 0.1 / 0.5 / 1 selectable; "WINNER TAKES" updates to 2× less 2% rake | |
+| C9 | Price scale | A sub-cent coin and a dollar coin both render a sane price, neither rounded to zero | |
+| C10 | FIND MATCH | Moves to matchmaking | |
 
-## D — Wallet
+## D — Matchmaking and the open book
 
-| # | Item | Correct means | Result |
+| # | Item | Correct means | Status |
 |---|---|---|---|
-| D1 | Disconnected state | Header shows CONNECT; balance reads 0.00; no chain writes attempted. | **PASS** |
-| D2 | Connect | Solflare connects, header shows the truncated address and the real L1 balance. | **PASS** |
-| D3 | Balance is live | Matches `solana balance` for that pubkey. | **PASS** |
-| D4 | Preflight blocks a broke wallet | With insufficient SOL, FIND MATCH refuses with a specific message naming the shortfall — not a failed transaction. | **PASS** |
+| D1 | Open book lists real matches | Every row an on-chain `Match` with status Open | |
+| D2 | Row detail | Symbol, creator, duration and entry match the account | |
+| D3 | Age counts up | "Ns ago" derived from `created_ts`, advancing in real time | |
+| D4 | OPEN A MATCH | Signs `create_match`, escrows the entry, balance drops by entry + fee | |
+| D5 | Your own match | Shown as YOUR MATCH with CANCEL, not JOIN | |
+| D6 | CANCEL | `cancel_if_unjoined` refunds the entry; balance returns | |
+| D7 | Session B sees A's match | B's open book shows A's match within one poll | |
+| D8 | JOIN | B signs `join_match`, escrows, both clients go live | |
+| D9 | Cannot join your own | Your own row offers no JOIN | |
+| D10 | Empty book | With no open matches the book says so rather than rendering an empty frame | |
 
-## E — Match lifecycle, on chain
+## E — Live round and trading
 
-| # | Item | Correct means | Result |
+| # | Item | Correct means | Status |
 |---|---|---|---|
-| E1 | Create | FIND MATCH with no joinable match signs one transaction; a `Match` account exists on L1 with the chosen mint, symbol, name, market type and `start_px`; the vault holds exactly the entry. | **PASS** |
-| E2 | Escrow is real | Creator's L1 balance drops by entry + fee. Vault balance rises by entry. | **PASS** |
-| E3 | Open book | The match appears in the open list for a second wallet, showing its market. | **PASS** |
-| E4 | Join | Second wallet joins: status `live`, pot = 2 × entry, both `Position`s created, each seeded with `quote_balance = entry` and its own book at `BOOK_DEPTH × entry`. | **PASS** |
-| E5 | Self-join refused | Creator cannot join their own match. | **PASS** |
-| E6 | Double join refused | A third wallet cannot join a live match. | **PASS** |
-| E7 | Cancel | Creator cancels an unjoined match: status `cancelled`, entry refunded. | **PASS** |
-| E8 | Cancel refused after join | Cancel on a live match fails. | **PASS** |
-| E9 | Settle before the clock | `request_settle` before expiry fails with `MatchStillRunning`. | **PASS** |
-| E10 | Settle | After expiry: `request_settle` then `settle_match`. Winner is the higher ending equity, rake is exactly 2% of pot, payout is pot − rake, and both land in real balances. | **PASS** |
-| E11 | Tape | A `Tape` account is written with the winner, payout, rake and both fill lists. | **PASS** |
-| E12 | Stats | `PlayerStats` for both wallets update — wins/losses/streak/taken — on chain, not client-side. | **PASS** |
+| E1 | Both sessions go live | A and B both reach the live screen for the same match | |
+| E2 | Sealed badge | Both show SEALED · ACL ON CHAIN, read back from chain rather than assumed | |
+| E3 | Clock | Counts down from the duration, derived from `start_ts`, agreeing within 1s across sessions | |
+| E4 | Pot | 2× entry less rake | |
+| E5 | Mark ticks | Updates from the live pump.fun feed during the round | |
+| E6 | Mark is shared | A and B see the same mark to the lamport | |
+| E7 | Opponent is fogged | Each session shows the opponent's PnL hidden; only a fill *count* leaks | |
+| E8 | Opponent position unreadable | A direct read of B's position from A's session is refused by the gate | |
+| E9 | SIZE control | 1/4, 1/2, MAX selectable, selection visible | |
+| E10 | Impact quote | The note quotes the impact for the chosen size and matches what the fill really charges | |
+| E11 | LONG fills | Signs `apply_fill` on the rollup; position updates; receipt shows mark vs execution price | |
+| E12 | Bigger size costs more | A MAX fill's impact is materially larger than a 1/4 fill's on the same book | |
+| E13 | Partial CLOSE | CLOSE at 1/2 sells half the base, not all of it | |
+| E14 | MAX CLOSE | CLOSE at MAX sells the exact remaining base, leaving no dust | |
+| E15 | PnL updates | Own PnL moves with the mark and matches the chain's `pnl_bps` | |
+| E16 | Own tape | Own fills listed with side and price, labelled hidden until reveal | |
+| E17 | Insufficient quote | Longing with nothing left is refused legibly, not with a raw Anchor error | |
+| E18 | Close while flat | Does nothing, and says nothing alarming | |
+| E19 | Fill after the buzzer | Refused as expired | |
+| E20 | Reload mid-round | Resumes the round rather than dropping to the lobby | |
 
-## F — MagicBlock: delegation, rollup, privacy
+## F — Settlement and reveal
 
-| # | Item | Correct means | Result |
+| # | Item | Correct means | Status |
 |---|---|---|---|
-| F1 | Permission created | After sealing, each position has an `ACLseo…`-owned permission account on L1. | **PASS** |
-| F2 | Permission delegated | Each permission account's L1 owner becomes `DELeGG…`. | **PASS** |
-| F3 | Position delegated | Each position's L1 owner becomes `DELeGG…`. | **PASS** |
-| F4 | Fill lands on the rollup | A buy signs a transaction against `:6699` and mutates the position on the rollup. | **PASS** |
-| F5 | Same write refused on L1 | The identical `apply_fill` sent to L1 while delegated is rejected. | **PASS** |
-| F6 | **Opponent unreadable** | Mid-round, the opponent's `Position` read through `:6699` returns nothing — with a signed token and without one. | **PASS** |
-| F7 | **The gate is the ACL, not a closed door** | A delegated position with **no** permission is served by `:6699`; a sealed one is refused. Proves access control rather than a blanket refusal. | **PASS** |
-| F8 | Own position readable | The owner, holding a token from `/auth/challenge` + `/auth/login`, reads their own position through `:6699`. | **PASS** |
-| F9 | Auth is a wallet signature | The token is obtained by signing a challenge. No secret in the client, no proxy holding a key. | **PASS** |
-| F10 | Client never reads the opponent | The app makes no request for the opponent's position before settlement. Verified in the network log, not by reading source. | **PASS** |
-| F11 | Commit | After the buzzer, both positions commit back: L1 owner returns to the program and the rollup's fills are present on L1. | **PASS** |
-| F12 | Commit is one position per transaction | Two positions in one commit exceeds a transaction; each is committed separately. Both land even when both players traded. | **PASS** |
-| F13 | Reveal after settlement | The opponent's committed position and the tape are readable once settled. | **PASS** |
+| F1 | Buzzer triggers settlement | At 0:00 both sessions begin settling without a click | |
+| F2 | Settle stages | COMMIT / UNDELEGATE / SETTLE shown with real results, in order | |
+| F3 | Commit count | The real number of rollup transactions (2 when both traded) | |
+| F4 | Undelegation | Both positions come home; ownership returns to the program | |
+| F5 | Pot paid | Winner's balance rises by pot less rake; loser's falls by entry | |
+| F6 | Rake exact | 2% of the pot, displayed without rounding to 0.00 | |
+| F7 | Both sessions reveal | **Both** A and B reach their own reveal; the winner sees YOU TAKE THE POT | |
+| F8 | Reveal numbers mirror | A's "you" equals B's "opponent" and vice versa, to the basis point | |
+| F9 | Reveal matches chain | Both match the tape's `pnl_a_bps` / `pnl_b_bps` exactly | |
+| F10 | Round timeline | Both players' real fills on one time axis, replayed from the tape, nothing synthesised | |
+| F11 | Timeline honesty | A player with no fills draws flat; no line where the tape has no record | |
+| F12 | Head-to-head | Includes the duel that just settled and matches a full scan of tapes | |
+| F13 | SETTLE NOW | Settles early, mid-round, producing a correct reveal | |
+| F14 | REMATCH | Returns to matchmaking, ready to open another | |
+| F15 | COPY TAPE LINK | Copies `/tape/<match>`; a refused clipboard says so and shows the link | |
+| F16 | Draw | Equal PnL pays the creator, as documented, and both screens agree | |
 
-## G — The private book (fills)
+## G — Two-session concurrency
 
-| # | Item | Correct means | Result |
+| # | Item | Correct means | Status |
 |---|---|---|---|
-| G1 | Buy spends quote | A buy debits exactly the quote asked for and credits base from the curve. | **PASS** |
-| G2 | Buy pays impact | Average fill price is above the pre-fill mid, and under 1% at half size for `BOOK_DEPTH = 64`. | **PASS** |
-| G3 | Book is per player | A fill moves only the filling player's book. The opponent's reserves are untouched. | **PASS** |
-| G4 | Overdraw refused | A buy larger than the quote balance fails with `InsufficientQuote`. | **PASS** |
-| G5 | Sell realises PnL | Selling after the mark rises produces positive realised PnL, at an exit price below the mark by its own impact. | **PASS** |
-| G6 | Oversell refused | Selling more base than held fails with `InsufficientBase`. | **PASS** |
-| G7 | Open position closes at the buzzer | Settlement appends a `SETTLE` fill at the real exit price and zeroes `base_qty`. | **PASS** |
-| G8 | Client PnL equals chain PnL | The percentage on screen matches `Position::pnl_bps` for the same mark. | **PASS** |
+| G1 | Concurrent seal | Both clients seal the same match; neither errors; sealed exactly once | |
+| G2 | Concurrent settle | Both clients settle; the loser of the race still reaches its correct reveal | |
+| G3 | No cross-talk | A's actions reach B only through chain state | |
+| G4 | Independent wallets | Different keys and different balances throughout | |
+| G5 | Both crank the mark | Either session's mark is accepted; the rate limit declines the other without an on-screen error | |
+| G6 | Spectator during the duel | A third view shows the round and neither position | |
+| G7 | Abandoned round | If one session closes mid-round, the other still settles the match | |
 
-## H — Mark price
+## H — Spectate `/spectate/<match>`
 
-| # | Item | Correct means | Result |
+| # | Item | Correct means | Status |
 |---|---|---|---|
-| H1 | Mark tracks the live market | During a round, the on-chain `PriceFeed` moves toward the live pump.fun / Jupiter price. | **PASS** |
-| H2 | Permissionless | A wallet that is not the creator can post the mark. | **PASS** |
-| H3 | Rate limited | A post more than 5% from the last is rejected with `PriceJump`. | **PASS** |
-| H4 | Interval enforced | A second post within the same second is rejected with `PriceTooSoon`. | **PASS** |
-| H5 | No posting after the buzzer | A post after expiry is rejected with `MatchExpired`. | **PASS** |
-| H6 | Losing the race is not an error | Two crankers running at once do not surface an error to either player. | **PASS** |
+| H1 | No wallet needed | Loads and shows a real match with no wallet connected | |
+| H2 | Live round | Clock, pot, mark and market all real and updating | |
+| H3 | Both fogged | Neither position readable; both sides show FOGGED | |
+| H4 | After settlement | Result, pot paid and rake, exact | |
+| H5 | Bad address | A malformed address says so; a real address with no match says so differently | |
+| H6 | `/spectate` bare | Explains what to do rather than erroring | |
 
-## I — Live round screen
+## I — Tape `/tape/<match>`
 
-| # | Item | Correct means | Result |
+| # | Item | Correct means | Status |
 |---|---|---|---|
-| I1 | Market identity | Logo, ticker and feed name match the match account. | **PASS** |
-| I2 | Clock | Counts down from the real `duration` and reaches 0 at expiry. | **PASS** |
-| I3 | Chart | Plots the real posted marks, one point per poll, no synthetic walk. | **PASS** |
-| I4 | Pot | Equals the on-chain pot. | **PASS** |
-| I5 | LONG | Signs a fill and the position updates on screen from chain state. | **PASS** |
-| I6 | CLOSE | Sells the whole position; label returns to FLAT. | **PASS** |
-| I7 | Opponent is fogged | Only a fill **count** is shown — never their size, side, price or PnL. | **PASS** |
-| I8 | Sealed indicator | Reflects the real on-chain ACL, read back, not an optimistic flag. | **PASS** |
-| I9 | Busy state | Buttons disable during a signature and re-enable after. | **PASS** |
-| I10 | Error surfacing | A rejected transaction shows a specific human message, not a raw hex code. | **PASS** |
+| I1 | Settled duel renders | Market, both sides, pot, rake and settle time, all from chain | |
+| I2 | Every fill listed | Both players' fills with side, size, execution price and offset into the round | |
+| I3 | Timeline | Same replay as the reveal, drawn from the tape | |
+| I4 | Conservation | Paid + rake equals the pot, both shown exactly | |
+| I5 | Head-to-head | Stated in both names, matching a full scan | |
+| I6 | Unsettled match | Says the duel has not settled and points at `/spectate` | |
+| I7 | Bad address | Rejected with a clear message | |
+| I8 | `/tape` bare | Explains what to do | |
+| I9 | Permanence | Reloading later shows the identical page | |
 
-## J — Reveal
+## J — Feed, leaderboard, modes, quests
 
-| # | Item | Correct means | Result |
+| # | Item | Correct means | Status |
 |---|---|---|---|
-| J1 | Curtain | Plays once and always resolves, including in a background tab. | **PASS** |
-| J2 | Result | Winner, both PnLs and payout match the chain. | **PASS** |
-| J3 | Opponent tape | Their fills are visible only here, after settlement. | **PASS** |
+| J1 | Feed rows | Every row a real settled tape, newest first | |
+| J2 | Feed sparklines | Replayed from real fills | |
+| J3 | Feed filters | REVEALS / BIG POTS / MINE each filter correctly against real data | |
+| J4 | Leaderboard | Built from real `PlayerStats` accounts | |
+| J5 | Streak | `best_streak` shown from chain | |
+| J6 | Quests | Every quest derived from real `PlayerStats`; no invented progress | |
+| J7 | Modes grid | Modes that are not built are labelled as such rather than implying they work | |
+| J8 | Ticker | Items derived from real chain state | |
 
-## K — Feed, leaderboard, modes, quests
+## K — Evidence pages
 
-| # | Item | Correct means | Result |
+| # | Item | Correct means | Status |
 |---|---|---|---|
-| K1 | Feed | Rows are real settled tapes, newest first, matching chain. | **PASS** |
-| K2 | Feed empty state | With no tapes it says so rather than showing invented rows. | **PASS** |
-| K3 | Leaderboard | Ranks real `PlayerStats` by lamports taken. | **PASS** |
-| K4 | Podium | Top three match the rows beneath. | **PASS** |
-| K5 | Modes | Available modes are the ones that exist; anything unbuilt is marked SOON, not presented as playable. | **PASS** |
-| K6 | Quests | Progress derives from real on-chain stats. | **PASS** |
+| K1 | `/proof` renders | Program, delegation and permission accounts read live | |
+| K2 | Gate probe | A sealed position is refused; a permission-less control on the same rollup is served | |
+| K3 | Lifecycle | A real duel's transitions in slot order with real signatures | |
+| K4 | Explorer links | Each opens the real explorer pointed at this cluster | |
+| K5 | Live duels | Live matches listed with links into spectating | |
+| K6 | `/health` | Every check reflects the real state of its layer | |
+| K7 | Privacy claim | Stated accurately — enforced by an ACL-reading gate, attestation absent without a TEE | |
 
-## L — Proof and health
+## L — Program invariants (on chain)
 
-| # | Item | Correct means | Result |
+| # | Item | Correct means | Status |
 |---|---|---|---|
-| L1 | `/proof` without a wallet | All panels populate from chain. | **PASS** |
-| L2 | Delegation evidence | Reports actual account owners; a sealed match reads as sealed. | **PASS** |
-| L3 | Tx feed | Real signatures from the program, and says so honestly if the ledger has been pruned. | **PASS** |
-| L4 | `/health` | Cluster name, endpoints, reachability and latency, all measured. | **PASS** |
-| L5 | Cluster honesty | Says plainly that the local gate is not a TEE. | **PASS** |
+| L1 | Pot conservation | `pot = 2 × entry`; `paid + rake = pot` on every tape | |
+| L2 | Rake exactness | 2% of pot, integer maths, no drift | |
+| L3 | Client PnL == chain PnL | The client's `pnlBps` equals the program's for the same inputs | |
+| L4 | Tape replay | Replaying a tape's fills lands on the chain's own `pnl_*_bps` | |
+| L5 | Impact closed form | The previewed impact equals what the chain charged, on every real fill | |
+| L6 | Mark recovery | The mark backed out of a fill sits on the correct side of its execution | |
+| L7 | Mark rate limit | A push above 5% or inside 1s is refused | |
+| L8 | Settle needs the buzzer | `request_settle` before the clock expires is refused | |
+| L9 | Fill needs delegation | A fill against an undelegated position is refused | |
+| L10 | Cancel only when unjoined | `cancel_if_unjoined` on a live match is refused | |
+| L11 | VRF draw | `request_market_draw` builds and sends a real VRF request | |
+| L12 | VRF callback | `settle_market_draw` accepted only from the VRF program identity | |
 
-## M — Failure and edge cases
+## M — External integrations
 
-| # | Item | Correct means | Result |
+| # | Item | Correct means | Status |
 |---|---|---|---|
-| M1 | L1 down | The app reports the cluster unreachable and does not white-screen. | **PASS** |
-| M2 | Rollup down | Live-round polling degrades with a message; the app stays usable. | **PASS** |
-| M3 | Market feed down | Covered in C8; the rest of the app keeps working. | **PASS** |
-| M4 | Rejected signature | Cancelling in the wallet returns to a usable state with a clear message. | UNTESTED |
-| M5 | Reload mid-round | Reloading during a live round recovers the round from chain, not from memory. | **PASS** |
-| M6 | Two tabs | The same wallet in two tabs does not corrupt state. | **PASS** |
-| M7 | Proxy refuses non-market routes | `/evil/...` returns 403. It is not an open relay. | **PASS** |
+| M1 | pump.fun prices | Real HTTP, priced from market cap ÷ supply, not frozen curve reserves | |
+| M2 | Jupiter prices | Real HTTP for majors | |
+| M3 | Price round-trip | Every start price survives conversion to the program's `px` and back within 0.1% | |
+| M4 | Proxy failure | With the proxy down the app says the feed is unavailable rather than showing stale or invented prices | |
+| M5 | Logos | Served from the token's real image host | |
 
-## N — Static and build
+## N — Errors and edge cases
 
-| # | Item | Correct means | Result |
+| # | Item | Correct means | Status |
 |---|---|---|---|
-| N1 | `npm run check` | typecheck, token drift, series, fog, errors, preflight — all pass. | **PASS** |
-| N2 | Anchor suites | `fogduel`, `er-privacy`, `permission` all pass against the deployed program. | **PASS** |
-| N3 | Script suites | `verify:client`, `prove:privacy`, `check:sealed`, `check:gate`, `check:markets` all pass. | **PASS** |
-| N4 | No mocks | No `Math.random` price/PnL, no hardcoded feed/board/ticker, no fixture markets in the shipped app. | **PASS** |
+| N1 | Insufficient balance | Refused before sending, with the amount needed | |
+| N2 | Wallet disconnected mid-flow | Signature-requiring actions refused legibly | |
+| N3 | Wrong cluster | Detected and named | |
+| N4 | Program missing | Detected and named | |
+| N5 | RPC timeout | Bounded by a deadline, surfaced as a timeout not a hang | |
+| N6 | Anchor errors translated | Every program error maps to a human message | |
+| N7 | Unknown route | `/nope` renders the not-found page | |
+| N8 | Expired match recovery | `npm run crank` settles an abandoned match and pays out | |
+| N9 | Fog guard | Any attempt to read the opponent pre-reveal throws in the client | |
+| N10 | Console clean | No uncaught errors or React warnings across every route | |
+
+## O — Sound, motion, accessibility
+
+| # | Item | Correct means | Status |
+|---|---|---|---|
+| O1 | Fill sound | A confirmed fill plays the two-step voice; nothing plays for a failed one | |
+| O2 | Seal sound | Plays once when the positions are really sealed | |
+| O3 | Countdown and buzzer | Exactly five ticks then the buzzer, once per round | |
+| O4 | Reveal sting | Win and loss stings differ and land with the curtain | |
+| O5 | Sound toggle | Off produces zero oscillators; the choice survives a reload | |
+| O6 | Reduced motion | Honoured by the animated components | |
+| O7 | Gallery | Every component renders in `/gallery` without error | |
 
 ---
 
 ## Results
 
-Every item was run against the real app on the real stack. `PASS` means the
-observed result matched the row above exactly.
-
-**99 PASS · 0 FAIL · 1 untestable** (100 items)
-
-### What had to be fixed
-
-Twenty-four defects were found and fixed during the run. In rough order of
-severity:
-
-| # | Defect | Found by |
-|---|---|---|
-| 1 | Marks were posted to the rollup, where the price feed is not delegated — every one failed with `InvalidWritableAccount`, so **the mark never moved during a round** and results came down to impact cost alone. | H1: reading the rollup's transaction log rather than the screen |
-| 2 | A match opened from the UI **never started** — nothing watched for the opponent, and pressing the button again would only have opened a second match. | E1 |
-| 3 | Settling ran before the rollup's commit landed, so `settle_match` got accounts still owned by the delegation program and **every settlement from the UI failed**. The wait existed only inside the scripts. | E10 |
-| 4 | The client's PnL divided by `BASE_SCALE` where the chain divides by `BASE_SCALE * PRICE_SCALE`, rendering a flat position as **+29,813,639%**. | I5 |
-| 5 | A partial commit was unrecoverable: the rollup refuses to undelegate what it no longer holds, so every retry died on the position already home and the stuck one never got a second chance. | F11 |
-| 6 | Selecting a wallet never connected it (`autoConnect` off, nothing called `connect`), and connecting from a child effect ran before the provider attached its listeners. | D2 |
-| 7 | **Abandoned rounds stranded their pots forever** — settlement was driven only by the players' own clients. 0.3 SOL was stuck across three matches. | M-series |
-| 8 | A reload mid-round dropped the player into the lobby while their entry sat escrowed in a running match. | M5 |
-| 9 | Chain reads had no deadline, so a hung validator left `/health` showing DEGRADED above an **empty** dependency list and the ticker insisting there were no duels while nineteen were unreachable. | M1 |
-| 10 | `/proof` claimed "privacy enforced: NO — reads are not gated". They are gated; the page now probes it live against a control. | L2 |
-| 11 | The gate probe then called any delegated position sealed, and reported a **false privacy breach** on the permission-less control. | Re-run of L2 |
-| 12 | `/proof` divided two localhost RPC round trips and called it "speedup", reporting the rollup as half the base layer's speed. It measures block rate now: 20 vs 1.9 slots/s. | L4 |
-| 13 | The `Tape` — the public record of a duel — did not record what was traded, so the feed named every past round after a demo mint. | K1 |
-| 14 | The open book listed everything about a match **except which market it was over**. | E3 |
-| 15 | Joining someone's match showed "AWAITING OPPONENT" for the whole round. | E3 |
-| 16 | The pot and the loss were computed from the stake picker, not the match — a resumed 0.10 pot read 0.20, and a 0.05 loss read -0.10. | M5 |
-| 17 | `crankPrice` rounded a fractional 5% step one lamport over a cap the program compares exactly; every seed run died on its first mark. | Seeding |
-| 18 | The beach backdrop laid tiles past the right edge without clipping — 2156px of document in a 1280px window. | A7 |
-| 19 | Losing the crank race threw, because two posts in the same slot come back from Anchor with no message to match on. | H6 |
-| 20 | The market proxy defaulted to a port owned by an unrelated dev server, which answered with a 401 — and the app faithfully reported "pump.fun returned 401" about something that was not pump.fun. | C8 |
-| 21 | The landing page said "five minutes" in three places while rounds ran 60 seconds. | B-series |
-| 22 | The leaderboard was headed "24H" over lifetime counters and showed the top-ranked player's streak as the board's best (1 where the chain said 2). | K3 |
-| 23 | A closed wallet picker stayed mounted, so a screen reader would read out a chooser that was not on screen. | D4 |
-| 24 | The orb's lattice pixel had a floor wider than a small orb has room for, so at the 22px size used on the live round screen its core radius came out as -1 and the browser refused to draw it. | Final console sweep |
-
-Two things were also true of pump.fun's data and had to be handled rather than
-fixed: its bonding-curve price freezes at graduation, so every coin anyone has
-heard of reports the same number (priced from market cap instead), and roughly
-a quarter of its logo URLs are dead upstream (they fall back to a tile).
-
-### Untestable
-
-| # | Item | Why |
-|---|---|---|
-| M4 | Wallet rejects a signature | Needs a wallet that can refuse. Solflare cannot be driven here — unlocking a browser extension means entering its password, which I will not do — and the local dev key signs unconditionally. The rejection path itself is covered by `check:errors`, which asserts the taxonomy this maps onto, but it was not exercised through a real refusal in the browser. |
-
-`D2` was verified with the local-cluster dev wallet, which signs real
-transactions with a real keypair. Solflare specifically is untested for the
-same reason as M4.
-
-### Mocks, stubs and console errors
-
-- **Zero mocks or fixtures in the shipped app.** No `Math.random` outside the
-  seeded series helper and one gallery demo button; no hardcoded feed, board,
-  podium, ticker or market lists. Every screen reads chain or a live feed.
-- **Real chain throughout**: a deployed program, real signed transactions, real
-  escrow movement, verified against balances after each run.
-- **Real market data**: live pump.fun and Jupiter over HTTP, no fallback list.
-- **Console**: two to three errors on the market pages, every one a token logo
-  blocked or 404 at a third-party CDN (`ipfs.io` at time of writing). Checked
-  individually rather than assumed: 9 of 12 logos load and the rest fall back
-  to a tile. `/proof`, `/health` and `/gallery` produce **none at all**. Zero
-  application errors and zero failed requests to our own services, on every
-  route — the last application error in the run was the orb's negative radius,
-  fixed above.
+Filled in during Phase 2. Defects found and fixed are listed at the bottom.
