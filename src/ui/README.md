@@ -338,7 +338,7 @@ color are derived from `place`, so first can never be drawn shorter than second.
 ### ModeTile
 
 ```tsx
-<ModeTile name="FOG DUEL" description="Same token, 5 min, hidden positions." status="LIVE" onPress={play} />
+<ModeTile name="FOG DUEL" description="Your token vs theirs, 5 MIN, hidden positions." status="LIVE" onPress={play} />
 <ModeTile name="CHICKEN" description="First seller pays a penalty to holders." status="SOON" />
 ```
 

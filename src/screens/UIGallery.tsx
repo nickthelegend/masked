@@ -367,7 +367,7 @@ export default function UIGallery() {
       <Section title="MODETILE / QUESTROW">
         <Stack gap={space.md}>
           <Row gap={space.md} wrap>
-            <ModeTile name="FOG DUEL" description="Same token, 5 min, hidden positions." status="LIVE" onPress={() => {}} />
+            <ModeTile name="FOG DUEL" description="Your token vs theirs, 5 MIN, hidden positions." status="LIVE" onPress={() => {}} />
             <ModeTile name="CHICKEN" description="First seller pays a penalty to holders." status="SOON" />
           </Row>
           <QuestRow name="Win 3 fog duels" reward="+$5" value={0.66} progress="2 / 3" />

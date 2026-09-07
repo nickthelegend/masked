@@ -85,7 +85,7 @@ export interface ModeDef {
 }
 
 export const MODES: ModeDef[] = [
-  { name: 'FOG DUEL', description: `Same token, ${roundBadge()}, hidden positions.`, status: 'LIVE' },
+  { name: 'FOG DUEL', description: `Your token vs theirs, ${roundBadge()}, hidden positions.`, status: 'LIVE' },
   { name: 'CHICKEN', description: 'First seller pays a penalty to holders.', status: 'SOON' },
   { name: 'FADE ME', description: 'Opponent must take the opposite side.', status: 'SOON' },
   { name: 'GHOST ROYALE', description: 'Bottom 3 cut every 90 seconds.', status: 'SOON' },
