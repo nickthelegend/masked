@@ -97,3 +97,48 @@ export async function resolveLogo(mint: string): Promise<string | null> {
   inflight.set(mint, job);
   return job;
 }
+
+/**
+ * Whether a logo URL actually yields an image, checked once per URL.
+ *
+ * `<img src>` is the wrong instrument for finding out. When the URL answers
+ * with an HTML page — which is what several tokens' `image_uri` genuinely
+ * points at, arweave.net serving a 3 MB document for three of the majors —
+ * the element fires `error` and Chrome writes "Failed to load resource" to the
+ * console. The fallback tile appears and nothing is broken, but the page has
+ * printed an error it cannot suppress.
+ *
+ * A `fetch` that comes back 415 is a completed request with an unwanted
+ * status, not a failure, so it says the same thing silently. The result is
+ * cached per URL, and the browser's own HTTP cache makes the `<img>` that
+ * follows a hit rather than a second download.
+ */
+const usable = new Map<string, boolean>();
+const checking = new Map<string, Promise<boolean>>();
+
+export function cachedUsable(url: string): boolean | undefined {
+  return usable.get(url);
+}
+
+export async function checkUsable(url: string): Promise<boolean> {
+  const known = usable.get(url);
+  if (known !== undefined) return known;
+  const running = checking.get(url);
+  if (running) return running;
+
+  const job = (async () => {
+    let ok = false;
+    try {
+      const r = await fetch(url);
+      ok = r.ok && (r.headers.get('content-type') ?? '').startsWith('image/');
+    } catch {
+      // A network-level failure. The tile is the answer.
+    }
+    usable.set(url, ok);
+    checking.delete(url);
+    return ok;
+  })();
+
+  checking.set(url, job);
+  return job;
+}

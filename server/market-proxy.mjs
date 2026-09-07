@@ -25,6 +25,7 @@
  *   MARKET_PROXY_PORT=9000 node …
  */
 import { createServer } from 'node:http';
+import { lookup } from 'node:dns/promises';
 
 // 8788 was the first choice and collided with an unrelated dev server on the
 // same machine, which answered the app's market requests with a 401 — so the
@@ -40,6 +41,76 @@ const ROUTES = {
   '/pump/': 'https://frontend-api-v3.pump.fun',
   '/jup/': 'https://api.jup.ag',
 };
+
+/**
+ * Whether an address is one this relay must never fetch.
+ *
+ * The set of logo CDNs is open — a coin's `image_uri` is whatever its creator
+ * pasted, and a single market list here spans ipfs.io, irys, filebase,
+ * pbs.twimg.com, storage.googleapis.com and backed.fi. A hostname allowlist
+ * cannot be kept complete, and an incomplete one is worse than none: it turns
+ * a working logo into a 403 and a letter tile.
+ *
+ * So the guard is on the *address*, not the name. Anything that resolves into
+ * the loopback, link-local, private or reserved ranges is refused, which is
+ * what an SSRF guard actually needs to stop — this process runs beside a
+ * validator and a signing key, and `http://127.0.0.1:8999` must not be
+ * reachable by asking the proxy nicely for a picture of it.
+ */
+const BLOCKED_V4 = [
+  [0, 8], [10, 8], [127, 8], [169, 16], [172, 12], [192, 16], [198, 15], [224, 4], [240, 4],
+];
+
+function isPrivateAddress(ip, family) {
+  if (family === 6) {
+    const v = ip.toLowerCase();
+    if (v === '::1' || v === '::') return true;
+    if (v.startsWith('fc') || v.startsWith('fd')) return true; // unique-local
+    if (v.startsWith('fe8') || v.startsWith('fe9') || v.startsWith('fea') || v.startsWith('feb')) return true;
+    // IPv4-mapped: re-check the embedded address.
+    const m = v.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+    if (m) return isPrivateAddress(m[1], 4);
+    return false;
+  }
+  const p = ip.split('.').map(Number);
+  if (p.length !== 4 || p.some((n) => Number.isNaN(n))) return true;
+  const n = ((p[0] << 24) >>> 0) + (p[1] << 16) + (p[2] << 8) + p[3];
+  const inRange = (a, bits) => {
+    const base = ((a[0] << 24) >>> 0) + (a[1] << 16) + (a[2] << 8) + a[3];
+    const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+    return (n & mask) === (base & mask);
+  };
+  return (
+    inRange([0, 0, 0, 0], 8) ||
+    inRange([10, 0, 0, 0], 8) ||
+    inRange([100, 64, 0, 0], 10) ||
+    inRange([127, 0, 0, 0], 8) ||
+    inRange([169, 254, 0, 0], 16) ||
+    inRange([172, 16, 0, 0], 12) ||
+    inRange([192, 0, 0, 0], 24) ||
+    inRange([192, 168, 0, 0], 16) ||
+    inRange([198, 18, 0, 0], 15) ||
+    inRange([224, 0, 0, 0], 4) ||
+    inRange([240, 0, 0, 0], 4)
+  );
+}
+
+/** Refuse a host that resolves anywhere private. Checked per redirect hop. */
+async function assertPublicHost(hostname) {
+  const addrs = await lookup(hostname, { all: true });
+  if (addrs.length === 0) throw new Error(`${hostname} does not resolve`);
+  for (const a of addrs) {
+    if (isPrivateAddress(a.address, a.family)) {
+      throw new Error(`${hostname} resolves to a private address`);
+    }
+  }
+}
+
+/** Biggest logo this will relay. A coin icon is kilobytes. */
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+
+/** Content types this will pass back. An image relay returns images. */
+const IMAGE_TYPES = /^image\//;
 
 /**
  * pump.fun stalls requests that do not look like a browser, and in a browser
@@ -80,7 +151,68 @@ const server = createServer(async (req, res) => {
   // faithfully reported "pump.fun returned 401" about a service that was not
   // pump.fun.
   if (url.pathname === '/whoami') {
-    return send(res, 200, { service: SERVICE, upstreams: Object.keys(ROUTES) });
+    return send(res, 200, { service: SERVICE, upstreams: Object.keys(ROUTES), imageRelay: '/img?url=' });
+  }
+
+  // Relay one logo, for a host that serves servers but refuses browsers.
+  if (url.pathname === '/img') {
+    const raw = url.searchParams.get('url');
+    if (!raw) return send(res, 400, { error: 'missing url' });
+    let target;
+    try {
+      target = new URL(raw);
+    } catch {
+      return send(res, 400, { error: 'url is not a URL' });
+    }
+    if (target.protocol !== 'https:') return send(res, 403, { error: 'https only' });
+    try {
+      // Every hop is checked, not just the first: a public host is free to
+      // redirect at 169.254.169.254, and `fetch` would follow it happily.
+      let hops = 0;
+      let current = target;
+      let r;
+      for (;;) {
+        await assertPublicHost(current.hostname);
+        // Deliberately NOT the browser user-agent the JSON routes spoof.
+        // pump.fun's API stalls anything that does not look like a browser;
+        // ipfs.io does the opposite — it sits behind Cloudflare and answers a
+        // plain client with 200 and the spoofed Chrome string with 403,
+        // because a Chrome UA arriving without any of Chrome's other headers
+        // looks like exactly what it is. The two want opposite things, so the
+        // image relay asks as itself.
+        r = await fetch(current, {
+          headers: { accept: 'image/*', 'user-agent': `${SERVICE}/1.0` },
+          redirect: 'manual',
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+        if (r.status < 300 || r.status >= 400) break;
+        const next = r.headers.get('location');
+        if (!next || (hops += 1) > 3) break;
+        current = new URL(next, current);
+        if (current.protocol !== 'https:') {
+          return send(res, 403, { error: 'redirected off https' });
+        }
+      }
+      const type = r.headers.get('content-type') ?? '';
+      if (!r.ok) return send(res, r.status, { error: `upstream ${current.hostname} ${r.status}` });
+      // Refuse anything that is not an image, so this cannot be used to read
+      // arbitrary documents off a host that happens to be reachable.
+      if (!IMAGE_TYPES.test(type)) return send(res, 415, { error: `not an image: ${type}` });
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (buf.length > MAX_IMAGE_BYTES) return send(res, 413, { error: 'image too large' });
+      cors(res);
+      res.writeHead(200, {
+        'content-type': type,
+        'content-length': String(buf.length),
+        // The whole point: served with a policy that lets a page paint it.
+        'cross-origin-resource-policy': 'cross-origin',
+        'cache-control': 'public, max-age=86400',
+      });
+      res.end(buf);
+      return;
+    } catch (e) {
+      return send(res, 502, { error: `logo ${target.hostname} failed: ${e?.message ?? e}` });
+    }
   }
 
   const entry = Object.entries(ROUTES).find(([prefix]) => url.pathname.startsWith(prefix));

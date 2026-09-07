@@ -4,7 +4,8 @@ import Box from './Box';
 import PixelText from './PixelText';
 import { SolanaMark, UsdcMark } from './icons';
 import { border, color } from './theme';
-import { cachedLogo, onLogosChanged, resolveLogo } from '../chain/logos';
+import { cachedLogo, cachedUsable, checkUsable, onLogosChanged, resolveLogo } from '../chain/logos';
+import { logoUrl } from '../chain/marketEndpoints';
 
 /** Mints whose mark is drawn rather than fetched. */
 const WSOL = 'So11111111111111111111111111111111111111112';
@@ -79,7 +80,43 @@ export default function TokenLogo({ mint, symbol, uri, size = 32, style }: Token
     };
   }, [mint, uri]);
 
-  const src = uri ?? found;
+  /**
+   * Loaded through the market proxy's image relay, never straight from the
+   * coin's CDN.
+   *
+   * `logoUrl` was written for this and then never called by anything, and the
+   * proxy route it points at did not exist — so every logo went direct, and
+   * the ones on hosts that refuse cross-origin embedding failed with
+   * `ERR_BLOCKED_BY_RESPONSE.NotSameOrigin`. That is every Jupiter major,
+   * whose art lives on ipfs.io: they fell back to letter tiles and printed an
+   * error per logo per page load. Relayed, the failure (when there is one)
+   * happens server-side and the page gets a clean 502 to fall back from.
+   */
+  const candidate = logoUrl(uri ?? found);
+
+  /**
+   * Only rendered once the URL is known to return an image — see
+   * `checkUsable`. Until then the tile shows, which is what would have shown
+   * anyway had the load failed.
+   */
+  const [usable, setUsable] = useState<boolean>(() =>
+    candidate ? cachedUsable(candidate) === true : false
+  );
+  useEffect(() => {
+    if (!candidate) return undefined;
+    const known = cachedUsable(candidate);
+    if (known !== undefined) {
+      setUsable(known);
+      return undefined;
+    }
+    let alive = true;
+    void checkUsable(candidate).then((ok) => alive && setUsable(ok));
+    return () => {
+      alive = false;
+    };
+  }, [candidate]);
+
+  const src = usable ? candidate : null;
 
   const plate = (children: React.ReactNode) => (
     <Box
