@@ -195,3 +195,54 @@ against −0.59% / 4 fills, exactly what the tape holds.
 
 Bug this surfaced: a player with zero fills stamped their opening point at
 unix epoch zero, collapsing any shared axis to its right edge.
+
+### #10 — Sound · built, verified
+
+`src/ui/sound.ts`. Seven voices synthesized at play time from oscillators and
+gain envelopes — no audio files, nothing fetched — quantised to the same 83ms
+frame the animations use. Fill, close, seal, tick, buzzer, win, loss. Each
+fires from the one place its event really happens, so nothing can play for an
+action that did not occur.
+
+The toggle took over the green header button, which was a menu control nothing
+ever passed a handler to and which had no menu to open.
+
+Verified by instrumenting `AudioParam.setValueAtTime` through a full real duel:
+seal 196/261.63/392 two frames apart, fill 523.25/783.99 one frame apart,
+exactly five 880Hz ticks 1.008s apart, buzzer 174.61/138.59, and the loss sting
+landing with the curtain rather than the mount. Off produces zero oscillators.
+
+### #11 — Shareable reveal at a permanent URL · built, verified
+
+`/tape/<match>` — `src/screens/TapeScreen.tsx`, `src/chain/useTape.ts`. The
+market, both sides, the timeline, and every fill of both players with side,
+size, execution price and the second it landed. Reads once rather than polling,
+because a Tape never changes after settlement — which is the property that
+makes it a link worth sending. No wallet.
+
+The reveal's share button points here now instead of at /spectate, which by
+that moment shows a finished round with none of the detail.
+
+Fixed alongside it: `sol()` prints two places, so a 2% rake on a 0.2 pot
+displayed as "0.00◎" under a heading reading SETTLED ON SOLANA — stating that
+no rake was taken. `solExact` now shows 0.196 paid and 0.004 raked, which add
+up to the pot in public. /spectate had the same bug.
+
+Verified against a real settled duel and all four paths: real fills render, a
+missing address explains itself, a malformed one is rejected, an unsettled
+match is redirected to /spectate.
+
+### #12 — Head-to-head record · built, verified
+
+`src/chain/useHeadToHead.ts`. Counted from the tapes two wallets share, by two
+`memcmp` queries rather than a scan. Nothing is cached or tallied
+incrementally, so the record cannot drift from what the program paid.
+
+The reveal recounts as it opens so the duel that just settled is included —
+counting first would tell a player who had just won that they still trail.
+
+`npm run check:h2h` derives the byte offsets from a real account instead of
+trusting the arithmetic, because a filter at the wrong offset returns an empty
+list rather than an error and reads as "never played": 77 assertions, 18
+pairings, filtered agreeing with scanned across 59 tapes. In the product the
+reveal read YOU LEAD 7-6 while an independent scan read 13 played, 7 and 6.
