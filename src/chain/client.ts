@@ -19,7 +19,7 @@ import {
   delegateBufferPdaFromDelegatedAccountAndOwnerProgram,
 } from '@magicblock-labs/ephemeral-rollups-sdk';
 import { FOGDUEL_IDL as idl } from './idl';
-import { ACTIVE_CLUSTER, type ClusterConfig } from './config';
+import { ACTIVE_CLUSTER, DELEGATION_PROGRAM_ID, type ClusterConfig } from './config';
 import { feedPda, matchPda, positionPda, statsPda, tapePda, treasuryPda, vaultPda } from './pdas';
 import { authenticate, type MessageSigner } from './erAuth';
 import { VALUE_DIV } from './units';
@@ -475,10 +475,20 @@ export class FogduelClient {
   ): Promise<string[]> {
     const sigs: string[] = [];
     for (const owner of [creator, joiner]) {
+      const position = positionPda(match, owner);
+
+      // Skip what is already home. The rollup refuses to undelegate an account
+      // it no longer holds — "required to be writable and delegated in order
+      // to be undelegated" — so a retry after a partial success used to die on
+      // the position that had already come back, and the one that had not
+      // never got a second chance. Settlement then failed forever.
+      const onL1 = await this.l1.getAccountInfo(position);
+      if (onL1 && !onL1.owner.equals(DELEGATION_PROGRAM_ID)) continue;
+
       sigs.push(
         await (await this.erProgramAuthed()).methods
           .commitAndUndelegatePosition()
-          .accounts({ payer, position: positionPda(match, owner) })
+          .accounts({ payer, position })
           .rpc()
       );
     }
