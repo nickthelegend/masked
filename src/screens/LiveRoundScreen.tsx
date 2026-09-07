@@ -5,6 +5,7 @@ import {
   Orb,
   orbStateForPnl,
   PixelButton,
+  SizePicker,
   PixelPanel,
   PixelText,
   PnLOdometer,
@@ -34,6 +35,11 @@ export interface LiveRoundScreenProps {
   fills: Fill[];
   onLong: () => void;
   onClose: () => void;
+  /** Fraction of what is available a fill uses, 0..1. */
+  fillSize: number;
+  onFillSize: (fraction: number) => void;
+  /** What that size would cost against the current mark, already computed. */
+  sizeNote?: string;
   onSkip: () => void;
   busy?: boolean;
   error?: string | null;
@@ -85,6 +91,9 @@ export default function LiveRoundScreen({
   fills,
   onLong,
   onClose,
+  fillSize,
+  onFillSize,
+  sizeNote,
   onSkip,
   busy = false,
   error = null,
@@ -173,6 +182,11 @@ export default function LiveRoundScreen({
           />
         </Stack>
       </Row>
+
+      {/* Size, then the trade. Impact is quadratic in size against a
+          constant-product curve, so this is the decision the private book
+          exists to make — and the note says what it costs before it is made. */}
+      <SizePicker value={fillSize} onChange={onFillSize} disabled={busy} note={sizeNote} />
 
       <Row gap={space.sm}>
         <PixelButton flex={1} tone="primary" label="LONG" padY={16} loading={busy} onPress={onLong} />

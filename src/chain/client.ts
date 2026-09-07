@@ -372,16 +372,75 @@ export class FogduelClient {
     joiner: PublicKey,
     payer: PublicKey
   ): Promise<void> {
-    for (const owner of [creator, joiner]) {
-      // Idempotent on the program side, so a retry after a partial failure is
-      // safe rather than fatal.
-      await this.createPositionPermission(match, owner, payer);
+    // Both players' clients seal the match, and either can get there first:
+    // the joiner starts the moment they join, the creator the moment their
+    // poll notices somebody has. So every step is skipped if the chain already
+    // shows it done, rather than sent and allowed to fail.
+    //
+    // Sending it anyway is not harmless. `delegate_position_to_er` moves the
+    // account to the delegation program, so the second client's copy fails
+    // with AccountOwnedByWrongProgram — an error the loser of a race would
+    // then show its player, for a round that is in fact correctly sealed.
+    const state = await Promise.all(
+      [creator, joiner].map(async (owner) => {
+        const position = positionPda(match, owner);
+        const permission = permissionPdaFromAccount(position);
+        const [posInfo, permInfo] = await Promise.all([
+          this.l1.getAccountInfo(position).catch(() => null),
+          this.l1.getAccountInfo(permission).catch(() => null),
+        ]);
+        return {
+          owner,
+          hasPermission: !!permInfo,
+          // Delegated accounts are owned by the delegation program. That is
+          // the only reliable signal — the data still decodes either way.
+          permissionDelegated: !!permInfo && permInfo.owner.equals(DELEGATION_PROGRAM_ID),
+          positionDelegated: !!posInfo && posInfo.owner.equals(DELEGATION_PROGRAM_ID),
+        };
+      })
+    );
+
+    // Reading first narrows the race but cannot close it: both clients can
+    // read "not yet" in the same instant and both send. So a step that throws
+    // is re-checked against the chain, and only accepted if the chain now
+    // shows the state it was trying to reach. An error is swallowed on
+    // evidence, never on the assumption that it was probably the other player.
+    const ensure = async (done: boolean, send: () => Promise<void>, confirm: () => Promise<boolean>) => {
+      if (done) return;
+      try {
+        await send();
+      } catch (e) {
+        if (!(await confirm())) throw e;
+      }
+    };
+
+    const isDelegated = async (address: PublicKey) => {
+      const info = await this.l1.getAccountInfo(address).catch(() => null);
+      return !!info && info.owner.equals(DELEGATION_PROGRAM_ID);
+    };
+
+    for (const s of state) {
+      const permission = permissionPdaFromAccount(positionPda(match, s.owner));
+      await ensure(
+        s.hasPermission,
+        () => this.createPositionPermission(match, s.owner, payer),
+        async () => !!(await this.l1.getAccountInfo(permission).catch(() => null))
+      );
     }
-    for (const owner of [creator, joiner]) {
-      await this.delegatePositionPermission(match, owner, payer);
+    for (const s of state) {
+      const permission = permissionPdaFromAccount(positionPda(match, s.owner));
+      await ensure(
+        s.permissionDelegated,
+        () => this.delegatePositionPermission(match, s.owner, payer),
+        () => isDelegated(permission)
+      );
     }
-    for (const owner of [creator, joiner]) {
-      await this.delegatePosition(match, owner, payer);
+    for (const s of state) {
+      await ensure(
+        s.positionDelegated,
+        () => this.delegatePosition(match, s.owner, payer),
+        () => isDelegated(positionPda(match, s.owner))
+      );
     }
     // Each player's book travels inside their Position, so delegating the
     // positions delegates the books — and sealing the positions seals them.

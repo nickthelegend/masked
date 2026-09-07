@@ -31,6 +31,7 @@ export { default as BeachBackdrop, type BeachBackdropProps } from './BeachBackdr
 export { default as PnLReadout, type PnLReadoutProps } from './PnLReadout';
 export { default as PotPill, type PotPillProps } from './PotPill';
 export { default as RoundClock, type RoundClockProps } from './RoundClock';
+export { default as SizePicker, SIZES, type SizePickerProps } from './SizePicker';
 export { default as StakePicker, type StakePickerProps, STAKES } from './StakePicker';
 export { default as FillTape, type FillTapeProps, type Fill } from './FillTape';
 export { pct, money, sol, solExact, mmss, signColor } from './format';

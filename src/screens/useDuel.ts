@@ -25,6 +25,7 @@ import { assertFogIntact } from '../chain/fog';
 import { FogduelClient, pnlBps, type MatchState, type PositionState } from '../chain/client';
 import { formatSolPrice } from '../chain/units';
 import type { TapeState } from '../chain/tape';
+import { buyImpact, sellImpact } from '../chain/book';
 import { useHeadToHead, describeRecord } from '../chain/useHeadToHead';
 import { livePxFor, type TradableMarket } from '../chain/markets';
 import { ACTIVE_CLUSTER } from '../chain/config';
@@ -99,6 +100,8 @@ export interface Duel {
   priceLabel: string;
   /** What the book charged for the most recent fill, or null. */
   lastFill: LastFill | null;
+  /** What the chosen size costs against the current mark. */
+  sizeNote?: string;
   /** What settlement is doing right now. */
   settleStages: SettleStage[];
   /** The public tape once the round has settled, with both real fill lists. */
@@ -441,6 +444,34 @@ export function useDuel(): Duel {
   }, [client, match, phase, secondsLeft, wallet.publicKey]);
 
   /* ----------------------------- settlement ------------------------------ */
+
+  /**
+   * Read the settled round back and show it.
+   *
+   * Split out because there are two ways to arrive here and both are normal:
+   * this client settled the match, or the other player's client did. Only the
+   * reading differs from nothing at all — the chain is the same either way.
+   */
+  const showReveal = useCallback(async () => {
+    if (!client || !match || !wallet.publicKey || !match.joiner) return;
+    const opponent = match.joiner.equals(wallet.publicKey) ? match.creator : match.joiner;
+    const [m, mine, theirs, settledTape] = await Promise.all([
+      client.fetchMatch(match.address),
+      client.fetchPosition(match.address, wallet.publicKey, false),
+      client.fetchPosition(match.address, opponent, false),
+      client.fetchTape(match.address),
+    ]);
+    if (m) setMatch(m);
+    setTape(settledTape);
+    if (mine) setMyPosition(mine);
+    // After settlement the tape is public, so reading the opponent is
+    // legitimate. Routed through the guard so the rule is enforced in one
+    // place rather than trusted at each call site.
+    setPhase('reveal');
+    assertFogIntact('reveal', 'opponent position');
+    if (theirs) setOpponentPosition(theirs);
+  }, [client, match, wallet.publicKey]);
+
   const settle = useCallback(async () => {
     if (!client || !match || !wallet.publicKey || settledRef.current) return;
     if (!match.joiner) return;
@@ -474,22 +505,29 @@ export function useDuel(): Duel {
       await client.settleMatch(match.address, wallet.publicKey, match.creator, match.joiner);
       step('settle', 'done', 'pot paid, tape written');
 
-      const [m, mine, theirs, settledTape] = await Promise.all([
-        client.fetchMatch(match.address),
-        client.fetchPosition(match.address, wallet.publicKey, false),
-        client.fetchPosition(match.address, match.joiner.equals(wallet.publicKey) ? match.creator : match.joiner, false),
-        client.fetchTape(match.address),
-      ]);
-      if (m) setMatch(m);
-      setTape(settledTape);
-      if (mine) setMyPosition(mine);
-      // After settlement the tape is public, so reading the opponent is
-      // legitimate. Routed through the guard so the rule is enforced in one
-      // place rather than trusted at each call site.
-      setPhase('reveal');
-      assertFogIntact('reveal', 'opponent position');
-      if (theirs) setOpponentPosition(theirs);
+      await showReveal();
     } catch (e) {
+      // Both players' clients settle, so one of them loses the race and its
+      // transaction is refused for a match that is already Settled. That is
+      // not a failure — the round finished, the pot was paid, and the loser of
+      // the race may well be the player who won the duel. Played from two real
+      // browser sessions, the winner was shown MATCH NOT LIVE three times and
+      // never saw their own reveal, while 0.2 SOL arrived in their wallet.
+      //
+      // So the chain is asked before anything is called an error. This is the
+      // same rule the sealing path follows: accept the outcome on evidence,
+      // never on the assumption that it was probably the other player.
+      const settled = await client
+        .fetchMatch(match.address)
+        .catch(() => null);
+      if (settled?.status === 'settled') {
+        step('settle', 'done', 'settled by the other player');
+        settledRef.current = true;
+        await showReveal();
+        setBusy(false);
+        return;
+      }
+
       // Settling is several transactions across two chains, and the first
       // attempt genuinely can lose a race with the rollup's commit. Retry
       // quietly a couple of times before saying anything: the old behaviour
@@ -512,7 +550,7 @@ export function useDuel(): Duel {
     } finally {
       setBusy(false);
     }
-  }, [client, match, wallet.publicKey, toast]);
+  }, [client, match, wallet.publicKey, toast, showReveal]);
 
   useEffect(() => {
     if (phase === 'live' && secondsLeft === 0) void settle();
@@ -790,13 +828,21 @@ export function useDuel(): Duel {
   const closeLong = useCallback(() => {
     void guard('POSITION CLOSED', async () => {
       if (!match || !myPosition || myPosition.baseQty <= 0) return;
+      // The same size control governs both directions, so a partial close is
+      // a real move rather than all-or-nothing. MAX sells the exact remaining
+      // base — a rounded-down fraction of it would strand dust that the
+      // program would then have to close at the buzzer.
+      const qty =
+        fillSize >= 1
+          ? myPosition.baseQty
+          : Math.max(1, Math.floor(myPosition.baseQty * fillSize));
       const markBefore = await client!.fetchPrice(match.address, true);
-      await client!.applyFill(match.address, wallet.publicKey!, 'sell', myPosition.baseQty);
+      await client!.applyFill(match.address, wallet.publicKey!, 'sell', qty);
       const mine = await client!.fetchPosition(match.address, wallet.publicKey!, true);
       if (mine) noteFill(mine, markBefore, 'sell');
       if (mine) setMyPosition(mine);
     });
-  }, [guard, client, match, myPosition, wallet.publicKey]);
+  }, [guard, client, match, myPosition, wallet.publicKey, fillSize]);
 
   /** Take a specific match off the book. */
   const joinMatchByAddress = useCallback(
@@ -906,6 +952,29 @@ export function useDuel(): Duel {
     : 0;
 
   /**
+   * What the chosen size would cost, quoted before the fill is signed.
+   *
+   * Exact rather than estimated: `apply_fill` re-pegs the book to the mark
+   * first and rebuilds depth to `entry * BOOK_DEPTH`, which leaves the impact
+   * of a size a closed form. check:tape asserts these against the execution
+   * prices really recorded on every settled tape.
+   */
+  const sizeNote = useMemo(() => {
+    if (!match) return undefined;
+    const holding = (myPosition?.baseQty ?? 0) > 0;
+    if (holding && price > 0) {
+      const qty =
+        fillSize >= 1 ? myPosition!.baseQty : Math.floor(myPosition!.baseQty * fillSize);
+      const cost = sellImpact(qty, price, match.entry) * 100;
+      return `CLOSING THAT COSTS ${cost.toFixed(2)}% · LONGING COSTS ${(
+        buyImpact(Math.floor((myPosition?.quoteBalance ?? match.entry) * fillSize), match.entry) * 100
+      ).toFixed(2)}%`;
+    }
+    const spend = Math.floor((myPosition?.quoteBalance ?? match.entry) * fillSize);
+    return `THAT SIZE COSTS ${(buyImpact(spend, match.entry) * 100).toFixed(2)}% IN IMPACT`;
+  }, [match, myPosition, fillSize, price]);
+
+  /**
    * The rivalry, recounted from the chain whenever the phase changes — which
    * includes arriving at the reveal, so the duel just settled is in the count.
    */
@@ -962,6 +1031,7 @@ export function useDuel(): Duel {
     // coin — here what matters is what a token costs against the stake.
     priceLabel: `${formatSolPrice(price)}◎`,
     lastFill,
+    sizeNote,
     settleStages,
     tape,
     record: describeRecord(headToHead),

@@ -54,6 +54,7 @@ import {
   FillReceipt,
   SettleProgress,
   RoundTimeline,
+  SizePicker,
   playSound,
   useSoundEnabled,
   LiveDuelRow,
@@ -151,6 +152,7 @@ export default function UIGallery() {
   const [galleryKind, setGalleryKind] = useState<MarketKindKey>('meme');
   const [odo, setOdo] = useState(4.12);
   const [soundOn] = useSoundEnabled();
+  const [gallerySize, setGallerySize] = useState(0.25);
   const toast = useToast();
 
   return (
@@ -567,6 +569,13 @@ export default function UIGallery() {
               { id: 'settle', label: 'SETTLE', note: 'PnL compared, pot paid, tape written', state: 'waiting' },
             ]}
           />
+        </Stack>
+      </Section>
+
+      <Section title="SIZEPICKER" note="how much of what is left to put on">
+        <Stack gap={space.md}>
+          <SizePicker value={gallerySize} onChange={setGallerySize} note="THAT SIZE COSTS 0.39% IN IMPACT" />
+          <SizePicker value={0.5} onChange={() => {}} disabled note="DISABLED WHILE A FILL IS IN FLIGHT" />
         </Stack>
       </Section>
 

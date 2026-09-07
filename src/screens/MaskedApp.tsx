@@ -123,6 +123,9 @@ export default function MaskedApp() {
                 opponentName={duel.opponentName}
                 opponentFills={duel.opponentFills}
                 fills={duel.fills}
+                fillSize={duel.fillSize}
+                onFillSize={duel.setFillSize}
+                sizeNote={duel.sizeNote}
                 onLong={duel.openLong}
                 onClose={duel.closeLong}
                 onSkip={duel.settleNow}

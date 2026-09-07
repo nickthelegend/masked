@@ -13,6 +13,8 @@ import { AnchorProvider, Program, type Idl } from '@coral-xyz/anchor';
 import { FOGDUEL_IDL } from '../src/chain/idl';
 import { ACTIVE_CLUSTER } from '../src/chain/config';
 import { toTapeState, replayEquity, markFromFill, type TapeFill } from '../src/chain/tape';
+import { buyImpact, sellImpact, buyExecPx, sellExecPx } from '../src/chain/book';
+import { VALUE_DIV } from '../src/chain/units';
 
 let checks = 0;
 const fail = (msg: string): never => {
@@ -96,14 +98,39 @@ async function main() {
       }
 
       // Every recovered mark must be a sane price on the right side of its
-      // execution: a buy pays above the mark, a sell receives below it.
+      // execution: a buy pays above the mark, a sell receives below it. And
+      // the impact the previewer would have quoted for that size, against that
+      // mark, must be the impact the chain actually charged — otherwise the
+      // number shown before a fill is not the number the fill produces.
       for (const f of fills as TapeFill[]) {
         const mark = markFromFill(f, entry);
         ok(mark > 0 && Number.isFinite(mark), `${who}: recovered a non-price mark ${mark}`);
+
+        const value = (f.qty * f.px) / VALUE_DIV;
         if (f.side === 'buy') {
           ok(f.px >= mark, `${who}: a buy executed at ${f.px} below its mark ${mark}`);
+          const actual = f.px / mark - 1;
+          const quoted = buyImpact(value, entry);
+          ok(
+            Math.abs(actual - quoted) < 1e-9,
+            `${who}: buy impact quoted ${quoted}, chain charged ${actual}`
+          );
+          ok(
+            Math.abs(buyExecPx(value, mark, entry) - f.px) / f.px < 1e-9,
+            `${who}: previewed exec price disagrees with the recorded one`
+          );
         } else {
           ok(f.px <= mark, `${who}: a sell executed at ${f.px} above its mark ${mark}`);
+          const actual = 1 - f.px / mark;
+          const quoted = sellImpact(f.qty, mark, entry);
+          ok(
+            Math.abs(actual - quoted) < 1e-9,
+            `${who}: sell impact quoted ${quoted}, chain charged ${actual}`
+          );
+          ok(
+            Math.abs(sellExecPx(f.qty, mark, entry) - f.px) / f.px < 1e-9,
+            `${who}: previewed exec price disagrees with the recorded one`
+          );
         }
       }
     }
