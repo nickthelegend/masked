@@ -128,6 +128,7 @@ export default function MaskedApp() {
                 marketImageUri={duel.marketImageUri}
                 marketSource={duel.marketSource}
                 priceLabel={duel.priceLabel}
+                settleStages={duel.settleStages}
                 lastFill={
                   duel.lastFill
                     ? {

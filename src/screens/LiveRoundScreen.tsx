@@ -13,6 +13,7 @@ import {
   Row,
   RoundClock,
   FillReceipt,
+  SettleProgress,
   Stack,
   TapeChart,
   TokenLogo,
@@ -48,6 +49,14 @@ export interface LiveRoundScreenProps {
   marketSource?: PriceSource;
   /** Formatted mark. The raw px is a scaled integer — see chain/units.ts. */
   priceLabel?: string;
+  /** What settlement is doing. Shown once the clock hits zero. */
+  settleStages?: Array<{
+    id: string;
+    label: string;
+    note: string;
+    state: 'waiting' | 'running' | 'done' | 'failed';
+    detail?: string;
+  }>;
   /** What the book charged for the most recent fill. */
   lastFill?: {
     side: 'buy' | 'sell';
@@ -86,8 +95,11 @@ export default function LiveRoundScreen({
   marketSource = 'pump.fun',
   priceLabel,
   lastFill = null,
+  settleStages,
   teeEnforced = false,
 }: LiveRoundScreenProps) {
+  const settling = !!settleStages?.some((s) => s.state !== 'waiting');
+
   return (
     <Stack pad={space.md} gap={space.md}>
       <Row justify="space-between" bg={color.ink} outline={color.panelLight} pad={space.sm + 2}>
@@ -124,9 +136,15 @@ export default function LiveRoundScreen({
         </Stack>
       </PixelPanel>
 
+      {/* Shown from the moment settlement starts, not from the clock hitting
+          zero: the two are close but not the same, and it is the settlement
+          this is reporting on. Once it is under way the fill receipt gives
+          way to it. */}
+      {settling ? <SettleProgress stages={settleStages!} /> : null}
+
       {/* What the private book just charged. Only after a fill, and only for
           the player who made it. */}
-      {lastFill ? (
+      {!settling && lastFill ? (
         <FillReceipt
           side={lastFill.side}
           price={lastFill.price}

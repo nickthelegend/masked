@@ -97,6 +97,8 @@ export interface Duel {
   priceLabel: string;
   /** What the book charged for the most recent fill, or null. */
   lastFill: LastFill | null;
+  /** What settlement is doing right now. */
+  settleStages: SettleStage[];
   /** The market the next duel will be opened on, chosen in the lobby. */
   selectedMarket: TradableMarket | null;
   selectMarket: (m: TradableMarket) => void;
@@ -120,6 +122,41 @@ export interface Duel {
   /** Cancel your own unjoined match and reclaim the entry. */
   cancelMatch: (address: string) => void;
 }
+
+/**
+ * The three things settling a duel actually does.
+ *
+ * Between the buzzer and the reveal there are twenty-odd seconds in which the
+ * app used to show nothing at all, while it was doing the most interesting
+ * work in the product: bringing both positions off the rollup, waiting for the
+ * base layer to take ownership back, and paying the pot. Naming the stages
+ * turns dead air into the part a judge should be watching.
+ */
+export interface SettleStage {
+  id: 'commit' | 'undelegate' | 'settle';
+  label: string;
+  /** What the stage means, in one line. */
+  note: string;
+  state: 'waiting' | 'running' | 'done' | 'failed';
+  /** Filled in with the real result once the stage completes. */
+  detail?: string;
+}
+
+const SETTLE_STAGES: SettleStage[] = [
+  {
+    id: 'commit',
+    label: 'COMMIT',
+    note: 'both positions committed from the rollup',
+    state: 'waiting',
+  },
+  {
+    id: 'undelegate',
+    label: 'UNDELEGATE',
+    note: 'Solana takes ownership back from the delegation program',
+    state: 'waiting',
+  },
+  { id: 'settle', label: 'SETTLE', note: 'PnL compared, pot paid, tape written', state: 'waiting' },
+];
 
 /** The cost of the last fill, as the book actually charged it. */
 export interface LastFill {
@@ -192,6 +229,9 @@ export function useDuel(): Duel {
    * a number on screen rather than something to take on trust.
    */
   const [lastFill, setLastFill] = useState<LastFill | null>(null);
+  const [settleStages, setSettleStages] = useState<SettleStage[]>(() =>
+    SETTLE_STAGES.map((x) => ({ ...x }))
+  );
 
   const noteFill = useCallback(
     (position: PositionState, markBefore: number, side: 'buy' | 'sell') => {
@@ -342,15 +382,33 @@ export function useDuel(): Duel {
     if (!match.joiner) return;
     settledRef.current = true;
     setBusy(true);
+    const step = (id: SettleStage['id'], state: SettleStage['state'], detail?: string) =>
+      setSettleStages((prev) =>
+        prev.map((x) => (x.id === id ? { ...x, state, detail: detail ?? x.detail } : x))
+      );
+    setSettleStages(SETTLE_STAGES.map((x) => ({ ...x })));
     try {
-      await client.commitAndUndelegate(match.address, wallet.publicKey, match.creator, match.joiner);
+      step('commit', 'running');
+      const commitSigs = await client.commitAndUndelegate(
+        match.address, wallet.publicKey, match.creator, match.joiner
+      );
+      step('commit', 'done', `${commitSigs.length} tx on the rollup`);
+
       // The commit is scheduled on the rollup and lands on L1 a moment later.
       // Settling before it does hands settle_match accounts still owned by the
       // delegation program, and the whole transaction is rejected.
+      step('undelegate', 'running');
       const home = await client.waitForUndelegation(match.address, match.creator, match.joiner);
-      if (!home) throw new Error('The rollup did not commit both positions back in time.');
+      if (!home) {
+        step('undelegate', 'failed');
+        throw new Error('The rollup did not commit both positions back in time.');
+      }
+      step('undelegate', 'done', 'both positions back under the program');
+
+      step('settle', 'running');
       await client.requestSettle(match.address, wallet.publicKey);
       await client.settleMatch(match.address, wallet.publicKey, match.creator, match.joiner);
+      step('settle', 'done', 'pot paid, tape written');
 
       const [m, mine, theirs] = await Promise.all([
         client.fetchMatch(match.address),
@@ -380,6 +438,9 @@ export function useDuel(): Duel {
         return;
       }
       const friendly = explainError(e);
+      setSettleStages((prev) =>
+        prev.map((x) => (x.state === 'running' ? { ...x, state: 'failed' } : x))
+      );
       setError(friendly.title);
       toast.error(friendly.title, friendly.detail);
     } finally {
@@ -413,6 +474,7 @@ export function useDuel(): Duel {
       settledRef.current = false;
       settleAttempts.current = 0;
       setLastFill(null);
+      setSettleStages(SETTLE_STAGES.map((x) => ({ ...x })));
       setMatch(m);
       setSeries([]);
       setEquity([0]);
@@ -827,6 +889,7 @@ export function useDuel(): Duel {
     // coin — here what matters is what a token costs against the stake.
     priceLabel: `${formatSolPrice(price)}◎`,
     lastFill,
+    settleStages,
     selectedMarket,
     selectMarket: setSelectedMarket,
     teeEnforced: ACTIVE_CLUSTER.tee,

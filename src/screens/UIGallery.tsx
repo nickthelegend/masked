@@ -51,6 +51,9 @@ import {
   MarketTabs,
   MarketPicker,
   MarketHeader,
+  FillReceipt,
+  SettleProgress,
+  LiveDuelRow,
   type MarketKindKey,
   type PickableMarket,
 } from '../ui';
@@ -496,6 +499,58 @@ export default function UIGallery() {
             source="jupiter"
           />
         </Stack>
+      </Section>
+
+      <Section title="FILLRECEIPT" note="what the private book charged">
+        <Stack gap={space.sm}>
+          <FillReceipt
+            side="buy"
+            price="0.008932124◎"
+            mark="0.008876647◎"
+            impactPct={0.62}
+            nonce={1}
+          />
+          {/* Over 1% the outline warns: at that size the book is the thing
+              deciding the round, not the market. */}
+          <FillReceipt side="sell" price="0.008400000◎" mark="0.008550000◎" impactPct={1.75} nonce={2} />
+        </Stack>
+      </Section>
+
+      <Section title="SETTLEPROGRESS" note="every state a settlement passes through">
+        <Stack gap={space.md}>
+          <SettleProgress
+            stages={[
+              { id: 'commit', label: 'COMMIT', note: 'both positions committed from the rollup', state: 'done', detail: '2 tx on the rollup' },
+              { id: 'undelegate', label: 'UNDELEGATE', note: 'Solana takes ownership back', state: 'running' },
+              { id: 'settle', label: 'SETTLE', note: 'PnL compared, pot paid, tape written', state: 'waiting' },
+            ]}
+          />
+          <SettleProgress
+            stages={[
+              { id: 'commit', label: 'COMMIT', note: 'x', state: 'done', detail: '2 tx on the rollup' },
+              { id: 'undelegate', label: 'UNDELEGATE', note: 'x', state: 'done', detail: 'both positions back under the program' },
+              { id: 'settle', label: 'SETTLE', note: 'x', state: 'done', detail: 'pot paid, tape written' },
+            ]}
+          />
+          <SettleProgress
+            stages={[
+              { id: 'commit', label: 'COMMIT', note: 'x', state: 'done', detail: '2 tx on the rollup' },
+              { id: 'undelegate', label: 'UNDELEGATE', note: 'the rollup did not commit in time', state: 'failed' },
+              { id: 'settle', label: 'SETTLE', note: 'PnL compared, pot paid, tape written', state: 'waiting' },
+            ]}
+          />
+        </Stack>
+      </Section>
+
+      <Section title="LIVEDUELROW" note="a duel you can watch">
+        <LiveDuelRow
+          symbol="WOTF"
+          mint="qX4gjQfLB6CYkbyiuhJWN4dtAc3N2vxmKzkJF6Apump"
+          creator="3YUgUP…wsS5"
+          joiner="2cPZYW…iNwV"
+          potSol={0.1}
+          secondsLeft={42}
+        />
       </Section>
 
       <Section title="POCKETSHELL" note="screen clipped to 180px here">
