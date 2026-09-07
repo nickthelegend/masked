@@ -419,6 +419,38 @@ mmss(300);        // '5:00'
 signColor(-1.8);  // color.red
 ```
 
+## Market components
+
+```tsx
+import { MarketPicker, MarketHeader, TokenLogo, SourceBadge } from './src/ui';
+
+// The picker takes formatted strings — it renders markets, it does not know
+// what a price scale is. Every state it will really be in is handled.
+<MarketPicker
+  kind={kind}                       // 'meme' | 'major'
+  onKindChange={setKind}
+  markets={rows}                    // PickableMarket[]
+  selectedMint={selected?.mint}
+  onSelect={(m) => choose(m)}
+  loading={loading}
+  error={error}                     // the upstream's own words, or null
+  onRetry={refresh}
+/>
+
+// A market's logo: drawn for SOL and USDC, remote for everything else, and a
+// colour tile keyed off the mint when the CDN has dropped it.
+<TokenLogo mint={mint} symbol="WOTF" uri={imageUri} size={32} />
+
+// What the live round is over.
+<MarketHeader
+  mint={mint} symbol="WOTF" name="World Of The Future"
+  price="0.008450◎" changePct={4.21} source="pump.fun"
+/>
+
+// Where a price came from. A claim needs an attribution.
+<SourceBadge source="jupiter" />
+```
+
 ## Routes
 
 The app uses expo-router, so every surface has a real URL:

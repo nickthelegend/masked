@@ -33,25 +33,25 @@ Prerequisites: Rust, Solana CLI, Anchor 0.32, Node 22+.
 
 ### 1. Base layer + Ephemeral Rollup
 
-`mb-test-validator` is a `solana-test-validator` preloaded with the MagicBlock
-delegation (`DELeGG…`) and permission (`ACLseo…`) programs. A plain test
-validator will not work — the ER exits on startup without them.
+MASKED runs on three layers, and the third one is the point.
+
+| Layer | Port | What it is |
+|---|---|---|
+| base | 8999 | `mb-test-validator` — a `solana-test-validator` preloaded with the MagicBlock delegation (`DELeGG…`) and permission (`ACLseo…`) programs. Escrow and settlement live here. A plain test validator will not work; the rollup exits on startup without those programs. |
+| rollup | 7799 | `ephemeral-validator` — holds the delegated Positions. This is the validator's own port and it answers anybody. |
+| public | 6699 | `query-filtering-service` — the front door. It reads `ACLseo…` to decide who may see what. **This is the only rollup endpoint the app ever talks to**, and it is what "a public RPC cannot read your position" means. |
+
+One script brings up all three:
 
 ```bash
-cd chain && npm install
+cd chain && npm install && cd ..
 
-# base layer
-# --limit-ledger-size matters: at the default the validator prunes old slots
-# and getSignaturesForAddress goes empty, which silently blanks the /proof
-# transaction feed even though the matches really happened.
-npx mb-test-validator --reset --ledger /tmp/fd-ledger \
-  --rpc-port 8999 --faucet-port 9901 --gossip-port 8110 --dynamic-port-range 8111-8220 \
-  --limit-ledger-size 500000000
-
-# ephemeral rollup (separate shell)
-npx ephemeral-validator --remotes http://127.0.0.1:8999 \
-  --lifecycle ephemeral --listen 127.0.0.1:7799 --storage /tmp/fd-er --reset --no-tui
+./scripts/localnet.sh              # base, rollup, public front
+MASKED_RESET=1 ./scripts/localnet.sh   # …from genesis, clearing all three
 ```
+
+Ledgers go in `.localnet/` beside the repo, not `/tmp`: the base layer writes
+about a gigabyte an hour, and on the boot volume that fills the disk.
 
 ### 2. Deploy
 
@@ -59,42 +59,57 @@ npx ephemeral-validator --remotes http://127.0.0.1:8999 \
 cd chain
 solana airdrop 20 $(solana address) --url http://127.0.0.1:8999
 anchor build && anchor deploy --provider.cluster http://127.0.0.1:8999
+cd .. && npm run sync:idl
 ```
 
-### 3. Test
+### 3. Start the market proxy
+
+pump.fun and Jupiter both answer a server and neither sends
+`Access-Control-Allow-Origin`, so a browser cannot call them directly. This is
+a CORS shim and nothing else — no secrets, two upstream hosts, and it refuses
+anything else with a 403.
 
 ```bash
-# 11 lifecycle tests: escrow, fills, rake, settlement, tape
+npm run proxy      # :8791, and GET /whoami identifies it
+```
+
+### 4. Test
+
+```bash
+# 16 lifecycle tests: escrow, the private book, impact, the mark's rate limit,
+# rake, settlement, tape, stats
 cd chain && anchor test --skip-local-validator
 
-# 5 ER tests: delegation, ER writes, L1 rejection, commit-back, settle
+# 5 rollup tests: delegation, ER writes, L1 rejection, commit-back, settle
 ANCHOR_PROVIDER_URL=http://127.0.0.1:8999 ANCHOR_WALLET=$HOME/.config/solana/id.json \
-  npx mocha --import=tsx --timeout 200000 tests/er-privacy.ts
+  npx mocha --import=tsx --timeout 1000000 tests/er-privacy.ts
 
-# drives a full match through the app's own client
-cd .. && npm run verify:client
+cd ..
+npm run check          # typecheck + 5 assertion suites
+npm run verify:client  # a full match through the app's own client
+npm run check:gate     # what the front door enforces, against a control
+npm run check:markets  # the live market list, end to end
+npm run prove:privacy  # the whole privacy claim, stage by stage
 ```
 
-### 4. Create the market mint
+### 5. The markets
 
-Duels are fought over a real SPL mint. Create one on your cluster and point the
-app at it:
+Duels are fought over real markets, listed live: pump.fun for memes, Jupiter
+for SOL and USDC. Nothing is hardcoded and there is no fallback list — if a
+feed is down the picker says so and refuses to open a match rather than
+inventing a price.
 
-```bash
-spl-token create-token --url http://127.0.0.1:8999 --decimals 5
-# then either set EXPO_PUBLIC_MINT=<address>, or edit DEMO_MINT in
-# src/chain/market.ts
-```
+Positions are virtual inventory. No SPL moves during a round, and no fill is
+ever routed to pump.fun or a Jupiter swap: a public swap print would hand the
+opponent the wallet, the mint and the size that the fog exists to hide. Those
+feeds price the round; each player's own constant-product book fills it.
 
-Positions are virtual inventory — no SPL moves during a round, because a public
-swap print would hand the opponent the fills the fog exists to hide. The mint
-identifies the market; it is not custodied.
-
-### 5. Seed the chain and run the app
+### 6. Seed the chain and run the app
 
 ```bash
-npm run seed -- 5      # plays 5 real duels so the feed and board have data
-npm run open -- 3      # opens 3 unjoined matches so the book is not empty
+npm run seed -- 5      # plays 5 real duels, on live markets, start to finish
+npm run open -- 4      # opens unjoined matches so the book is not empty
+npm run crank          # settles anything abandoned past its buzzer
 npm run web
 ```
 
@@ -193,12 +208,15 @@ delegated.**
 |---|---|---|
 | `Match` | public | public |
 | `PriceFeed` | public (both players must be quoted identically) | public |
-| `Position` | **private to its owner on a TEE** | public (committed to L1) |
+| `Position` | **refused by the public endpoint to everyone but its owner** | public (committed to L1) |
 | `Tape` | does not exist yet | public, permanently |
 
-The client never fetches the opponent's `Position` during a live round. On a
-TEE the read is refused at ingress; on a non-TEE cluster fetching it would leak
-exactly what the mode exists to hide.
+The read is refused at the door — `npm run check:gate` shows a sealed position
+refused while a permission-less one on the same rollup is served, which is the
+difference between access control and an outage — and the app does not ask for
+it in the first place: `npm run check:fog:wire` recorded 350 calls to the
+rollup during a live round, 53 for the player's own position and none for the
+opponent's.
 
 ---
 
@@ -206,11 +224,17 @@ exactly what the mode exists to hide.
 
 ```bash
 npm run check          # typecheck + 5 assertion suites (tokens, series, fog, errors, preflight)
+npm run check:gate     # what the front door enforces, tested against a control
 npm run check:sealed   # proves the UI's own path puts an ACL on chain for both players
+npm run check:markets  # the live market list: real mints, prices, logos, and a
+                       # startPx the program will accept
+npm run check:pumpfun  # the pump.fun integration on its own
 npm run verify:client  # drives a full match through the app's own client
 npm run prove:privacy  # the privacy proof, stage by stage (~65s)
 npm run truth          # RPC ground truth, to check rendered numbers against
-cd chain && anchor test --skip-local-validator   # 20 on-chain tests
+npm run state          # where every unfinished match got to
+npm run crank          # settle anything abandoned past its buzzer
+cd chain && anchor test --skip-local-validator   # 26 on-chain tests
 ```
 
 ---
@@ -219,20 +243,35 @@ cd chain && anchor test --skip-local-validator   # 20 on-chain tests
 
 Read this before judging — none of it is hidden in the code.
 
-1. **PER privacy is built and on chain, but its enforcement is unproved.**
+1. **Reads are gated. What is missing is attestation, not enforcement.**
    Every match started through the UI creates an access-control list for each
-   position naming only its owner, and delegates both ACLs to the rollup before
-   delegating the positions. That is real, on chain, and checkable —
-   `npm run check:sealed` asserts it, and `/proof` shows the permission
-   accounts of the most recent duel.
+   position naming only its owner, delegates both ACLs to the rollup, then
+   delegates the positions. The rollup sits behind a query-filtering-service
+   that reads `ACLseo…`, and that door does refuse:
 
-   What is *not* proved is the read gate. A local `ephemeral-validator` is not
-   a TEE and has no ingress check, so on this cluster the ACL exists but reads
-   are not refused. Proving enforcement needs `devnet-tee.magicblock.app`,
-   which needs devnet SOL; airdrops were refused 20+ times across the public
-   faucets and `faucet.solana.com` requires a captcha. `prove:privacy` prints
-   this verdict rather than implying the fog holds, and `/proof` shows
-   "privacy enforced: NO — needs a TEE" in red.
+   | | validator :7799 | public :6699 |
+   |---|---|---|
+   | sealed position, anonymous | 543 bytes | **REFUSED** |
+   | same shape, no permission | 543 bytes | 543 bytes |
+   | owner, with a signed token | — | 543 bytes |
+   | opponent, with a signed token | — | **REFUSED** |
+
+   The control row is the one that matters: a door shut for everybody is not
+   access control. `npm run check:gate` runs this every time, and `/proof`
+   probes it live from the browser.
+
+   What is missing is *attestation*. That gate is a process on this machine,
+   and a judge has only my word that it is the one I say it is. A TEE
+   validator (`devnet-tee.magicblock.app`) replaces that word with something
+   checkable. Reaching it needs devnet SOL, and airdrops were refused 40+
+   times across the public faucets — `faucet.solana.com` requires a captcha.
+   So `/proof` reports enforcement and attestation as two separate rows, and
+   only the second one says NO.
+
+   An earlier version of this README said the read gate was unproved and that
+   the local stack had none. That was wrong: the stack ships one, and it
+   works.
+
 2. **The price feed is cranked, not an oracle.** One `PriceFeed` account per
    match, pushed by the match authority. It is deliberately *not* a public DEX
    swap — a public swap print mid-round would hand the opponent the fills the
@@ -256,13 +295,18 @@ Read this before judging — none of it is hidden in the code.
 
 ```
 chain/                  Anchor workspace
-  programs/fogduel/     the program (8 lifecycle + 3 MagicBlock instructions)
-  tests/fogduel.ts      11 lifecycle tests
-  tests/er-privacy.ts   ER delegation + commit tests
-src/chain/              typed client, config, PDAs, wallet, chain hooks
-src/ui/                 31-component pixel UI library + drawn SVG icons
-src/screens/            landing, duel, feed, board, modes, quests, gallery
-app/                    expo-router routes:  /  /play  /gallery
+  programs/fogduel/     the program (14 instructions)
+  tests/fogduel.ts      16 lifecycle tests
+  tests/er-privacy.ts   rollup delegation + commit tests
+  tests/permission.ts   ACL creation, delegation, and what each endpoint serves
+scripts/localnet.sh     brings up base + rollup + the permission-checking front
+server/market-proxy.mjs CORS shim for pump.fun and Jupiter (no secrets)
+server/rpc-recorder.mjs records what the app asks the rollup for
+src/chain/              typed client, config, PDAs, units, wallet, chain hooks
+src/ui/                 pixel UI library + drawn SVG icons and token marks
+src/screens/            landing, duel, feed, board, modes, quests, proof, gallery
+app/                    expo-router:  /  /play  /proof  /health  /gallery
+TEST-PLAN.md            every component and flow, with its verified result
 PLAN.md                 phase/task status and the full gap list
 ```
 

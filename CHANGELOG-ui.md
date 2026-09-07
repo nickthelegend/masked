@@ -271,3 +271,29 @@ than as meaning, which is why it is opt-out via `glitch={false}`.
 
 The secondary hero CTA scrolls to the explainer section rather than routing to
 `/play`, so the label means what it says.
+
+## 19. Market discovery
+
+Nine components for choosing and showing what a duel is fought over, all fed by
+live pump.fun and Jupiter data rather than a fixture list.
+
+- `TokenLogo` — a market's logo. Roughly a quarter of pump.fun's image URLs are
+  dead at their CDN, so a broken image is the normal case: it falls back to a
+  colour tile keyed off the mint, so a given coin always looks the same. SOL and
+  USDC are drawn instead of fetched, because neither feed carries a logo for
+  them.
+- `PixelArt` — a bitmap with a palette, for marks that cannot be one ink.
+  `PixelIcon` still handles single-colour UI glyphs.
+- `SolanaMark`, `UsdcMark`, `PumpMark` — brand marks on the same lattice as
+  every other icon, in the brands' own colours.
+- `MarketRow` — one market: logo, ticker, name, price, cap. The whole row is
+  the target, because picking a market is a selection and not an action.
+- `MarketTabs` — a segmented control for splitting one list. Deliberately looks
+  like less than `TabBar`, which is the app's navigation.
+- `MarketPicker` — the list, with all four states it will really be in:
+  loading, empty, failed (showing the upstream's own words) and listed.
+- `MarketHeader` — what the live round is over, with the feed named.
+- `SourceBadge` — where a price came from, because a claim needs an attribution.
+- `WalletPicker` — which wallet to connect with. The connect button used to
+  select the first one outright, which is fine with one wallet and silently
+  wrong with two.
