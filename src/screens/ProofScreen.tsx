@@ -93,6 +93,25 @@ export default function ProofScreen() {
     const id = setInterval(() => setNowSecs(Math.floor(Date.now() / 1000)), 1000);
     return () => clearInterval(id);
   }, []);
+  /**
+   * A duel is running only while its clock is.
+   *
+   * `useOpenMatches` reports anything whose on-chain status is `live`, which
+   * includes rounds whose sixty seconds ran out and that nobody has settled —
+   * both players closed their tabs, and settlement is permissionless but not
+   * automatic. Listing those under LIVE RIGHT NOW put twelve duels on the
+   * evidence page all frozen at 0:00, which reads as a broken clock rather
+   * than as the truth: they are over and waiting to be settled.
+   */
+  const { running, expired } = useMemo(() => {
+    const isRunning = (m: (typeof liveMatches)[number]) =>
+      m.duration - (nowSecs - m.startTs) > 0;
+    return {
+      running: liveMatches.filter(isRunning),
+      expired: liveMatches.filter((m) => !isRunning(m)).length,
+    };
+  }, [liveMatches, nowSecs]);
+
   const gateCandidates = useMemo(() => {
     const out: PublicKey[] = [];
     // Live matches first: those are the positions that are sealed right now.
@@ -172,18 +191,18 @@ export default function ProofScreen() {
             LIVE RIGHT NOW
           </PixelText>
           <Badge
-            label={`${liveMatches.length} DUEL${liveMatches.length === 1 ? '' : 'S'}`}
-            tone={liveMatches.length > 0 ? 'live' : 'quiet'}
+            label={`${running.length} DUEL${running.length === 1 ? '' : 'S'}`}
+            tone={running.length > 0 ? 'live' : 'quiet'}
             variant="label"
           />
         </Row>
-        {liveMatches.length === 0 ? (
+        {running.length === 0 ? (
           <PixelText variant="bodySmall" size={10} color={color.textFaint}>
             Nothing running. Open one at /play and this fills in.
           </PixelText>
         ) : (
           <Stack gap={space.xs}>
-            {liveMatches.slice(0, 5).map((m) => (
+            {running.slice(0, 5).map((m) => (
               <LiveDuelRow
                 key={m.address.toBase58()}
                 symbol={m.symbol}
@@ -197,6 +216,13 @@ export default function ProofScreen() {
             ))}
           </Stack>
         )}
+        {expired > 0 ? (
+          <PixelText variant="bodySmall" size={10} color={color.textFaint}>
+            {expired} more {expired === 1 ? 'duel is' : 'duels are'} over but
+            unsettled — both players left before the buzzer. Settlement is
+            permissionless: `npm run crank` closes them and pays the pots.
+          </PixelText>
+        ) : null}
         <PixelText variant="bodySmall" size={10} color={color.textFaint}>
           Spectating needs no wallet, and shows no position — the rollup refuses
           them to a spectator exactly as it does to the opponent.
