@@ -40,8 +40,24 @@ export type DuelPhase = 'lobby' | 'searching' | 'live' | 'reveal';
  *
  * The program's buy side consumes quote, not base — you say how much you are
  * spending and the private book tells you what you got.
+ *
+ * It has to be one of SizePicker's `SIZES`, because that control highlights
+ * the button whose value equals this one. It was 0.4, which is not among
+ * [0.25, 0.5, 1], so a round opened with every size button unhighlighted while
+ * 40% was armed: the player saw nothing selected, pressed LONG, and spent 40%
+ * of their quote on a size they had never chosen and could not see.
  */
-const DEFAULT_FILL_FRACTION = 0.4;
+const DEFAULT_FILL_FRACTION = 0.25;
+
+/**
+ * What a guarded action reports back.
+ *
+ * `'noop'` means it correctly decided there was nothing to do, and the success
+ * toast is skipped. A `{ label }` means it did something its headline does not
+ * describe — a partial close is not "POSITION CLOSED" — and that label is used
+ * instead.
+ */
+type GuardOutcome = void | 'noop' | { label: string };
 /** Poll cadence for on-chain state during a live round. */
 const POLL_MS = 1000;
 /**
@@ -776,7 +792,7 @@ export function useDuel(): Duel {
    * nothing happened, not congratulated for it.
    */
   const guard = useCallback(
-    async (label: string, fn: () => Promise<void | 'noop'>) => {
+    async (label: string, fn: () => Promise<GuardOutcome>) => {
       if (!client || !wallet.publicKey) {
         setError('Connect a wallet first.');
         toast.error('CONNECT A WALLET', 'Nothing can be signed without one.');
@@ -799,7 +815,12 @@ export function useDuel(): Duel {
         // Retry only the failures where retrying is meaningful — a declined
         // signature or a self-join is final.
         const outcome = await withRetry(fn);
-        if (outcome !== 'noop') toast.ok(label);
+        if (outcome === 'noop') return;
+        // An action that did something other than its headline says so itself:
+        // CLOSE at 1/4 sells a quarter, and answering "POSITION CLOSED" to
+        // that is the same overstatement as congratulating a no-op, one step
+        // subtler — it claims more happened than did.
+        toast.ok(outcome && typeof outcome === 'object' ? outcome.label : label);
       } catch (e) {
         const friendly = explainError(e);
         setError(friendly.title);
@@ -1046,12 +1067,14 @@ export function useDuel(): Duel {
       // a real move rather than all-or-nothing. MAX sells the exact remaining
       // base — a rounded-down fraction of it would strand dust that the
       // program would then have to close at the buzzer.
-      const qty =
-        fillSize >= 1
-          ? myPosition.baseQty
-          : Math.max(1, Math.floor(myPosition.baseQty * fillSize));
+      const whole = fillSize >= 1;
+      const qty = whole
+        ? myPosition.baseQty
+        : Math.max(1, Math.floor(myPosition.baseQty * fillSize));
       const markBefore = await client!.fetchPrice(match.address, true);
       await fill('sell', qty, markBefore);
+      // Only MAX actually leaves you flat.
+      return whole ? undefined : { label: `SOLD ${Math.round(fillSize * 100)}% OF POSITION` };
     });
   }, [guard, client, match, myPosition, wallet.publicKey, fillSize, toast]);
 
