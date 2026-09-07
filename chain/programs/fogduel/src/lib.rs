@@ -425,8 +425,22 @@ pub mod fogduel {
         // position, and refusing to let a blown-up player close would trap
         // them in it.
         if matches!(side, Side::Buy | Side::Sell) {
-            let open = (pos.base_qty as i128).abs();
-            require!(open <= pos.max_base_at(mark), FogError::InsufficientQuote);
+            // Compare notionals, not quantities.
+            //
+            // The obvious form — `open <= equity * VALUE_DIV / mark` — divides
+            // by the mark a second time, and integer division truncates each
+            // time. A maximum-size long spends the whole quote, so afterwards
+            // equity *is* the position's notional; round-tripping it through
+            // that extra division gave back a number one unit smaller than the
+            // base actually held, and the cap rejected a position it had just
+            // priced. In the app that was every MAX long from flat, refused
+            // with "NOT ENOUGH QUOTE".
+            //
+            // Comparing `base * mark` against equity uses the same truncation
+            // on both sides, so a position at exactly one times collateral
+            // passes and anything beyond it does not.
+            let notional = ((pos.base_qty as i128).abs() * (mark as i128)) / VALUE_DIV;
+            require!(notional <= pos.equity(mark), FogError::InsufficientQuote);
         }
 
         pos.last_px = px;
