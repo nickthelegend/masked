@@ -4,7 +4,7 @@
  */
 import { useState } from 'react';
 import { SafeAreaView, ScrollView, StatusBar, View } from 'react-native';
-import { BeachBackdrop, PocketShell, TabBar, Ticker, color } from '../ui';
+import { BeachBackdrop, PocketShell, TabBar, Ticker, color, useToast } from '../ui';
 import AppHeader from './AppHeader';
 import FeedScreen from './FeedScreen';
 import LeaderboardScreen from './LeaderboardScreen';
@@ -15,6 +15,7 @@ import RevealScreen from './RevealScreen';
 import ModesScreen from './ModesScreen';
 import QuestsScreen from './QuestsScreen';
 import { useTickerItems } from '../chain/useTickerItems';
+import { formatSolPrice } from '../chain/units';
 import { useDuel } from './useDuel';
 
 const SCREEN_HEIGHT = 700;
@@ -22,6 +23,7 @@ const SCREEN_HEIGHT = 700;
 export default function MaskedApp() {
   const [tab, setTab] = useState('duel');
   const duel = useDuel();
+  const toast = useToast();
   const tickerItems = useTickerItems();
 
   const toMatchmaking = () => {
@@ -32,6 +34,34 @@ export default function MaskedApp() {
   const postToFeed = () => {
     setTab('feed');
     duel.backToLobby();
+  };
+
+  /**
+   * A link anyone can open to watch this duel — no wallet, no account.
+   *
+   * The clipboard can be refused (permissions, an insecure origin), so the
+   * label reports what actually happened rather than always claiming success.
+   */
+  const [shareLabel, setShareLabel] = useState('COPY WATCH LINK');
+  const shareWatchLink = () => {
+    const address = duel.matchAddress;
+    if (!address) return;
+    const url = `${globalThis.location?.origin ?? ''}/spectate/${address}`;
+    const done = (ok: boolean) => {
+      setShareLabel(ok ? 'LINK COPIED' : 'COPY BLOCKED');
+      // A refused clipboard must not be a dead end: show the link so it can
+      // still be read off the screen. Browsers block writeText on insecure
+      // origins and without a user-gesture grant, so this is a normal path.
+      if (!ok) toast.info('Copy this link', url);
+      setTimeout(() => setShareLabel('COPY WATCH LINK'), 2500);
+    };
+    try {
+      const clip = globalThis.navigator?.clipboard;
+      if (!clip?.writeText) return done(false);
+      void clip.writeText(url).then(() => done(true), () => done(false));
+    } catch {
+      done(false);
+    }
   };
 
   return (
@@ -98,6 +128,17 @@ export default function MaskedApp() {
                 marketImageUri={duel.marketImageUri}
                 marketSource={duel.marketSource}
                 priceLabel={duel.priceLabel}
+                lastFill={
+                  duel.lastFill
+                    ? {
+                        side: duel.lastFill.side,
+                        price: `${formatSolPrice(duel.lastFill.px)}◎`,
+                        mark: `${formatSolPrice(duel.lastFill.markBefore)}◎`,
+                        impactPct: duel.lastFill.impactPct,
+                        at: duel.lastFill.at,
+                      }
+                    : null
+                }
                 teeEnforced={duel.teeEnforced}
               />
             ) : null}
@@ -114,7 +155,8 @@ export default function MaskedApp() {
                 opponentFills={duel.opponentFills}
                 opponentName={duel.opponentName}
                 onRematch={duel.rematch}
-                onFade={duel.rematch}
+                onShare={shareWatchLink}
+                shareLabel={shareLabel}
                 onPost={postToFeed}
               />
             ) : null}

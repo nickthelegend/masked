@@ -29,8 +29,11 @@ export interface RevealScreenProps {
   opponentFills: number;
   opponentName: string;
   onRematch: () => void;
-  onFade: () => void;
+  /** Copies a spectate link for this duel. */
+  onShare: () => void;
   onPost: () => void;
+  /** Label for the share button, so it can confirm after a copy. */
+  shareLabel?: string;
 }
 
 /** A short curve stands in when the round ended before enough samples landed. */
@@ -53,8 +56,9 @@ export default function RevealScreen({
   opponentFills,
   opponentName,
   onRematch,
-  onFade,
+  onShare,
   onPost,
+  shareLabel = 'COPY WATCH LINK',
 }: RevealScreenProps) {
   // Hold the tape back until the curtain has torn, so the numbers land at the
   // moment the fog lifts rather than before it.
@@ -120,10 +124,16 @@ export default function RevealScreen({
 
       <Row gap={space.sm}>
         <PixelButton flex={1} tone="gold" label="REMATCH" size={10} onPress={onRematch} />
-        <PixelButton flex={1} tone="danger" label="FADE WINNER" size={10} onPress={onFade} />
+        {/* Was "FADE WINNER", which called the same handler as REMATCH and
+            described something the game cannot do — positions are long-only,
+            so there is no side to take against anybody. This link is real and
+            needs no wallet at the other end. */}
+        <PixelButton flex={1} tone="info" label={shareLabel} size={10} onPress={onShare} />
       </Row>
 
-      <PixelButton tone="info" label="POST REVEAL TO FEED" size={9} onPress={onPost} />
+      {/* The tape is public the moment it settles — it is already in the feed.
+          The old label promised a posting step that does not exist. */}
+      <PixelButton tone="quiet" label="SEE IT IN THE FEED" size={9} onPress={onPost} />
     </Stack>
     </View>
   );

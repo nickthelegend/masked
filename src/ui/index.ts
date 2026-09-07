@@ -67,3 +67,4 @@ export {
 } from './MarketPicker';
 export { default as MarketHeader, type MarketHeaderProps } from './MarketHeader';
 export { default as LiveDuelRow, type LiveDuelRowProps } from './LiveDuelRow';
+export { default as FillReceipt, type FillReceiptProps } from './FillReceipt';

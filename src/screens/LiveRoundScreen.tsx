@@ -12,6 +12,7 @@ import {
   PotPill,
   Row,
   RoundClock,
+  FillReceipt,
   Stack,
   TapeChart,
   TokenLogo,
@@ -47,6 +48,14 @@ export interface LiveRoundScreenProps {
   marketSource?: PriceSource;
   /** Formatted mark. The raw px is a scaled integer — see chain/units.ts. */
   priceLabel?: string;
+  /** What the book charged for the most recent fill. */
+  lastFill?: {
+    side: 'buy' | 'sell';
+    price: string;
+    mark: string;
+    impactPct: number;
+    at: number;
+  } | null;
   /** Whether this cluster enforces that ACL at read time (TEE only). */
   teeEnforced?: boolean;
 }
@@ -76,6 +85,7 @@ export default function LiveRoundScreen({
   marketImageUri = null,
   marketSource = 'pump.fun',
   priceLabel,
+  lastFill = null,
   teeEnforced = false,
 }: LiveRoundScreenProps) {
   return (
@@ -113,6 +123,18 @@ export default function LiveRoundScreen({
           </Row>
         </Stack>
       </PixelPanel>
+
+      {/* What the private book just charged. Only after a fill, and only for
+          the player who made it. */}
+      {lastFill ? (
+        <FillReceipt
+          side={lastFill.side}
+          price={lastFill.price}
+          mark={lastFill.mark}
+          impactPct={lastFill.impactPct}
+          nonce={lastFill.at}
+        />
+      ) : null}
 
       <Row gap={space.sm} align="stretch">
         <PnLReadout panel flex={1} label="YOU" value={myPnl} note={positionLabel} />

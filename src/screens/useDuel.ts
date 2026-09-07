@@ -95,6 +95,8 @@ export interface Duel {
   marketSource: 'pump.fun' | 'jupiter';
   /** The mark, formatted. */
   priceLabel: string;
+  /** What the book charged for the most recent fill, or null. */
+  lastFill: LastFill | null;
   /** The market the next duel will be opened on, chosen in the lobby. */
   selectedMarket: TradableMarket | null;
   selectMarket: (m: TradableMarket) => void;
@@ -117,6 +119,20 @@ export interface Duel {
   joinMatch: (address: string, creator: string) => void;
   /** Cancel your own unjoined match and reclaim the entry. */
   cancelMatch: (address: string) => void;
+}
+
+/** The cost of the last fill, as the book actually charged it. */
+export interface LastFill {
+  side: 'buy' | 'sell';
+  /** Price filled at, in the program's scale. */
+  px: number;
+  /** The posted mark immediately before the fill. */
+  markBefore: number;
+  /** How far the fill landed from the mark, against you, as a percentage. */
+  impactPct: number;
+  /** Base quantity, in the program's scale. */
+  qty: number;
+  at: number;
 }
 
 const bpsToPct = (bps: number) => bps / 100;
@@ -165,6 +181,36 @@ export function useDuel(): Duel {
   const settledRef = useRef(false);
   /** Retries spent on the current settlement. Reset when a round begins. */
   const settleAttempts = useRef(0);
+
+  /**
+   * What the private book just charged for the last fill.
+   *
+   * The whole mechanic — that each player trades their own curve and pays
+   * impact on their own size — is invisible if the screen only shows a
+   * position appearing. This captures the mark immediately before the fill
+   * and compares it with the price actually filled at, so the cost of size is
+   * a number on screen rather than something to take on trust.
+   */
+  const [lastFill, setLastFill] = useState<LastFill | null>(null);
+
+  const noteFill = useCallback(
+    (position: PositionState, markBefore: number, side: 'buy' | 'sell') => {
+      const fill = position.fills[position.fills.length - 1];
+      if (!fill || markBefore <= 0) return;
+      // Buying above the mark and selling below it are both a cost, so the
+      // sign is normalised: impact is always what it took out of you.
+      const raw = (fill.px - markBefore) / markBefore;
+      setLastFill({
+        side,
+        px: fill.px,
+        markBefore,
+        impactPct: (side === 'buy' ? raw : -raw) * 100,
+        qty: fill.qty,
+        at: Date.now(),
+      });
+    },
+    []
+  );
 
   const entryLamports = Math.round(stake * 1e9);
   /**
@@ -366,6 +412,7 @@ export function useDuel(): Duel {
 
       settledRef.current = false;
       settleAttempts.current = 0;
+      setLastFill(null);
       setMatch(m);
       setSeries([]);
       setEquity([0]);
@@ -601,17 +648,23 @@ export function useDuel(): Duel {
       // Spend a slice of what is left, in quote units.
       const quote = myPosition?.quoteBalance ?? match.entry;
       const spend = Math.max(1, Math.floor(quote * fillSize));
+      const markBefore = await client!.fetchPrice(match.address, true);
       await client!.applyFill(match.address, wallet.publicKey!, 'buy', spend);
       const mine = await client!.fetchPosition(match.address, wallet.publicKey!, true);
-      if (mine) setMyPosition(mine);
+      if (mine) {
+        setMyPosition(mine);
+        noteFill(mine, markBefore, 'buy');
+      }
     });
-  }, [guard, client, match, myPosition, wallet.publicKey, fillSize]);
+  }, [guard, client, match, myPosition, wallet.publicKey, fillSize, noteFill]);
 
   const closeLong = useCallback(() => {
     void guard('POSITION CLOSED', async () => {
       if (!match || !myPosition || myPosition.baseQty <= 0) return;
+      const markBefore = await client!.fetchPrice(match.address, true);
       await client!.applyFill(match.address, wallet.publicKey!, 'sell', myPosition.baseQty);
       const mine = await client!.fetchPosition(match.address, wallet.publicKey!, true);
+      if (mine) noteFill(mine, markBefore, 'sell');
       if (mine) setMyPosition(mine);
     });
   }, [guard, client, match, myPosition, wallet.publicKey]);
@@ -660,16 +713,52 @@ export function useDuel(): Duel {
     [guard, client, wallet.publicKey]
   );
 
+  /**
+   * Go again on the same market, at the same size.
+   *
+   * This used to reset state and drop the player in matchmaking, which is
+   * "play again" rather than "rematch" — the market and stake they had just
+   * been playing were both forgotten. It now carries both over and opens the
+   * match, so the button does what its label says.
+   *
+   * The price is not carried over: `startMatch` re-reads it, because a mark
+   * from the round that just ended is exactly the sort of stale number that
+   * should never open a new one.
+   */
   const rematch = useCallback(() => {
+    const previous = match;
     setSealed(false);
-    setMatch(null);
     setMyPosition(null);
     setOpponentPosition(null);
     setSeries([]);
     setEquity([0]);
+    setLastFill(null);
     settledRef.current = false;
+    settleAttempts.current = 0;
+    setMatch(null);
+
+    if (previous) {
+      setStake(previous.entry / LAMPORTS_PER_SOL);
+      setSelectedMarket((current) =>
+        current && current.mint === previous.mint.toBase58()
+          ? current
+          : {
+              kind: previous.marketType,
+              mint: previous.mint.toBase58(),
+              symbol: previous.symbol,
+              name: previous.name,
+              imageUri: null,
+              priceSol: 0,
+              priceUsd: 0,
+              // Re-read at open time; never reused from the finished round.
+              startPx: 0,
+              source: previous.marketType === 'major' ? 'jupiter' : 'pump.fun',
+              usdMarketCap: 0,
+            }
+      );
+    }
     setPhase('searching');
-  }, []);
+  }, [match]);
 
   const backToLobby = useCallback(() => {
     setSealed(false);
@@ -737,6 +826,7 @@ export function useDuel(): Duel {
     // currency. The picker quotes USD, where market cap is what identifies a
     // coin — here what matters is what a token costs against the stake.
     priceLabel: `${formatSolPrice(price)}◎`,
+    lastFill,
     selectedMarket,
     selectMarket: setSelectedMarket,
     teeEnforced: ACTIVE_CLUSTER.tee,
