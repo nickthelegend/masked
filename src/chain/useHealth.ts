@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Connection } from '@solana/web3.js';
 import { ACTIVE_CLUSTER, DELEGATION_PROGRAM_ID, FOGDUEL_PROGRAM_ID, PERMISSION_PROGRAM_ID } from './config';
 import { feedBase, proxyBase, usesProxy } from './marketEndpoints';
+import { explainRead } from './errors';
 
 export type HealthState = 'up' | 'down' | 'checking';
 
@@ -37,7 +38,11 @@ const check = async (name: string, fn: () => Promise<string>): Promise<HealthChe
     ]);
     return { name, state: 'up', detail };
   } catch (e) {
-    return { name, state: 'down', detail: e instanceof Error ? e.message.slice(0, 60) : 'unreachable' };
+    // `explainRead` rather than the raw message: the Fetch API's "Failed to
+    // fetch" told a reader nothing except that something failed, on the one
+    // page whose entire job is saying which dependency broke. The name is
+    // already in the row, so the fallback can be short.
+    return { name, state: 'down', detail: explainRead(e, 'did not answer').slice(0, 60) };
   }
 };
 
