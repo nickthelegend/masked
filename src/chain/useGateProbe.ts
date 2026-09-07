@@ -15,6 +15,7 @@
  */
 import { useEffect, useState } from 'react';
 import { Connection, PublicKey } from '@solana/web3.js';
+import { permissionPdaFromAccount } from '@magicblock-labs/ephemeral-rollups-sdk';
 import { ACTIVE_CLUSTER, DELEGATION_PROGRAM_ID } from './config';
 
 export type GateVerdict =
@@ -59,16 +60,21 @@ export function useGateProbe(
 
     const read = async () => {
       try {
-        // Only a position that L1 says is delegated is worth probing: an
-        // undelegated one lives on L1 and the front door would rightly serve
-        // it, which would look like a leak and is not one.
+        // Sealed means two things, and both have to hold before a served read
+        // counts as a leak: the position is delegated, *and* it carries a
+        // permission. A delegated position with no permission is supposed to
+        // be served — that is the control this whole check rests on, and
+        // check:gate leaves exactly such a position on chain. Probing one of
+        // those and calling it a breach is how this panel came to report a
+        // privacy failure on a working system.
         let sealed: PublicKey | null = null;
         for (const k of sealedCandidates) {
           const info = await l1.getAccountInfo(k);
-          if (info?.owner.equals(DELEGATION_PROGRAM_ID)) {
-            sealed = k;
-            break;
-          }
+          if (!info?.owner.equals(DELEGATION_PROGRAM_ID)) continue;
+          const permission = await l1.getAccountInfo(permissionPdaFromAccount(k));
+          if (!permission) continue;
+          sealed = k;
+          break;
         }
         if (!alive) return;
 
