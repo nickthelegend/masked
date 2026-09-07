@@ -3,7 +3,7 @@ import { Pressable, type PressableProps, type View, type ViewStyle } from 'react
 import PixelText from './PixelText';
 import { HIT_SLOP_MIN, PRESS_TRAVEL, bevel as bevelToken, border, color, onInk, radius, space, type as typeTokens } from './theme';
 
-export type ButtonTone = 'primary' | 'danger' | 'gold' | 'quiet' | 'info';
+export type ButtonTone = 'primary' | 'short' | 'danger' | 'gold' | 'quiet' | 'info';
 
 interface ToneSpec {
   bg: string;
@@ -12,6 +12,10 @@ interface ToneSpec {
 
 const TONES: Record<ButtonTone, ToneSpec> = {
   primary: { bg: color.green, fg: color.white },
+  // Shorting is a direction, not a warning, so it gets its own plate rather
+  // than borrowing the red one CLOSE already owns. Purple is the only accent
+  // not already carrying a meaning in the round HUD.
+  short: { bg: color.purple, fg: onInk.purple },
   danger: { bg: color.red, fg: color.white },
   gold: { bg: color.yellow, fg: onInk.yellow },
   quiet: { bg: color.panel, fg: color.text },

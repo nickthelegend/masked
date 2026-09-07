@@ -128,7 +128,9 @@ export default function MaskedApp() {
                 sizeNote={duel.sizeNote}
                 sessionActive={duel.sessionActive}
                 onLong={duel.openLong}
+                onShort={duel.openShort}
                 onClose={duel.closeLong}
+                liquidated={duel.liquidated}
                 onSkip={duel.settleNow}
                 busy={duel.busy}
                 error={duel.error}

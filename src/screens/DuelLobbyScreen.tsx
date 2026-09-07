@@ -57,7 +57,8 @@ export default function DuelLobbyScreen({
   onSelectMarket,
 }: DuelLobbyScreenProps) {
   const [kind, setKind] = useState<MarketKindKey>('meme');
-  const { markets, loading, error, refresh } = useMarkets(kind);
+  const [query, setQuery] = useState('');
+  const { markets, loading, searching, error, refresh } = useMarkets(kind, 12, query);
 
   // The picker takes formatted strings: it renders markets, it does not know
   // what a price scale is.
@@ -122,6 +123,9 @@ export default function DuelLobbyScreen({
           if (full) onSelectMarket(full);
         }}
         loading={loading}
+        searching={searching}
+        query={query}
+        onQueryChange={setQuery}
         error={error}
         onRetry={refresh}
       />

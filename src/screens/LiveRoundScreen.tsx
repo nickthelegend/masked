@@ -37,7 +37,16 @@ export interface LiveRoundScreenProps {
   opponentFills: number;
   fills: Fill[];
   onLong: () => void;
+  /** Sell what you do not own. The mirror of onLong. */
+  onShort: () => void;
   onClose: () => void;
+  /**
+   * Whether either side has been force-closed for running out of equity.
+   *
+   * The one thing about a live round that is not fogged: a blow-up is
+   * announced while it is still running, by decision.
+   */
+  liquidated?: { me: boolean; opponent: boolean };
   /** Fraction of what is available a fill uses, 0..1. */
   fillSize: number;
   onFillSize: (fraction: number) => void;
@@ -95,7 +104,9 @@ export default function LiveRoundScreen({
   opponentFills,
   fills,
   onLong,
+  onShort,
   onClose,
+  liquidated,
   fillSize,
   onFillSize,
   sizeNote,
@@ -155,6 +166,9 @@ export default function LiveRoundScreen({
       if (k === 'l') {
         e.preventDefault();
         onLong();
+      } else if (k === 's') {
+        e.preventDefault();
+        onShort();
       } else if (k === 'c') {
         e.preventDefault();
         onClose();
@@ -167,7 +181,7 @@ export default function LiveRoundScreen({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [busy, secondsLeft, onLong, onClose, onSkip]);
+  }, [busy, secondsLeft, onLong, onShort, onClose, onSkip]);
 
   const settling = !!settleStages?.some((s) => s.state !== 'waiting');
 
@@ -262,15 +276,50 @@ export default function LiveRoundScreen({
         />
       ) : null}
 
+      {/* Liquidation is public while the round runs — the only thing that is.
+          Position contents stay sealed either way; this says that a side is
+          out, not what it was holding. */}
+      {liquidated?.me ? (
+        <Badge label="LIQUIDATED · YOU ARE OUT" tone="loss" variant="tabLabel" />
+      ) : null}
+      {liquidated?.opponent ? (
+        <Badge label="OPPONENT LIQUIDATED" tone="win" variant="tabLabel" />
+      ) : null}
+
       <Row gap={space.sm}>
-        <PixelButton flex={1} tone="primary" label="LONG" padY={16} loading={busy} onPress={onLong} />
-        <PixelButton flex={1} tone="danger" label="CLOSE" padY={16} loading={busy} onPress={onClose} />
+        <PixelButton
+          flex={1}
+          tone="primary"
+          label="LONG"
+          padY={16}
+          loading={busy}
+          disabled={liquidated?.me}
+          onPress={onLong}
+        />
+        <PixelButton
+          flex={1}
+          tone="short"
+          label="SHORT"
+          padY={16}
+          loading={busy}
+          disabled={liquidated?.me}
+          onPress={onShort}
+        />
+        <PixelButton
+          flex={1}
+          tone="danger"
+          label="CLOSE"
+          padY={16}
+          loading={busy}
+          disabled={liquidated?.me}
+          onPress={onClose}
+        />
       </Row>
 
       {/* Web only, because that is where a keyboard is. */}
       {Platform.OS === 'web' ? (
         <PixelText variant="bodySmall" size={8} align="center" color={color.textFaint}>
-          L LONG · C CLOSE · SPACE SETTLE
+          L LONG · S SHORT · C CLOSE · SPACE SETTLE
         </PixelText>
       ) : null}
 
