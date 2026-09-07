@@ -13,6 +13,7 @@ import {
   Badge,
   ConnectWalletButton,
   Divider,
+  LifecycleFeed,
   LiveDuelRow,
   PixelText,
   ProofPanel,
@@ -31,6 +32,7 @@ import { useLatency } from '../chain/useLatency';
 import { useChainStats } from '../chain/useChainStats';
 import { useTxFeed, explorerUrl } from '../chain/useTxFeed';
 import { useTapes } from '../chain/useTapes';
+import { useDuelProof } from '../chain/useDuelProof';
 import { positionPda } from '../chain/pdas';
 import { permissionPdaFromAccount } from '@magicblock-labs/ephemeral-rollups-sdk';
 import { PublicKey as PK } from '@solana/web3.js';
@@ -67,6 +69,16 @@ export default function ProofScreen() {
     ];
   }, [tapes]);
   const { accounts: acls } = useDelegationStatus(aclWatch, 6000);
+
+  // The same duel's transitions, as real signatures. The panels above report
+  // what is true now; this reports how it got that way, which is the half
+  // that would otherwise have to be believed.
+  const traced = tapes[0] ?? null;
+  const { steps: proofSteps, loaded: proofLoaded } = useDuelProof(
+    traced ? new PK(traced.match) : null,
+    traced?.winner ?? null,
+    traced?.loser ?? null
+  );
 
   // Probe the front door for real: a delegated position should be refused
   // while an undelegated account on the same rollup is served. Candidates come
@@ -267,6 +279,24 @@ export default function ProofScreen() {
               }))
             : [{ label: 'permission accounts', value: '—' }]
         }
+      />
+
+      <LifecycleFeed
+        steps={proofSteps.map((s) => ({
+          signature: s.signature,
+          label: s.label,
+          meaning: s.meaning,
+          slot: s.slot,
+          err: s.err,
+          url: explorerUrl(s.signature),
+        }))}
+        loaded={proofLoaded}
+        subtitle={
+          traced
+            ? `Every base-layer transaction touching either position of duel ${traced.match.slice(0, 8)}…, oldest first. Click any row to check it yourself.`
+            : undefined
+        }
+        emptyLabel="NO SETTLED DUEL TO TRACE YET — PLAY ONE, OR RUN npm run seed"
       />
 
       <TxFeed

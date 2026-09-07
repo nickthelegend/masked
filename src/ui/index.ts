@@ -74,6 +74,11 @@ export {
   type SettleStageView,
 } from './SettleProgress';
 export {
+  default as LifecycleFeed,
+  type LifecycleFeedProps,
+  type LifecycleStep,
+} from './LifecycleFeed';
+export {
   default as RoundTimeline,
   describeFill,
   type RoundTimelineProps,
