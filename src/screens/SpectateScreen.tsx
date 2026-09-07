@@ -16,6 +16,7 @@ import {
   Wordmark,
   color,
   sol,
+  solExact,
   space,
 } from '../ui';
 import { useSpectate } from '../chain/useSpectate';
@@ -169,13 +170,13 @@ export default function SpectateScreen({ address }: SpectateScreenProps) {
               <PixelText variant="bodySmall" color={color.textDim}>
                 paid to winner
               </PixelText>
-              <PixelText variant="bodySmall">{sol((match.revealed?.potPaid ?? 0) / 1e9)}</PixelText>
+              <PixelText variant="bodySmall">{solExact((match.revealed?.potPaid ?? 0) / 1e9)}</PixelText>
             </Row>
             <Row justify="space-between">
               <PixelText variant="bodySmall" color={color.textDim}>
                 rake
               </PixelText>
-              <PixelText variant="bodySmall">{sol((match.revealed?.rake ?? 0) / 1e9)}</PixelText>
+              <PixelText variant="bodySmall">{solExact((match.revealed?.rake ?? 0) / 1e9)}</PixelText>
             </Row>
           </Stack>
         ) : null}

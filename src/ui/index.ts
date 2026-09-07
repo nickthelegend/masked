@@ -33,7 +33,7 @@ export { default as PotPill, type PotPillProps } from './PotPill';
 export { default as RoundClock, type RoundClockProps } from './RoundClock';
 export { default as StakePicker, type StakePickerProps, STAKES } from './StakePicker';
 export { default as FillTape, type FillTapeProps, type Fill } from './FillTape';
-export { pct, money, sol, mmss, signColor } from './format';
+export { pct, money, sol, solExact, mmss, signColor } from './format';
 export { default as MatchCard, type MatchCardProps } from './MatchCard';
 export { default as LeaderRow, type LeaderRowProps } from './LeaderRow';
 export { default as Podium, type PodiumProps, type PodiumEntry, type Place } from './Podium';

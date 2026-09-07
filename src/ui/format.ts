@@ -16,6 +16,21 @@ export const money = (n: number): string => `$${n.toFixed(2)}`;
  */
 export const sol = (n: number, dp = 2): string => `${n.toFixed(dp)}◎`;
 
+/**
+ * A SOL amount that does not round itself away.
+ *
+ * `sol()` is right for a pot or a stake, which are chosen in round numbers and
+ * read better at two places. It is wrong for anything derived: a 2% rake on a
+ * 0.2 pot is 0.004, and printing that as "0.00◎" in a panel headed SETTLED ON
+ * SOLANA says no rake was taken. Up to four places, trailing zeros trimmed
+ * back to two, so 0.2 still reads 0.20 and 0.004 reads 0.004.
+ */
+export const solExact = (n: number): string => {
+  const fixed = n.toFixed(4);
+  const trimmed = fixed.replace(/(\.\d{2}\d*?)0+$/, '$1');
+  return `${trimmed}◎`;
+};
+
 /** Seconds as `m:ss`. Negative input clamps to `0:00`. */
 export const mmss = (s: number): string => {
   const t = Math.max(0, Math.floor(s));

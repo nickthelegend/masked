@@ -37,23 +37,29 @@ export default function MaskedApp() {
   };
 
   /**
-   * A link anyone can open to watch this duel — no wallet, no account.
+   * A link anyone can open to read this duel — no wallet, no account.
+   *
+   * It points at /tape rather than /spectate. This button lives on the reveal,
+   * where the round is already over: there is nothing left to watch, and the
+   * thing that has just become public — every fill of both players — is what
+   * /tape shows. The Tape account never changes after settlement, so the link
+   * says the same thing tomorrow as it does now.
    *
    * The clipboard can be refused (permissions, an insecure origin), so the
    * label reports what actually happened rather than always claiming success.
    */
-  const [shareLabel, setShareLabel] = useState('COPY WATCH LINK');
+  const [shareLabel, setShareLabel] = useState('COPY TAPE LINK');
   const shareWatchLink = () => {
     const address = duel.matchAddress;
     if (!address) return;
-    const url = `${globalThis.location?.origin ?? ''}/spectate/${address}`;
+    const url = `${globalThis.location?.origin ?? ''}/tape/${address}`;
     const done = (ok: boolean) => {
       setShareLabel(ok ? 'LINK COPIED' : 'COPY BLOCKED');
       // A refused clipboard must not be a dead end: show the link so it can
       // still be read off the screen. Browsers block writeText on insecure
       // origins and without a user-gesture grant, so this is a normal path.
       if (!ok) toast.info('Copy this link', url);
-      setTimeout(() => setShareLabel('COPY WATCH LINK'), 2500);
+      setTimeout(() => setShareLabel('COPY TAPE LINK'), 2500);
     };
     try {
       const clip = globalThis.navigator?.clipboard;

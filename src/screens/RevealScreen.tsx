@@ -74,7 +74,7 @@ export default function RevealScreen({
   onRematch,
   onShare,
   onPost,
-  shareLabel = 'COPY WATCH LINK',
+  shareLabel = 'COPY TAPE LINK',
 }: RevealScreenProps) {
   // Hold the tape back until the curtain has torn, so the numbers land at the
   // moment the fog lifts rather than before it.
@@ -171,8 +171,9 @@ export default function RevealScreen({
         <PixelButton flex={1} tone="gold" label="REMATCH" size={10} onPress={onRematch} />
         {/* Was "FADE WINNER", which called the same handler as REMATCH and
             described something the game cannot do — positions are long-only,
-            so there is no side to take against anybody. This link is real and
-            needs no wallet at the other end. */}
+            so there is no side to take against anybody. The link is real, needs
+            no wallet at the other end, and keeps working: it points at the
+            Tape, which the program never rewrites. */}
         <PixelButton flex={1} tone="info" label={shareLabel} size={10} onPress={onShare} />
       </Row>
 
