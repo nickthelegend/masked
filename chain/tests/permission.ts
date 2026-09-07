@@ -111,11 +111,10 @@ describe("fogduel · permission ACL", () => {
   });
 
   it("fills on the ER, moving the delegated private book", async () => {
-    await erProgram.methods.applyFill({ buy: {} }, new BN(0.4 * ENTRY))
+    await erProgram.methods.applyFill({ buy: {} }, new BN(0.4 * ENTRY), creator.publicKey)
       .accounts({
         player: creator.publicKey, matchAccount: matchPda, priceFeed: feed,
-        position: posA,
-      })
+        position: posA, sessionToken: null })
       .rpc();
 
     const mine = await erProgram.account.position.fetch(posA);

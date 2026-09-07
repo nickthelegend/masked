@@ -46,13 +46,31 @@ and pot settlement on Solana.
   **No oracle answers**, because the queues this validator preloads were dumped
   from devnet and name oracle identities we do not hold keys for. Nothing
   simulates a draw, and no UI is built on one that cannot resolve.
-- **Session keys** — not used. Every fill is a wallet signature.
+- **Session keys** (Gum Session Protocol, `KeyspM2s…`) — used. At seal time the
+  player signs once to mint a session token authorising a throwaway key to
+  call `apply_fill` on their behalf, bounded to an hour and scoped to this
+  program alone. A sixty-second round then costs one signature instead of one
+  per fill. `apply_fill` carries a `session_auth_or` guard, so without a token
+  the signer must be the position's owner, and a token names exactly one
+  owner — a session key cannot move anybody else's book, settle, or cancel.
+  `npm run check:session` proves it in 15 assertions, and it is visible on
+  chain: a real `ApplyFill` on the owner's position signed and paid by the
+  session key, with the token account naming the owner as authority.
 
 **Program ID:** ⚠ local `3K3v1bp6uUGVdzRfZmkwZGK82BHgCJxAroXJ3ZRs1Rj1` —
 devnet deploy blocked, see below.
 
-**Demo video / live URL:** ⚠ pending. A production build is ready
-(`npx expo export -p web && npx serve -s dist`).
+**Demo video / live URL:** ⚠ video pending recording. `DEMO.md` is the shot
+list — five shots, measured timings, the exact click path, and the
+prerequisites that bite if skipped. One take, under three minutes.
+
+A **live URL is not achievable** and the reason is not hosting. The export
+supports remote clusters (`EXPO_PUBLIC_L1_URL`, `EXPO_PUBLIC_ER_URL`,
+`EXPO_PUBLIC_CLUSTER`, baked at build time) and the production build has been
+driven for real — wallet connected, funded, match escrowed. What it needs is a
+*publicly reachable* cluster, which means devnet, which is the same faucet
+blocker below. Tunnelling the local stack was rejected: it would put a
+validator and a faucet on the internet and would die with the machine.
 
 **Markets:** live pump.fun (`frontend-api-v3`) and Jupiter over HTTP — real
 mainnet mints, real market caps, real logos. The mint on a `Match` is the
@@ -71,6 +89,7 @@ npm run check          # 9 suites, 1963 assertions — incl. 1683 replaying ever
 npm run check:gate     # the privacy proof: sealed REFUSED, control SERVED
 npm run check:guards   # 6 refusals the program enforces, exercised for real
 npm run check:race     # two independent clients seal and settle one match at once
+npm run check:session  # a real Gum session token signing a real fill on the rollup
 cd chain && anchor test --skip-local-validator   # 26 passing, 2 pending
 ```
 
@@ -109,6 +128,21 @@ EXPO_PUBLIC_CLUSTER=devnet npm run prove:privacy
 
 ---
 
+## Before submitting — checklist
+
+1. [ ] Record the video from `DEMO.md`. Run `npm run crank` and
+       `npm run hold -- 900` first, or the gate row will not say YES.
+2. [ ] Upload it and paste the URL into the **Demo video** field above.
+3. [ ] Retry the devnet faucet once more (`solana airdrop 2` ×5, or
+       faucet.solana.com in a browser). If it lands, do Phase 4 in `PLAN.md`
+       and replace the Program ID field before submitting.
+4. [ ] Paste the fields above into the form.
+5. [ ] Submit at `https://build.magicblock.app/?stage=blitz#submit`
+       — **before Fri 2026-09-11 05:00 CDT**. Aim for Wednesday.
+6. [ ] Record the confirmation and timestamp back into this file.
+
+---
+
 ## Honest summary
 
 This is a complete, heavily verified Ephemeral Rollups submission with the
@@ -126,4 +160,4 @@ That distinction is stated in the app (`/proof` reports enforcement and
 attestation as two separate rows, and only the second says NO), in the README,
 in the proof script, and here — because a judge finding it themselves would be
 worse than being told. The same applies to VRF, which is requested on chain and
-never fulfilled, and to session keys, which are simply not used.
+never fulfilled.

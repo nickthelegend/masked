@@ -23,6 +23,9 @@ custom-panic = []
 [dependencies]
 anchor-lang = { version = "0.32.1", features = ["init-if-needed"] }
 ephemeral-rollups-sdk = { version = "0.17.0", features = ["anchor-compat", "access-control", "vrf"] }
+# Gum Session Protocol. The session program (KeyspM2s…) is preloaded by
+# mb-test-validator, so a session token can be created and used locally.
+session-keys = { version = "3.1.1", features = ["no-entrypoint"] }
 
 
 [lints.rust]

@@ -29,6 +29,7 @@ use ephemeral_rollups_sdk::access_control::structs::{
 };
 use ephemeral_rollups_sdk::vrf::anchor::{vrf, vrf_callback};
 use ephemeral_rollups_sdk::vrf::consts::VRF_PROGRAM_IDENTITY;
+use session_keys::{session_auth_or, Session, SessionError, SessionToken};
 use ephemeral_rollups_sdk::vrf::instructions::{
     create_request_randomness_ix, RequestRandomnessParams,
 };
@@ -299,7 +300,21 @@ pub mod fogduel {
 
     /// Buy or sell base against the virtual quote balance. Runs on the ER
     /// against private state.
-    pub fn apply_fill(ctx: Context<ApplyFill>, side: Side, qty: u64) -> Result<()> {
+    ///
+    /// `owner` names whose position is being filled, and is separate from who
+    /// signed. Normally they are the same key. With a Gum session token they
+    /// are not: a session key signs on the owner's behalf for the life of the
+    /// token, so a sixty-second round does not need a wallet popup per fill.
+    ///
+    /// `session_auth_or` runs the fallback below when no token is presented —
+    /// the signer must be the owner — and defers to the session program when
+    /// one is. There is no path where an unrelated key moves somebody's book.
+    #[session_auth_or(
+        ctx.accounts.position.owner == ctx.accounts.player.key(),
+        FogError::NotAParticipant
+    )]
+    pub fn apply_fill(ctx: Context<ApplyFill>, side: Side, qty: u64, owner: Pubkey) -> Result<()> {
+        require_keys_eq!(ctx.accounts.position.owner, owner, FogError::NotAParticipant);
         require!(qty > 0, FogError::ZeroQuantity);
         require!(
             ctx.accounts.match_account.status == MatchStatus::Live,
@@ -862,8 +877,10 @@ pub struct PushPrice<'info> {
     pub price_feed: Account<'info, PriceFeed>,
 }
 
-#[derive(Accounts)]
+#[derive(Accounts, Session)]
+#[instruction(side: Side, qty: u64, owner: Pubkey)]
 pub struct ApplyFill<'info> {
+    /// Whoever signed: the owner, or a session key acting for them.
     pub player: Signer<'info>,
 
     #[account(seeds = [b"match", match_account.creator.as_ref(), &match_account.match_id.to_le_bytes()], bump = match_account.bump)]
@@ -872,16 +889,25 @@ pub struct ApplyFill<'info> {
     #[account(seeds = [b"feed", match_account.key().as_ref()], bump = price_feed.bump)]
     pub price_feed: Box<Account<'info, PriceFeed>>,
 
-    /// The player's position — and, inside it, the player's own private book.
-    /// Delegated to the rollup, so a fill moves that book there and never on a
-    /// public venue.
+    /// The position being filled — and, inside it, that player's own private
+    /// book. Delegated to the rollup, so a fill moves that book there and never
+    /// on a public venue.
+    ///
+    /// Seeded by `owner` rather than by the signer, because with a session key
+    /// those differ. Ownership is still checked: `session_auth_or` requires the
+    /// signer to be the owner when no token is presented, and `apply_fill`
+    /// additionally asserts `position.owner == owner`.
     #[account(
         mut,
-        seeds = [b"position", match_account.key().as_ref(), player.key().as_ref()],
+        seeds = [b"position", match_account.key().as_ref(), owner.as_ref()],
         bump = position.bump,
-        constraint = position.owner == player.key() @ FogError::NotAParticipant
     )]
     pub position: Account<'info, Position>,
+
+    /// A Gum session token authorising `player` to act for `position.owner`.
+    /// Optional: without one, the signer must be the owner.
+    #[session(signer = player, authority = position.owner)]
+    pub session_token: Option<Account<'info, SessionToken>>,
 }
 
 #[derive(Accounts)]

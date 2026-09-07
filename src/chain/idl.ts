@@ -15,7 +15,16 @@ export const FOGDUEL_IDL = {
       "name": "apply_fill",
       "docs": [
         "Buy or sell base against the virtual quote balance. Runs on the ER",
-        "against private state."
+        "against private state.",
+        "",
+        "`owner` names whose position is being filled, and is separate from who",
+        "signed. Normally they are the same key. With a Gum session token they",
+        "are not: a session key signs on the owner's behalf for the life of the",
+        "token, so a sixty-second round does not need a wallet popup per fill.",
+        "",
+        "`session_auth_or` runs the fallback below when no token is presented —",
+        "the signer must be the owner — and defers to the session program when",
+        "one is. There is no path where an unrelated key moves somebody's book."
       ],
       "discriminator": [
         201,
@@ -30,6 +39,9 @@ export const FOGDUEL_IDL = {
       "accounts": [
         {
           "name": "player",
+          "docs": [
+            "Whoever signed: the owner, or a session key acting for them."
+          ],
           "signer": true
         },
         {
@@ -82,9 +94,14 @@ export const FOGDUEL_IDL = {
         {
           "name": "position",
           "docs": [
-            "The player's position — and, inside it, the player's own private book.",
-            "Delegated to the rollup, so a fill moves that book there and never on a",
-            "public venue."
+            "The position being filled — and, inside it, that player's own private",
+            "book. Delegated to the rollup, so a fill moves that book there and never",
+            "on a public venue.",
+            "",
+            "Seeded by `owner` rather than by the signer, because with a session key",
+            "those differ. Ownership is still checked: `session_auth_or` requires the",
+            "signer to be the owner when no token is presented, and `apply_fill`",
+            "additionally asserts `position.owner == owner`."
           ],
           "writable": true,
           "pda": {
@@ -107,11 +124,19 @@ export const FOGDUEL_IDL = {
                 "path": "match_account"
               },
               {
-                "kind": "account",
-                "path": "player"
+                "kind": "arg",
+                "path": "owner"
               }
             ]
           }
+        },
+        {
+          "name": "session_token",
+          "docs": [
+            "A Gum session token authorising `player` to act for `position.owner`.",
+            "Optional: without one, the signer must be the owner."
+          ],
+          "optional": true
         }
       ],
       "args": [
@@ -126,6 +151,10 @@ export const FOGDUEL_IDL = {
         {
           "name": "qty",
           "type": "u64"
+        },
+        {
+          "name": "owner",
+          "type": "pubkey"
         }
       ]
     },
@@ -1931,6 +1960,19 @@ export const FOGDUEL_IDL = {
       ]
     },
     {
+      "name": "SessionToken",
+      "discriminator": [
+        233,
+        4,
+        115,
+        14,
+        46,
+        21,
+        1,
+        15
+      ]
+    },
+    {
       "name": "Tape",
       "discriminator": [
         60,
@@ -2635,6 +2677,30 @@ export const FOGDUEL_IDL = {
           {
             "name": "bump",
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SessionToken",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "target_program",
+            "type": "pubkey"
+          },
+          {
+            "name": "session_signer",
+            "type": "pubkey"
+          },
+          {
+            "name": "valid_until",
+            "type": "i64"
           }
         ]
       }

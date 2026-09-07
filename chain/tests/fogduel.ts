@@ -215,10 +215,9 @@ describe("fogduel", () => {
     const spend = 0.5 * ENTRY;
     const before = (await program.account.position.fetch(p.posA)).book;
 
-    await program.methods.applyFill({ buy: {} }, new BN(spend))
+    await program.methods.applyFill({ buy: {} }, new BN(spend), creator.publicKey)
       .accounts({
-        player: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posA,
-      }).rpc();
+        player: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posA, sessionToken: null }).rpc();
 
     const a = await program.account.position.fetch(p.posA);
     assert.equal(a.fillCount, 1);
@@ -245,10 +244,9 @@ describe("fogduel", () => {
   it("rejects a buy that overdraws the quote balance", async () => {
     const p = pdas(RUN + 1);
     try {
-      await program.methods.applyFill({ buy: {} }, new BN(ENTRY * 10))
+      await program.methods.applyFill({ buy: {} }, new BN(ENTRY * 10), creator.publicKey)
         .accounts({
-          player: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posA,
-        })
+          player: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posA, sessionToken: null })
         .rpc();
       assert.fail("overdraw should have been rejected");
     } catch (e: any) {
@@ -268,10 +266,9 @@ describe("fogduel", () => {
     const qty = before.baseQty.toNumber();
     const avgPx = before.avgPx.toNumber();
 
-    await program.methods.applyFill({ sell: {} }, new BN(qty))
+    await program.methods.applyFill({ sell: {} }, new BN(qty), creator.publicKey)
       .accounts({
-        player: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posA,
-      })
+        player: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posA, sessionToken: null })
       .rpc();
 
     const after = await program.account.position.fetch(p.posA);
@@ -324,10 +321,9 @@ describe("fogduel", () => {
     const pos = await program.account.position.fetch(p.posA);
     try {
       await program.methods
-        .applyFill({ sell: {} }, new BN(pos.baseQty.toNumber() + 1_000_000))
+        .applyFill({ sell: {} }, new BN(pos.baseQty.toNumber() + 1_000_000), creator.publicKey)
         .accounts({
-          player: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posA,
-        })
+          player: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posA, sessionToken: null })
         .rpc();
       assert.fail("overselling should have been rejected");
     } catch (e: any) {
@@ -438,10 +434,9 @@ describe("fogduel", () => {
     const p = await createMatch(RUN + 3);
     await joinMatch(p);
 
-    await program.methods.applyFill({ buy: {} }, new BN(0.5 * ENTRY))
+    await program.methods.applyFill({ buy: {} }, new BN(0.5 * ENTRY), joiner.publicKey)
       .accounts({
-        player: joiner.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posB,
-      })
+        player: joiner.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posB, sessionToken: null })
       .signers([joiner]).rpc();
 
     await walkPriceTo(p, px(0.12));

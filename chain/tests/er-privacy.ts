@@ -113,10 +113,9 @@ describe("fogduel · ephemeral rollup + privacy", () => {
   it("PHASE 2 — the delegated position is writable on the ER", async () => {
     const bookBefore = (await erProgram.account.position.fetch(p.posA)).book;
     const sig = await erProgram.methods
-      .applyFill({ buy: {} }, new BN(0.4 * ENTRY))
+      .applyFill({ buy: {} }, new BN(0.4 * ENTRY), creator.publicKey)
       .accounts({
-        player: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posA,
-      })
+        player: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posA, sessionToken: null })
       .rpc();
     assert.ok(sig, "fill landed on the ER");
 
@@ -136,10 +135,9 @@ describe("fogduel · ephemeral rollup + privacy", () => {
   it("PHASE 2 — the same write is REJECTED on L1 while delegated", async () => {
     try {
       await program.methods
-        .applyFill({ buy: {} }, new BN(0.1 * ENTRY))
+        .applyFill({ buy: {} }, new BN(0.1 * ENTRY), creator.publicKey)
         .accounts({
-          player: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posA,
-        })
+          player: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed, position: p.posA, sessionToken: null })
         .rpc();
       assert.fail("L1 write to a delegated account must fail");
     } catch (e: any) {

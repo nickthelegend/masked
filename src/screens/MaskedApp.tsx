@@ -126,6 +126,7 @@ export default function MaskedApp() {
                 fillSize={duel.fillSize}
                 onFillSize={duel.setFillSize}
                 sizeNote={duel.sizeNote}
+                sessionActive={duel.sessionActive}
                 onLong={duel.openLong}
                 onClose={duel.closeLong}
                 onSkip={duel.settleNow}

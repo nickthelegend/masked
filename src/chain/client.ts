@@ -8,7 +8,7 @@
  * and private.
  */
 import { AnchorProvider, BN, Program, type Idl, type Wallet } from '@coral-xyz/anchor';
-import { Connection, PublicKey, SystemProgram, type Commitment } from '@solana/web3.js';
+import { Connection, Keypair, PublicKey, SystemProgram, Transaction, type Commitment } from '@solana/web3.js';
 import {
   EPHEMERAL_VAULT_ID,
   MAGIC_PROGRAM_ID,
@@ -508,16 +508,72 @@ export class FogduelClient {
    *   buy  — `amount` is quote spent, in the same units as the entry (lamports)
    *   sell — `amount` is base sold, scaled by BASE_SCALE
    */
-  async applyFill(match: PublicKey, player: PublicKey, side: Side, amount: number): Promise<string> {
+  async applyFill(
+    match: PublicKey,
+    player: PublicKey,
+    side: Side,
+    amount: number,
+    /**
+     * Whose position is being filled, when that is not the signer.
+     *
+     * Defaults to the signer, which is every ordinary fill. It differs only
+     * when a Gum session key signs on the owner's behalf — the position is
+     * seeded by the owner, so the program needs to be told who that is.
+     */
+    owner: PublicKey = player,
+    /** The session token authorising `player` to act for `owner`. */
+    sessionToken: PublicKey | null = null
+  ): Promise<string> {
     return (await this.erProgramAuthed()).methods
-      .applyFill(sideArg(side), new BN(Math.round(amount)))
+      .applyFill(sideArg(side), new BN(Math.round(amount)), owner)
       .accounts({
         player,
         matchAccount: match,
         priceFeed: feedPda(match),
-        position: positionPda(match, player),
+        position: positionPda(match, owner),
+        sessionToken,
       })
       .rpc();
+  }
+
+  /**
+   * A fill signed by a session key on the owner's behalf.
+   *
+   * The session key is not an identity: the position stays the owner's and the
+   * tape records their fill. It is a signature mechanism, so a sixty-second
+   * round costs one wallet prompt instead of one per trade. The program's
+   * `session_auth_or` guard is what makes this safe — without a token the
+   * signer must be the owner, and a token names exactly one owner.
+   */
+  async applyFillAs(
+    match: PublicKey,
+    session: { signer: Keypair; token: PublicKey },
+    owner: PublicKey,
+    side: Side,
+    amount: number
+  ): Promise<string> {
+    const program = await this.erProgramAuthed();
+    const ix = await program.methods
+      .applyFill(sideArg(side), new BN(Math.round(amount)), owner)
+      .accounts({
+        player: session.signer.publicKey,
+        matchAccount: match,
+        priceFeed: feedPda(match),
+        position: positionPda(match, owner),
+        sessionToken: session.token,
+      })
+      .instruction();
+
+    // Sent directly rather than through the provider: the provider signs with
+    // the player's wallet, and this transaction must be signed — and paid for
+    // — by the session key alone.
+    const tx = new Transaction().add(ix);
+    tx.feePayer = session.signer.publicKey;
+    tx.recentBlockhash = (await this.er.getLatestBlockhash()).blockhash;
+    tx.sign(session.signer);
+    const sig = await this.er.sendRawTransaction(tx.serialize());
+    await this.er.confirmTransaction(sig, COMMITMENT);
+    return sig;
   }
 
   /**

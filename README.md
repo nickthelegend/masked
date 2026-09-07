@@ -24,7 +24,7 @@ after**. That window is the product.
 | **Private Ephemeral Rollups** — per-position ACL | `create_position_permission`, `delegate_position_permission`, `init_position_privacy` | **Enforced, not attested.** Every match started through the UI puts an ACL on chain naming only its owner, and the query-filtering-service refuses a sealed position while serving the same account shape without one — `npm run check:gate` proves it every run. What is missing is attestation; see Limitations §1. |
 | Magic Router / ER RPC | `src/chain/client.ts` | Working |
 | **VRF** | `request_market_draw`, `settle_market_draw` | **Requested on chain; cannot be fulfilled here.** The request is built with the official SDK and the VRF program accepts it (`npm run check:vrf`). No oracle answers: the queues this validator preloads were dumped from devnet and name oracle identities we do not hold keys for. Nothing simulates a draw, and no UI is built on one that cannot resolve. See Limitations §7. |
-| Session keys | — | **Not used.** Every fill is a wallet signature. |
+| **Session keys** (Gum Session Protocol) | `session.ts`, `session_auth_or` on `apply_fill` | **Used.** At seal time the player signs once to mint a session token authorising a throwaway key to call `apply_fill` on their behalf — bounded to an hour and scoped to this program. A sixty-second round costs one signature instead of one per fill. `apply_fill` carries `session_auth_or`, so without a token the signer must be the position's owner, and a token names exactly one owner. Proved by `npm run check:session` (15 assertions) and visible on chain: a real `ApplyFill` on the owner's position, signed and paid by the session key. |
 
 ---
 

@@ -23,11 +23,12 @@ import { checkBalance, checkCluster, checkProgram, checkWallet, firstFailure } f
 import { FOGDUEL_PROGRAM_ID } from '../chain/config';
 import { assertFogIntact } from '../chain/fog';
 import { FogduelClient, pnlBps, type MatchState, type PositionState } from '../chain/client';
-import { formatSolPrice } from '../chain/units';
+import { formatSolPrice, MAX_OPEN_AGE_SECS } from '../chain/units';
 import type { TapeState } from '../chain/tape';
 import { buyImpact, sellImpact } from '../chain/book';
 import { useHeadToHead, describeRecord } from '../chain/useHeadToHead';
 import { fetchMemeMarkets, livePxFor, type TradableMarket } from '../chain/markets';
+import { mintSession, type ActiveSession } from '../chain/session';
 import { ACTIVE_CLUSTER } from '../chain/config';
 import { DEMO_MINT, marketLabel } from '../chain/market';
 import { OPPONENT_PENDING, RAKE, ROUND_SECONDS } from './data';
@@ -102,6 +103,11 @@ export interface Duel {
   lastFill: LastFill | null;
   /** What the chosen size costs against the current mark. */
   sizeNote?: string;
+  /**
+   * Whether fills this round are being signed by a Gum session key rather than
+   * by the wallet. False is normal — a session is an optimisation.
+   */
+  sessionActive: boolean;
   /** What settlement is doing right now. */
   settleStages: SettleStage[];
   /** The public tape once the round has settled, with both real fill lists. */
@@ -256,6 +262,14 @@ export function useDuel(): Duel {
    * `settle_match` writes both lists into the Tape — so the reveal reads them.
    */
   const [tape, setTape] = useState<TapeState | null>(null);
+  /**
+   * The Gum session key for this round, if one was minted.
+   *
+   * Held for the life of the round only, never persisted. Fills route through
+   * it so a sixty-second round needs one wallet signature instead of one per
+   * trade. Null is a completely normal state — see `beginRound`.
+   */
+  const [session, setSession] = useState<ActiveSession | null>(null);
 
   const noteFill = useCallback(
     (position: PositionState, markBefore: number, side: 'buy' | 'sell') => {
@@ -588,6 +602,27 @@ export function useDuel(): Duel {
       }
       setSealed(await client!.isPositionSealed(m.address, creator));
 
+      // A session key, so the round costs one signature rather than one per
+      // fill. Deliberately best-effort: sealing is the most failure-prone
+      // moment in the product and this must not be able to break it. If the
+      // mint fails for any reason the round proceeds signing every fill with
+      // the wallet, which is exactly how it worked before.
+      setSession(null);
+      try {
+        const sign = wallet.signTransaction;
+        if (sign) {
+          const minted = await mintSession({
+            connection: client!.l1,
+            authority: payer,
+            targetProgram: FOGDUEL_PROGRAM_ID,
+            signTransaction: (tx) => sign(tx),
+          });
+          setSession(minted);
+        }
+      } catch {
+        // No session this round. Nothing else changes.
+      }
+
       settledRef.current = false;
       settleAttempts.current = 0;
       setLastFill(null);
@@ -726,10 +761,16 @@ export function useDuel(): Duel {
       const open = await client!.fetchOpenMatches();
       // Only join a match on the market you picked — otherwise "FIND MATCH"
       // silently drops you into somebody else's coin.
+      // Stale matches are excluded here as well as in the book. `join_match`
+      // refuses one older than MAX_OPEN_AGE, so auto-joining a stale row means
+      // FIND MATCH fails against a book that is full of them — which is what a
+      // quiet cluster looks like after an hour.
+      const nowSecs = Math.floor(Date.now() / 1000);
       const joinable = open.find(
         (m) =>
           !m.creator.equals(me) &&
           m.entry === entryLamports &&
+          nowSecs - m.createdTs <= MAX_OPEN_AGE_SECS &&
           (!selectedMarket || m.mint.toBase58() === selectedMarket.mint)
       );
 
@@ -848,6 +889,47 @@ export function useDuel(): Duel {
     };
   }, [phase, client, match, wallet.publicKey, beginRound, toast]);
 
+  /**
+   * One fill, signed by the session key when there is one.
+   *
+   * The session key signs on the owner's behalf, so the position is still the
+   * owner's and the tape still records their fill — the key is a signature
+   * mechanism, not an identity. If the session has expired or the session
+   * program refuses for any reason, this falls back to the wallet and the
+   * round continues; a session is an optimisation, never a requirement.
+   */
+  const fill = useCallback(
+    async (side: 'buy' | 'sell', amount: number, markBefore: number) => {
+      const me = wallet.publicKey!;
+      const address = match!.address;
+
+      const viaWallet = async () => {
+        await client!.applyFill(address, me, side, amount);
+      };
+
+      if (session && session.validUntil > Math.floor(Date.now() / 1000)) {
+        try {
+          await client!.applyFillAs(address, session, me, side, amount);
+        } catch {
+          // The session did not work. Drop it so the rest of the round does
+          // not keep retrying a key the program will not accept, and sign this
+          // fill with the wallet instead.
+          setSession(null);
+          await viaWallet();
+        }
+      } else {
+        await viaWallet();
+      }
+
+      const mine = await client!.fetchPosition(address, me, true);
+      if (mine) {
+        setMyPosition(mine);
+        noteFill(mine, markBefore, side);
+      }
+    },
+    [client, match, wallet.publicKey, session, noteFill]
+  );
+
   const openLong = useCallback(() => {
     void guard('LONG FILLED', async () => {
       if (!match) return 'noop';
@@ -862,12 +944,7 @@ export function useDuel(): Duel {
         return 'noop';
       }
       const markBefore = await client!.fetchPrice(match.address, true);
-      await client!.applyFill(match.address, wallet.publicKey!, 'buy', spend);
-      const mine = await client!.fetchPosition(match.address, wallet.publicKey!, true);
-      if (mine) {
-        setMyPosition(mine);
-        noteFill(mine, markBefore, 'buy');
-      }
+      await fill('buy', spend, markBefore);
     });
   }, [guard, client, match, myPosition, wallet.publicKey, fillSize, noteFill, toast]);
 
@@ -887,10 +964,7 @@ export function useDuel(): Duel {
           ? myPosition.baseQty
           : Math.max(1, Math.floor(myPosition.baseQty * fillSize));
       const markBefore = await client!.fetchPrice(match.address, true);
-      await client!.applyFill(match.address, wallet.publicKey!, 'sell', qty);
-      const mine = await client!.fetchPosition(match.address, wallet.publicKey!, true);
-      if (mine) noteFill(mine, markBefore, 'sell');
-      if (mine) setMyPosition(mine);
+      await fill('sell', qty, markBefore);
     });
   }, [guard, client, match, myPosition, wallet.publicKey, fillSize, toast]);
 
@@ -986,6 +1060,7 @@ export function useDuel(): Duel {
   }, [match]);
 
   const backToLobby = useCallback(() => {
+    setSession(null);
     setSealed(false);
     setMatch(null);
     setPhase('lobby');
@@ -1087,6 +1162,7 @@ export function useDuel(): Duel {
     priceLabel: `${formatSolPrice(price)}◎`,
     lastFill,
     sizeNote,
+    sessionActive: !!session && session.validUntil > Math.floor(Date.now() / 1000),
     settleStages,
     tape,
     record: describeRecord(headToHead),

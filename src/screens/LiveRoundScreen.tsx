@@ -40,6 +40,8 @@ export interface LiveRoundScreenProps {
   onFillSize: (fraction: number) => void;
   /** What that size would cost against the current mark, already computed. */
   sizeNote?: string;
+  /** Fills are signed by a Gum session key rather than by the wallet. */
+  sessionActive?: boolean;
   onSkip: () => void;
   busy?: boolean;
   error?: string | null;
@@ -94,6 +96,7 @@ export default function LiveRoundScreen({
   fillSize,
   onFillSize,
   sizeNote,
+  sessionActive = false,
   onSkip,
   busy = false,
   error = null,
@@ -187,6 +190,16 @@ export default function LiveRoundScreen({
           constant-product curve, so this is the decision the private book
           exists to make — and the note says what it costs before it is made. */}
       <SizePicker value={fillSize} onChange={onFillSize} disabled={busy} note={sizeNote} />
+
+      {/* Only shown when it is true. A session key is an optimisation, and an
+          absent one is not a fault worth a badge. */}
+      {sessionActive ? (
+        <Badge
+          label="SESSION KEY · NO SIGNATURE PER FILL"
+          tone="live"
+          variant="tabLabel"
+        />
+      ) : null}
 
       <Row gap={space.sm}>
         <PixelButton flex={1} tone="primary" label="LONG" padY={16} loading={busy} onPress={onLong} />
