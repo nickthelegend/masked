@@ -23,6 +23,60 @@ const withTimeout = (signal?: AbortSignal): AbortSignal =>
 export const WSOL_MINT = 'So11111111111111111111111111111111111111112';
 export const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
+/**
+ * One token as Jupiter's token API describes it.
+ *
+ * `tokens/v2` answers with the identity, the logo and the price in a single
+ * call, which is the whole market picker — including the logos the hardcoded
+ * majors never had, because that list carried `imageUri: null`.
+ */
+export interface JupToken {
+  id: string;
+  name: string;
+  symbol: string;
+  icon?: string | null;
+  decimals: number;
+  usdPrice?: number;
+  /** Pool depth in USD. A price with nothing behind it is not a market. */
+  liquidity?: number;
+  mcap?: number;
+  isVerified?: boolean;
+}
+
+const tokensApi = () => `${feedBase('jup')}/tokens/v2`;
+
+const readTokens = async (url: string, signal?: AbortSignal): Promise<JupToken[]> => {
+  let res: Response;
+  try {
+    res = await fetch(url, { headers: { accept: 'application/json' }, signal: withTimeout(signal) });
+  } catch (e) {
+    throw new JupiterError(`Jupiter token list unreachable: ${(e as Error).message}`);
+  }
+  if (!res.ok) throw new JupiterError(`Jupiter token list returned ${res.status}`, res.status);
+  const body = await res.json();
+  return Array.isArray(body) ? (body as JupToken[]) : [];
+};
+
+/**
+ * Search every token Jupiter can price, by symbol, name or mint address.
+ *
+ * A duel can be opened on anything with a live price, which is the point — but
+ * "anything" includes a great many dead and impersonating tokens. Searching
+ * WBTC returns the real one at $79,350 and a fake at $0.0000029 in the same
+ * response, so the caller gets `isVerified` and `liquidity` and is expected to
+ * rank on them rather than trust the order.
+ */
+export async function searchTokens(query: string, signal?: AbortSignal): Promise<JupToken[]> {
+  const q = query.trim();
+  if (!q) return [];
+  return readTokens(`${tokensApi()}/search?query=${encodeURIComponent(q)}`, signal);
+}
+
+/** Jupiter's verified set — the default list, and every one of them has a logo. */
+export async function fetchVerifiedTokens(signal?: AbortSignal): Promise<JupToken[]> {
+  return readTokens(`${tokensApi()}/tag?query=verified`, signal);
+}
+
 /** The majors a duel can be fought over. Deliberately short — see the brief. */
 export const MAJORS = [
   { mint: WSOL_MINT, symbol: 'SOL', name: 'Solana' },

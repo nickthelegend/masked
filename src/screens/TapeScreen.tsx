@@ -133,18 +133,26 @@ export default function TapeScreen({ address }: TapeScreenProps) {
     return (
       <Stack gap={space.lg}>
         <Row justify="space-between" align="center" gap={space.md} wrap>
-          <Row gap={space.sm} align="center">
-            <TokenLogo mint={data.mint.toBase58()} symbol={tape.symbol || '?'} size={30} />
-            <Stack gap={2}>
-              <PixelText variant="label" size={11} color={color.white}>
-                {tape.symbol || 'UNNAMED MARKET'}
-              </PixelText>
-              <PixelText variant="bodySmall" size={10} color={color.textFaint}>
-                {data.marketType === 'major' ? 'jupiter' : 'pump.fun'} · {sol(data.entry / 1e9)} a
-                side · {duration}s
-              </PixelText>
-            </Stack>
-          </Row>
+          <Stack gap={space.xs}>
+            {/* Both markets. The duel was fought over two tokens, and naming
+                only one of them would misdescribe half the record. */}
+            <Row gap={space.md} align="center" wrap>
+              {[
+                { leg: tape.legA, tone: color.cyan },
+                { leg: tape.legB, tone: color.magenta },
+              ].map(({ leg, tone }, i) => (
+                <Row gap={space.sm} align="center" key={`${leg.symbol}-${i}`}>
+                  <TokenLogo mint={leg.mint.toBase58()} symbol={leg.symbol || '?'} size={30} />
+                  <PixelText variant="label" size={11} color={tone}>
+                    {leg.symbol || 'UNNAMED'}
+                  </PixelText>
+                </Row>
+              ))}
+            </Row>
+            <PixelText variant="bodySmall" size={10} color={color.textFaint}>
+              {sol(data.entry / 1e9)} a side · {duration}s
+            </PixelText>
+          </Stack>
           <PotPill amount={tape.potPaid / 1e9} tone={color.yellow} />
         </Row>
 

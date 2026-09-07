@@ -17,8 +17,12 @@ import { replayEquity, toTapeState, type TapeState } from './tape';
 export interface TapeSummary {
   match: string;
   /** What was traded, straight off the tape. */
+  /** The winner's market. */
   symbol: string;
   mint: PublicKey;
+  /** The loser's, which is now a different token. */
+  loserSymbol: string;
+  loserMint: PublicKey;
   winner: PublicKey;
   loser: PublicKey;
   winnerPnlBps: number;
@@ -89,8 +93,12 @@ export function useTapes(pollMs = 10_000) {
             const entry = entryOf.get(a.match.toBase58()) ?? 0;
             return {
               match: a.match.toBase58(),
-              symbol: a.symbol,
-              mint: a.mint,
+              // Named from the winner's side, with the loser's alongside —
+              // a duel is two markets now, so one symbol cannot describe it.
+              symbol: winnerIsA ? a.legA.symbol : a.legB.symbol,
+              mint: winnerIsA ? a.legA.mint : a.legB.mint,
+              loserSymbol: winnerIsA ? a.legB.symbol : a.legA.symbol,
+              loserMint: winnerIsA ? a.legB.mint : a.legA.mint,
               winner: a.winner,
               loser: winnerIsA ? a.playerB : a.playerA,
               winnerPnlBps: wBps,

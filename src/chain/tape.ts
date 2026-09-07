@@ -33,10 +33,21 @@ export interface TapeFill {
   ts: number;
 }
 
-export interface TapeState {
-  match: PublicKey;
+/** One side's market, as the tape recorded it. */
+export interface TapeLeg {
   mint: PublicKey;
   symbol: string;
+}
+
+export interface TapeState {
+  match: PublicKey;
+  /** The creator's market. */
+  legA: TapeLeg;
+  /** The joiner's. */
+  legB: TapeLeg;
+  /** Whether that side ended by being force-closed rather than by trading. */
+  liquidatedA: boolean;
+  liquidatedB: boolean;
   playerA: PublicKey;
   playerB: PublicKey;
   pnlABps: number;
@@ -73,8 +84,13 @@ const toFill = (f: any): TapeFill => ({
 export function toTapeState(raw: any): TapeState {
   return {
     match: raw.matchKey,
-    mint: raw.mint,
-    symbol: decodeFixed(raw.symbol),
+    // A leg each, because the two players brought their own markets. The tape
+    // is the permanent record, and a record that named one token for a duel
+    // fought over two would be wrong about half of it.
+    legA: { mint: raw.legA.mint, symbol: decodeFixed(raw.legA.symbol) },
+    legB: { mint: raw.legB.mint, symbol: decodeFixed(raw.legB.symbol) },
+    liquidatedA: !!raw.liquidatedA,
+    liquidatedB: !!raw.liquidatedB,
     playerA: raw.playerA,
     playerB: raw.playerB,
     pnlABps: num(raw.pnlABps),
