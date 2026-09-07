@@ -377,6 +377,8 @@ app/                    expo-router:  /  /play  /proof  /tape/<m>  /spectate/<m>
                         /health  /gallery
 TEST-PLAN.md            every component and flow, with its verified result
 PLAN.md                 phase/task status and the full gap list
+DEMO.md                 the recording script: shot list, timings, and the
+                        prerequisites that bite if you skip them
 ```
 
 **Program ID (local):** `3K3v1bp6uUGVdzRfZmkwZGK82BHgCJxAroXJ3ZRs1Rj1`
