@@ -682,53 +682,66 @@ export class FogduelClient {
 
   /* -------------------------------- reads -------------------------------- */
 
+  /**
+   * One decoder for a Match account, used by every read.
+   *
+   * There were two copies of this and they drifted twice — `symbol` and then
+   * `createdTs` were added to one and not the other, so the open book showed
+   * fields the match screen did not.
+   */
+  private toMatchState(address: PublicKey, a: Record<string, any>): MatchState {
+    return {
+      address,
+      creator: a.creator,
+      joiner: a.joiner ?? null,
+      mint: a.mint,
+      marketType: decodeMarketType(a.marketType),
+      symbol: decodeFixed(a.symbol),
+      name: decodeFixed(a.name),
+      createdTs: a.createdTs.toNumber(),
+      matchId: a.matchId.toNumber(),
+      startTs: a.startTs.toNumber(),
+      duration: a.duration.toNumber(),
+      entry: a.entry.toNumber(),
+      status: decodeStatus(a.status),
+      pot: a.pot.toNumber(),
+      winner: a.winner ?? null,
+      pnlABps: a.pnlABps.toNumber(),
+      pnlBBps: a.pnlBBps.toNumber(),
+    };
+  }
+
   async fetchMatch(match: PublicKey): Promise<MatchState | null> {
     const raw = await this.l1Program.account.match.fetchNullable(match);
-    if (!raw) return null;
-    return {
-      address: match,
-      creator: raw.creator,
-      joiner: raw.joiner ?? null,
-      mint: raw.mint,
-      marketType: decodeMarketType(raw.marketType),
-      symbol: decodeFixed(raw.symbol),
-      createdTs: raw.createdTs.toNumber(),
-      name: decodeFixed(raw.name),
-      matchId: raw.matchId.toNumber(),
-      startTs: raw.startTs.toNumber(),
-      duration: raw.duration.toNumber(),
-      entry: raw.entry.toNumber(),
-      status: decodeStatus(raw.status),
-      pot: raw.pot.toNumber(),
-      winner: raw.winner ?? null,
-      pnlABps: raw.pnlABps.toNumber(),
-      pnlBBps: raw.pnlBBps.toNumber(),
-    };
+    return raw ? this.toMatchState(match, raw) : null;
+  }
+
+  /**
+   * Matches past their buzzer that have not been settled.
+   *
+   * Anyone may settle these — the instructions are permissionless — which is
+   * what stops a closed browser tab from stranding a pot.
+   */
+  async fetchExpiredMatches(): Promise<MatchState[]> {
+    const now = Math.floor(Date.now() / 1000);
+    const all = await this.l1Program.account.match.all();
+    return all
+      .map((m: { publicKey: PublicKey; account: Record<string, any> }) =>
+        this.toMatchState(m.publicKey, m.account))
+      .filter(
+        (m: MatchState) =>
+          (m.status === 'live' || m.status === 'settling') &&
+          m.startTs > 0 &&
+          now >= m.startTs + m.duration
+      );
   }
 
   /** Every match that is still open to join. */
   async fetchOpenMatches(): Promise<MatchState[]> {
     const all = await this.l1Program.account.match.all();
     return all
-      .map((m: { publicKey: PublicKey; account: Record<string, any> }) => ({
-        address: m.publicKey,
-        creator: m.account.creator,
-        joiner: m.account.joiner ?? null,
-        mint: m.account.mint,
-        marketType: decodeMarketType(m.account.marketType),
-        symbol: decodeFixed(m.account.symbol),
-        createdTs: m.account.createdTs.toNumber(),
-        name: decodeFixed(m.account.name),
-        matchId: m.account.matchId.toNumber(),
-        startTs: m.account.startTs.toNumber(),
-        duration: m.account.duration.toNumber(),
-        entry: m.account.entry.toNumber(),
-        status: decodeStatus(m.account.status),
-        pot: m.account.pot.toNumber(),
-        winner: m.account.winner ?? null,
-        pnlABps: m.account.pnlABps.toNumber(),
-        pnlBBps: m.account.pnlBBps.toNumber(),
-      }))
+      .map((m: { publicKey: PublicKey; account: Record<string, any> }) =>
+        this.toMatchState(m.publicKey, m.account))
       .filter((m: MatchState) => m.status === 'open');
   }
 

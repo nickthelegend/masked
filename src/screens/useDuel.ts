@@ -48,6 +48,13 @@ const POLL_MS = 1000;
  */
 const MARK_CRANK_MS = 2000;
 
+/**
+ * Settling spans two chains and several transactions, and the first go can
+ * lose a race with the rollup's commit. Retry before alarming anyone.
+ */
+const SETTLE_ATTEMPTS = 3;
+const SETTLE_RETRY_MS = 4000;
+
 export interface Duel {
   phase: DuelPhase;
   stake: number;
@@ -148,6 +155,8 @@ export function useDuel(): Duel {
   const [secondsLeft, setSecondsLeft] = useState(ROUND_SECONDS);
 
   const settledRef = useRef(false);
+  /** Retries spent on the current settlement. Reset when a round begins. */
+  const settleAttempts = useRef(0);
 
   const entryLamports = Math.round(stake * 1e9);
   const pot = stake * 2 * (1 - RAKE);
@@ -228,7 +237,12 @@ export function useDuel(): Duel {
   // the other to. On-chain it is capped at 5% per second, and `crankPrice`
   // clamps to that rather than being rejected.
   useEffect(() => {
-    if (!client || !match || phase !== 'live' || !wallet.publicKey) return undefined;
+    // Stops at the buzzer, not at settlement: the program refuses a mark once
+    // the clock has run out, so cranking through the commit-and-settle window
+    // just posts failing transactions to the rollup ledger.
+    if (!client || !match || phase !== 'live' || secondsLeft <= 0 || !wallet.publicKey) {
+      return undefined;
+    }
     const mint = match.mint.toBase58();
     const kind = match.marketType;
 
@@ -253,7 +267,7 @@ export function useDuel(): Duel {
       ac.abort();
       clearInterval(id);
     };
-  }, [client, match, phase, wallet.publicKey]);
+  }, [client, match, phase, secondsLeft, wallet.publicKey]);
 
   /* ----------------------------- settlement ------------------------------ */
   const settle = useCallback(async () => {
@@ -285,10 +299,22 @@ export function useDuel(): Duel {
       assertFogIntact('reveal', 'opponent position');
       if (theirs) setOpponentPosition(theirs);
     } catch (e) {
+      // Settling is several transactions across two chains, and the first
+      // attempt genuinely can lose a race with the rollup's commit. Retry
+      // quietly a couple of times before saying anything: the old behaviour
+      // put TRANSACTION FAILED on screen and then settled successfully a few
+      // seconds later, which reads as a broken app rather than a slow one.
+      settleAttempts.current += 1;
+      settledRef.current = false;
+      if (settleAttempts.current < SETTLE_ATTEMPTS) {
+        setBusy(false);
+        await new Promise((r) => setTimeout(r, SETTLE_RETRY_MS));
+        void settle();
+        return;
+      }
       const friendly = explainError(e);
       setError(friendly.title);
       toast.error(friendly.title, friendly.detail);
-      settledRef.current = false;
     } finally {
       setBusy(false);
     }
@@ -318,6 +344,7 @@ export function useDuel(): Duel {
       setSealed(await client!.isPositionSealed(m.address, creator));
 
       settledRef.current = false;
+      settleAttempts.current = 0;
       setMatch(m);
       setSeries([]);
       setEquity([0]);
