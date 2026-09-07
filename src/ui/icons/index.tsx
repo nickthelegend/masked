@@ -5,6 +5,8 @@
 import PixelIcon, { type PixelIconProps } from './PixelIcon';
 
 export { default as PixelIcon, GRID, type PixelIconProps } from './PixelIcon';
+export { default as PixelArt, type PixelArtProps } from './PixelArt';
+export { SolanaMark, UsdcMark, PumpMark } from './TokenMarks';
 
 /** Stacked tape rows — the reveals feed. */
 const FEED = [

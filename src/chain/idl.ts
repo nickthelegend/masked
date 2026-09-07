@@ -2327,6 +2327,32 @@ export const FOGDUEL_IDL = {
             "type": "pubkey"
           },
           {
+            "name": "mint",
+            "docs": [
+              "What was traded. The tape is the public record of a duel, and a record",
+              "that does not say which market it was is not much of a record — the",
+              "feed had to fall back to naming every past duel after a demo mint."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "symbol",
+            "type": {
+              "array": [
+                "u8",
+                12
+              ]
+            }
+          },
+          {
+            "name": "market_type",
+            "type": {
+              "defined": {
+                "name": "MarketType"
+              }
+            }
+          },
+          {
             "name": "player_a",
             "type": "pubkey"
           },

@@ -52,3 +52,16 @@ export { default as PnLOdometer, type PnLOdometerProps } from './PnLOdometer';
 export { useReducedMotion, DURATION, FRAME_MS } from './motion';
 export { default as TxFeed, type TxFeedProps, type TxFeedItem } from './TxFeed';
 export { default as MatchRow, type MatchRowProps } from './MatchRow';
+
+/* markets — the live pump.fun / Jupiter list and everything that renders it */
+export { default as TokenLogo, type TokenLogoProps } from './TokenLogo';
+export { default as SourceBadge, type SourceBadgeProps, type PriceSource } from './SourceBadge';
+export { default as MarketRow, type MarketRowProps } from './MarketRow';
+export { default as MarketTabs, type MarketTabsProps, type MarketTab } from './MarketTabs';
+export {
+  default as MarketPicker,
+  type MarketPickerProps,
+  type PickableMarket,
+  type MarketKindKey,
+} from './MarketPicker';
+export { default as MarketHeader, type MarketHeaderProps } from './MarketHeader';

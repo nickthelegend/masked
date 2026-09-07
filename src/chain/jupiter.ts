@@ -11,7 +11,10 @@
  * `px`, and `pumpfun.ts` for the same note on the meme side.
  */
 
-const API = 'https://api.jup.ag/price/v3';
+import { feedBase } from './marketEndpoints';
+
+/** Direct from a script, through the CORS shim in a browser. */
+const api = () => `${feedBase('jup')}/price/v3`;
 const TIMEOUT_MS = 12_000;
 
 const withTimeout = (signal?: AbortSignal): AbortSignal =>
@@ -52,7 +55,7 @@ export async function fetchUsdPrices(
   signal?: AbortSignal
 ): Promise<Map<string, JupPrice>> {
   if (mints.length === 0) return new Map();
-  const url = `${API}?ids=${mints.join(',')}`;
+  const url = `${api()}?ids=${mints.join(',')}`;
   let res: Response;
   try {
     res = await fetch(url, { headers: { accept: 'application/json' }, signal: withTimeout(signal) });

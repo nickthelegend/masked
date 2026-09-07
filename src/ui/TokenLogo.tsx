@@ -1,0 +1,101 @@
+import { useState } from 'react';
+import { Image, type ViewStyle } from 'react-native';
+import Box from './Box';
+import PixelText from './PixelText';
+import { SolanaMark, UsdcMark } from './icons';
+import { border, color } from './theme';
+
+/** Mints whose mark is drawn rather than fetched. */
+const WSOL = 'So11111111111111111111111111111111111111112';
+const USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+
+/** The palette a fallback tile picks from. Accents only — never a surface. */
+const TILE = [color.magenta, color.cyan, color.purple, color.orange, color.green, color.blue];
+
+/**
+ * Deterministic colour for a mint, so the same coin is always the same tile.
+ *
+ * A hash rather than a random: a logo that changed colour between the picker
+ * and the round would read as a different market.
+ */
+function tileColor(seed: string): string {
+  let h = 0;
+  for (let i = 0; i < seed.length; i += 1) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return TILE[h % TILE.length];
+}
+
+export interface TokenLogoProps {
+  /** Mint address. Decides the fallback tile, and selects the drawn marks. */
+  mint: string;
+  /** Ticker, for the fallback tile's initial. */
+  symbol: string;
+  /** Remote logo from the market feed. Missing and broken are both handled. */
+  uri?: string | null;
+  size?: number;
+  style?: ViewStyle | ViewStyle[];
+}
+
+/**
+ * A market's logo.
+ *
+ * pump.fun publishes a real image for every coin and roughly a quarter of them
+ * 404 or rate-limit — checked against the live API, not assumed — so a broken
+ * image is the normal case, not an edge one. When one fails to load this falls
+ * back to a coloured plate with the ticker's first letter, keyed off the mint
+ * so a given coin always gets the same tile.
+ *
+ * SOL and USDC are drawn instead of fetched: neither market feed carries a
+ * logo for them, because they are the quote currency and the stable rather
+ * than listings.
+ */
+export default function TokenLogo({ mint, symbol, uri, size = 32, style }: TokenLogoProps) {
+  const [broken, setBroken] = useState(false);
+
+  const plate = (children: React.ReactNode) => (
+    <Box
+      bg={color.ink}
+      outline={color.panelLight}
+      outlineWidth={border.thin}
+      width={size}
+      height={size}
+      align="center"
+      justify="center"
+      style={style}
+    >
+      {children}
+    </Box>
+  );
+
+  if (mint === WSOL) return plate(<SolanaMark size={Math.round(size * 0.78)} />);
+  if (mint === USDC) return plate(<UsdcMark size={Math.round(size * 0.78)} />);
+
+  if (uri && !broken) {
+    return plate(
+      <Image
+        source={{ uri }}
+        // Nearest-neighbour would be ideal on a pixel grid, but RN Web only
+        // honours it through CSS; `contain` at least keeps the art unstretched.
+        resizeMode="contain"
+        style={{ width: size - border.thin * 2, height: size - border.thin * 2 }}
+        onError={() => setBroken(true)}
+      />
+    );
+  }
+
+  return (
+    <Box
+      bg={tileColor(mint)}
+      outline={color.ink}
+      outlineWidth={border.thin}
+      width={size}
+      height={size}
+      align="center"
+      justify="center"
+      style={style}
+    >
+      <PixelText variant="numeric" size={Math.round(size * 0.42)} color={color.ink}>
+        {(symbol[0] ?? '?').toUpperCase()}
+      </PixelText>
+    </Box>
+  );
+}

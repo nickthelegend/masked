@@ -8,6 +8,8 @@ export default function LeaderboardScreen() {
   // Read from on-chain PlayerStats accounts, not summed on the client.
   const { board, loaded } = usePlayerStats();
 
+  const bestStreak = board.reduce((best, r) => Math.max(best, r.bestStreak), 0);
+
   const podium = board.slice(0, 3).map((r, i) => ({
     name: short(r.owner),
     place: (i + 1) as Place,
@@ -16,13 +18,21 @@ export default function LeaderboardScreen() {
 
   return (
     <Stack pad={space.lg} gap={space.md}>
+      {/* Not "24H". PlayerStats are lifetime counters — the program has no
+          notion of a rolling window — so a 24-hour label would be describing
+          data that does not exist. */}
       <PixelText variant="h2" align="center">
-        FOG WINS · 24H
+        FOG WINS · ALL TIME
       </PixelText>
-      {/* Streaks come from chain too — best_streak never decreases. */}
+      {/* Streaks come from chain too — best_streak never decreases. This is
+          the best on the board, not the best of whoever happens to be ranked
+          first: those are different players as soon as someone wins a big pot
+          on a shorter run. */}
       <Row gap={space.sm} justify="center" wrap>
         <Badge label={`${board.length} PLAYERS`} tone="quiet" variant="label" />
-        {board[0] ? <Badge label={`BEST STREAK ${board[0].bestStreak}`} tone="gold" variant="label" /> : null}
+        {bestStreak > 0 ? (
+          <Badge label={`BEST STREAK ${bestStreak}`} tone="gold" variant="label" />
+        ) : null}
       </Row>
 
       {podium.length > 0 ? <Podium entries={podium} /> : null}

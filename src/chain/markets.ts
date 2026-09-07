@@ -18,7 +18,15 @@ export interface TradableMarket {
   mint: string;
   symbol: string;
   name: string;
-  /** Remote logo, when the source publishes one. */
+  /**
+   * Remote logo, exactly as the feed published it.
+   *
+   * Loaded straight from whichever CDN the coin's creator used. Relaying these
+   * through our own proxy was tried and is worse: Cloudflare Images serves a
+   * browser and refuses a server, so proxying breaks logos that currently work.
+   * Some fraction of them are dead upstream regardless — see TokenLogo, which
+   * falls back rather than showing a broken image.
+   */
   imageUri: string | null;
   /** SOL per token. */
   priceSol: number;

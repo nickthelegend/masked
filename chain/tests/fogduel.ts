@@ -69,8 +69,10 @@ describe("fogduel", () => {
       const feed = await program.account.priceFeed.fetch(p.feed);
       const current = feed.px.toNumber();
       if (Math.abs(current - targetPx) <= Math.max(1, targetPx / 10_000)) return;
-      const step = (current * 500) / 10_000;
-      const next = Math.round(Math.max(current - step, Math.min(current + step, targetPx)));
+      // Floored: the on-chain cap is an exact integer comparison, and a
+      // rounded-up 5% step lands one lamport over it.
+      const step = Math.floor((current / 10_000) * 500);
+      const next = Math.max(current - step, Math.min(current + step, Math.round(targetPx)));
       if (i > 0) await new Promise((r) => setTimeout(r, 1100));
       await program.methods.pushPrice(new BN(next))
         .accounts({ authority: creator.publicKey, matchAccount: p.matchPda, priceFeed: p.feed })
@@ -286,6 +288,9 @@ describe("fogduel", () => {
 
   it("refuses a price push that jumps further than the rate limit", async () => {
     const p = pdas(RUN + 1);
+    // The previous test just posted, and the interval limit would mask the
+    // jump limit we are actually testing here.
+    await new Promise((r) => setTimeout(r, 1100));
     const feed = await program.account.priceFeed.fetch(p.feed);
     try {
       // +20% in one post. Anyone may post the mark, so the cap is the only

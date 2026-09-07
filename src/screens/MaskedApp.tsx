@@ -56,6 +56,8 @@ export default function MaskedApp() {
                 onStakeChange={duel.setStake}
                 pot={duel.pot}
                 onFind={toMatchmaking}
+                selected={duel.selectedMarket}
+                onSelectMarket={duel.selectMarket}
               />
             ) : null}
 
@@ -89,6 +91,10 @@ export default function MaskedApp() {
                 error={duel.error}
                 sealed={duel.sealed}
                 market={duel.market}
+                marketMint={duel.marketMint}
+                marketImageUri={duel.marketImageUri}
+                marketSource={duel.marketSource}
+                priceLabel={duel.priceLabel}
                 teeEnforced={duel.teeEnforced}
               />
             ) : null}

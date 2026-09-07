@@ -75,6 +75,14 @@ export interface Duel {
   sealed: boolean;
   /** Ticker of the market being fought over, as written on chain. */
   market: string;
+  /** The mint being traded, for the logo. */
+  marketMint: string;
+  /** The market's logo, when its feed publishes one. */
+  marketImageUri: string | null;
+  /** Which feed prices this round. */
+  marketSource: 'pump.fun' | 'jupiter';
+  /** The mark, formatted. */
+  priceLabel: string;
   /** The market the next duel will be opened on, chosen in the lobby. */
   selectedMarket: TradableMarket | null;
   selectMarket: (m: TradableMarket) => void;
@@ -545,6 +553,18 @@ export function useDuel(): Duel {
     // Straight off the match account. The old lookup table could only name
     // three mints and called everything else by its address.
     market: match?.symbol || marketLabel(match?.mint ?? DEMO_MINT),
+    marketMint: match?.mint.toBase58() ?? '',
+    // The logo is not on chain — only the symbol, name and mint are. It comes
+    // from whichever market list the player picked from, matched by mint.
+    marketImageUri: selectedMarket && match && selectedMarket.mint === match.mint.toBase58()
+      ? selectedMarket.imageUri
+      : null,
+    marketSource: match?.marketType === 'major' ? 'jupiter' : 'pump.fun',
+    // In SOL, not USD: the entry, the pot and the PnL are all lamports, so a
+    // mark in dollars would be the only number on the screen in a different
+    // currency. The picker quotes USD, where market cap is what identifies a
+    // coin — here what matters is what a token costs against the stake.
+    priceLabel: `${formatSolPrice(price)}◎`,
     selectedMarket,
     selectMarket: setSelectedMarket,
     teeEnforced: ACTIVE_CLUSTER.tee,

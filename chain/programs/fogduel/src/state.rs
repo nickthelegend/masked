@@ -299,6 +299,12 @@ pub struct PriceFeed {
 #[derive(InitSpace)]
 pub struct Tape {
     pub match_key: Pubkey,
+    /// What was traded. The tape is the public record of a duel, and a record
+    /// that does not say which market it was is not much of a record — the
+    /// feed had to fall back to naming every past duel after a demo mint.
+    pub mint: Pubkey,
+    pub symbol: [u8; SYMBOL_LEN],
+    pub market_type: MarketType,
     pub player_a: Pubkey,
     pub player_b: Pubkey,
     pub pnl_a_bps: i64,

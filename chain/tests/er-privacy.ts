@@ -190,21 +190,32 @@ describe("fogduel · ephemeral rollup + privacy", () => {
   it("PHASE 5 — commits and undelegates back to L1", async () => {
     await new Promise((r) => setTimeout(r, (DURATION + 2) * 1000));
 
-    await erProgram.methods
-      .commitAndUndelegatePositions()
-      .accounts({ payer: creator.publicKey, positionA: p.posA, positionB: p.posB })
-      .rpc();
+    // One position per transaction: two of them is 1086 bytes of account data,
+    // which does not fit in a transaction and sends the rollup's committor
+    // down a chunked buffer path.
+    for (const position of [p.posA, p.posB]) {
+      await erProgram.methods
+        .commitAndUndelegatePosition()
+        .accounts({ payer: creator.publicKey, position })
+        .rpc();
+    }
 
     // Undelegation is asynchronous: the ER schedules it, the base layer
-    // applies it. Poll until L1 ownership returns to the program.
-    let owner = "";
-    for (let i = 0; i < 40; i++) {
-      const info = await provider.connection.getAccountInfo(p.posA);
-      owner = info!.owner.toBase58();
-      if (owner === program.programId.toBase58()) break;
+    // applies it. Poll until L1 ownership returns to the program for both —
+    // settle_match is handed each of them and Anchor checks every owner.
+    let owners: string[] = [];
+    for (let i = 0; i < 60; i++) {
+      owners = await Promise.all(
+        [p.posA, p.posB].map(async (k) =>
+          (await provider.connection.getAccountInfo(k))!.owner.toBase58())
+      );
+      if (owners.every((o) => o === program.programId.toBase58())) break;
       await new Promise((r) => setTimeout(r, 1000));
     }
-    assert.equal(owner, program.programId.toBase58(), "L1 ownership returned to fogduel");
+    assert.deepEqual(
+      owners, [program.programId.toBase58(), program.programId.toBase58()],
+      "L1 ownership returned to fogduel for both positions",
+    );
 
     // The ER fill must have survived the commit — this is what makes the
     // rollup trustworthy rather than a scratch pad.

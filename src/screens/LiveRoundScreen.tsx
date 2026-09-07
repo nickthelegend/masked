@@ -14,10 +14,11 @@ import {
   RoundClock,
   Stack,
   TapeChart,
+  TokenLogo,
   color,
   space,
 } from '../ui';
-import type { Fill } from '../ui';
+import type { Fill, PriceSource } from '../ui';
 
 export interface LiveRoundScreenProps {
   secondsLeft: number;
@@ -36,8 +37,16 @@ export interface LiveRoundScreenProps {
   error?: string | null;
   /** Both positions carry an on-chain ACL. Read from chain, not assumed. */
   sealed?: boolean;
-  /** Market label resolved from the match's real mint. */
+  /** Ticker, read off the match account. */
   market?: string;
+  /** The mint being traded, for the logo. */
+  marketMint?: string;
+  /** The market's logo, when its feed publishes one. */
+  marketImageUri?: string | null;
+  /** Where the mark comes from, named on screen rather than implied. */
+  marketSource?: PriceSource;
+  /** Formatted mark. The raw px is a scaled integer — see chain/units.ts. */
+  priceLabel?: string;
   /** Whether this cluster enforces that ACL at read time (TEE only). */
   teeEnforced?: boolean;
 }
@@ -63,15 +72,20 @@ export default function LiveRoundScreen({
   error = null,
   sealed = false,
   market = 'SYNTHETIC',
+  marketMint = '',
+  marketImageUri = null,
+  marketSource = 'pump.fun',
+  priceLabel,
   teeEnforced = false,
 }: LiveRoundScreenProps) {
   return (
     <Stack pad={space.md} gap={space.md}>
       <Row justify="space-between" bg={color.ink} outline={color.panelLight} pad={space.sm + 2}>
-        <Row gap={space.sm}>
+        <Row gap={space.sm} align="center">
           {/* The orb is a glanceable read on your position — green when up,
               red when down, cyan while flat. */}
           <Orb size={22} state={orbStateForPnl(myPnl)} />
+          {marketMint ? <TokenLogo mint={marketMint} symbol={market} uri={marketImageUri} size={20} /> : null}
           <PixelText variant="numeric" size={8} color={color.textDim}>
             {market}
           </PixelText>
@@ -84,7 +98,12 @@ export default function LiveRoundScreen({
         <Stack gap={space.xs}>
           <TapeChart mine={series} height={200} baseline />
           <Row justify="space-between">
-            <PixelText variant="bodySmall">PRICE {price.toFixed(4)}</PixelText>
+            <Row gap={space.xs} align="center">
+              <PixelText variant="bodySmall">MARK {priceLabel ?? price}</PixelText>
+              <PixelText variant="bodySmall" size={9} color={color.textFaint}>
+                {marketSource}
+              </PixelText>
+            </Row>
             <Row gap={space.xs}>
               <PixelText variant="bodySmall" color={color.textDim}>
                 YOUR PNL

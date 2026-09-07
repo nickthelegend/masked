@@ -449,6 +449,9 @@ pub mod fogduel {
 
         let tape = &mut ctx.accounts.tape;
         tape.match_key = ctx.accounts.match_account.key();
+        tape.mint = ctx.accounts.match_account.mint;
+        tape.symbol = ctx.accounts.match_account.symbol;
+        tape.market_type = ctx.accounts.match_account.market_type;
         tape.player_a = creator;
         tape.player_b = joiner;
         tape.pnl_a_bps = pnl_a;

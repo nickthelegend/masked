@@ -10,10 +10,10 @@
  */
 import { Keypair, LAMPORTS_PER_SOL, type Transaction } from '@solana/web3.js';
 import { readFileSync, existsSync, writeFileSync } from 'node:fs';
+import { PublicKey } from '@solana/web3.js';
 import { FogduelClient } from '../src/chain/client';
-import { DEMO_MINT } from '../src/chain/market';
+import { fetchMajorMarkets, fetchMemeMarkets, type TradableMarket } from '../src/chain/markets';
 import { CLUSTERS } from '../src/chain/config';
-import { pxFromSolPerToken } from '../src/chain/units';
 import nacl from 'tweetnacl';
 
 const COUNT = Number(process.argv[2] ?? 5);
@@ -59,6 +59,17 @@ async function main() {
   }
   console.log(`funded ${players.length} demo wallets`);
 
+  // Real markets, from the same live feeds the app lists. Seeded history has
+  // to be indistinguishable from a match somebody played, and a duel over a
+  // placeholder mint is distinguishable at a glance — the feed named every
+  // past round after the demo token.
+  const markets: TradableMarket[] = [
+    ...(await fetchMemeMarkets(8)),
+    ...(await fetchMajorMarkets()),
+  ];
+  if (markets.length === 0) throw new Error('no live markets — cannot seed real history');
+  console.log(`${markets.length} live markets to seed from`);
+
   // Varied stakes and outcomes so the feed does not look copy-pasted.
   const stakes = [0.05, 0.1, 0.25, 0.1, 0.5, 0.05];
   // Oracle marks the round settles against, as a fraction of the 0.1 SOL open.
@@ -70,12 +81,14 @@ async function main() {
     const entry = Math.round((stakes[i % stakes.length]) * LAMPORTS_PER_SOL);
     const matchId = Math.floor(Date.now() / 1000) * 1000 + 900 + i;
 
-    process.stdout.write(`  match ${i + 1}/${COUNT} … `);
+    process.stdout.write(`  match ${i + 1}/${COUNT} ${markets[i % markets.length].symbol.padEnd(9)}… `);
+    const market = markets[i % markets.length];
     const match = await houseClient.createMatch({
-      creator: house.publicKey, matchId, mint: DEMO_MINT,
+      creator: house.publicKey, matchId, mint: new PublicKey(market.mint),
       // Long enough to absorb four delegation round trips before the first
       // fill — at 10s the clock expired mid-seed.
-      durationSecs: 30, entryLamports: entry, startPx: pxFromSolPerToken(0.1),
+      durationSecs: 30, entryLamports: entry, startPx: market.startPx,
+      marketType: market.kind, symbol: market.symbol, name: market.name,
     });
     await oppClient.joinMatch(match, opponent.publicKey, house.publicKey);
 
@@ -87,8 +100,10 @@ async function main() {
     await houseClient.applyFill(match, house.publicKey, 'buy', Math.floor(entry * 0.45));
     await oppClient.applyFill(match, opponent.publicKey, 'buy', Math.floor(entry * (0.2 + (i % 3) * 0.1)));
 
+    // Relative to this market's own opening mark, not an absolute price —
+    // these markets are nine orders of magnitude apart.
     await houseClient.walkPriceTo(
-      match, house.publicKey, pxFromSolPerToken(0.1 * moves[i % moves.length]),
+      match, house.publicKey, Math.round(market.startPx * moves[i % moves.length]),
     );
     await new Promise((r) => setTimeout(r, 31_000));
 

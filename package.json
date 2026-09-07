@@ -25,7 +25,8 @@
     "check:sealed": "tsx scripts/check-sealed.mts",
     "check:pumpfun": "tsx scripts/check-pumpfun.mts",
     "check:markets": "tsx scripts/check-markets.mts",
-    "check:gate": "tsx scripts/check-gate.mts"
+    "check:gate": "tsx scripts/check-gate.mts",
+    "proxy": "node server/market-proxy.mjs"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",

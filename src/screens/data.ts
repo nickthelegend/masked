@@ -29,6 +29,42 @@ export interface FeedMatch {
 export const FEED_FILTERS = ['REVEALS', 'BIG POTS', 'MINE'] as const;
 export type FeedFilter = (typeof FEED_FILTERS)[number];
 
+/**
+ * Round length in seconds.
+ *
+ * The product round is five minutes. A five-minute wait is unwatchable on
+ * camera, so the demo default is 60s and EXPO_PUBLIC_ROUND_SECONDS overrides
+ * both. The program accepts anything from MIN_DURATION (10s) to MAX_DURATION
+ * (3600s), so this is a real parameter, not a display trick.
+ */
+export const FULL_ROUND_SECONDS = 300;
+export const DEMO_ROUND_SECONDS = 60;
+
+const envRound = Number(process.env.EXPO_PUBLIC_ROUND_SECONDS);
+export const ROUND_SECONDS =
+  Number.isFinite(envRound) && envRound >= 10 && envRound <= 3600 ? envRound : DEMO_ROUND_SECONDS;
+export const RAKE = 0.02;
+
+/**
+ * The round length, written out for prose and for captions.
+ *
+ * Both derive from ROUND_SECONDS rather than repeating a number. The marketing
+ * copy used to say "five minutes" in three places while the app ran 60-second
+ * rounds and the badge next to it said 60S — so the page contradicted itself
+ * and the product, and would have again the first time the constant moved.
+ */
+export const roundPhrase = (secs: number = ROUND_SECONDS): string => {
+  if (secs % 60 !== 0) return `${secs} seconds`;
+  const mins = secs / 60;
+  if (mins === 1) return 'one minute';
+  const WORDS = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+  return `${WORDS[mins] ?? mins} minutes`;
+};
+
+/** The same length as a caption: "60S", "5 MIN". */
+export const roundBadge = (secs: number = ROUND_SECONDS): string =>
+  secs % 60 === 0 && secs >= 120 ? `${secs / 60} MIN` : `${secs}S`;
+
 /** A pot at or above this many lamports counts as a big one. */
 export const BIG_POT_LAMPORTS = 0.2 * 1e9;
 
@@ -48,7 +84,7 @@ export interface ModeDef {
 }
 
 export const MODES: ModeDef[] = [
-  { name: 'FOG DUEL', description: 'Same token, 5 min, hidden positions.', status: 'LIVE' },
+  { name: 'FOG DUEL', description: `Same token, ${roundBadge()}, hidden positions.`, status: 'LIVE' },
   { name: 'CHICKEN', description: 'First seller pays a penalty to holders.', status: 'SOON' },
   { name: 'FADE ME', description: 'Opponent must take the opposite side.', status: 'SOON' },
   { name: 'GHOST ROYALE', description: 'Bottom 3 cut every 90 seconds.', status: 'SOON' },
@@ -80,22 +116,6 @@ export interface QuestDef {
 /** Shown before an opponent has actually joined. Not a handle — nobody is
  *  there yet, and inventing a name would imply otherwise. */
 export const OPPONENT_PENDING = 'AWAITING OPPONENT';
-/**
- * Round length in seconds.
- *
- * The product round is five minutes. A five-minute wait is unwatchable on
- * camera, so the demo default is 60s and EXPO_PUBLIC_ROUND_SECONDS overrides
- * both. The program accepts anything from MIN_DURATION (10s) to MAX_DURATION
- * (3600s), so this is a real parameter, not a display trick.
- */
-export const FULL_ROUND_SECONDS = 300;
-export const DEMO_ROUND_SECONDS = 60;
-
-const envRound = Number(process.env.EXPO_PUBLIC_ROUND_SECONDS);
-export const ROUND_SECONDS =
-  Number.isFinite(envRound) && envRound >= 10 && envRound <= 3600 ? envRound : DEMO_ROUND_SECONDS;
-export const RAKE = 0.02;
-
 /* ---------- landing ---------- */
 
 export interface LandingStat {
@@ -130,7 +150,9 @@ export const HOW_IT_WORKS: HowStep[] = [
     plate: '#35e0ff',
     ink: '#06263a',
     title: '2 · TRADE FOGGED',
-    body: 'Five minutes, one token. You see your own tape. Of theirs you see a fill count and nothing else.',
+    body:
+      `${roundPhrase()[0].toUpperCase()}${roundPhrase().slice(1)}, one token. ` +
+      'You see your own tape. Of theirs you see a fill count and nothing else.',
   },
   {
     glyph: '\u25B2',

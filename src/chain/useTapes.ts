@@ -14,6 +14,9 @@ import { PRICE_SCALE } from './client';
 
 export interface TapeSummary {
   match: string;
+  /** What was traded, straight off the tape. */
+  symbol: string;
+  mint: PublicKey;
   winner: PublicKey;
   loser: PublicKey;
   winnerPnlBps: number;
@@ -24,6 +27,14 @@ export interface TapeSummary {
   winnerSeries: number[];
   loserSeries: number[];
 }
+
+/** A zero-padded on-chain string back to a JS one. */
+const decodeFixed = (bytes: number[] | Uint8Array | undefined): string => {
+  if (!bytes) return '';
+  const arr = Array.from(bytes);
+  const end = arr.indexOf(0);
+  return new TextDecoder().decode(new Uint8Array(end === -1 ? arr : arr.slice(0, end)));
+};
 
 const readOnlyWallet = {
   publicKey: null,
@@ -72,6 +83,8 @@ export function useTapes(pollMs = 10_000) {
             const lBps = winnerIsA ? a.pnlBBps.toNumber() : a.pnlABps.toNumber();
             return {
               match: a.matchKey.toBase58(),
+              symbol: decodeFixed(a.symbol),
+              mint: a.mint,
               winner: a.winner,
               loser: winnerIsA ? a.playerB : a.playerA,
               winnerPnlBps: wBps,

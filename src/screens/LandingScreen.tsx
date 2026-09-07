@@ -32,11 +32,12 @@ import {
 } from '../ui';
 import AppHeader from './AppHeader';
 import DuelLobbyScreen from './DuelLobbyScreen';
-import { HOW_IT_WORKS, LANDING_STAT_LABELS, MODES, RAKE } from './data';
+import { HOW_IT_WORKS, LANDING_STAT_LABELS, MODES, RAKE, roundPhrase } from './data';
 import { useTickerItems } from '../chain/useTickerItems';
 import { DEMO_MINT, marketLabel } from '../chain/market';
 import { bpsPct, short, useTapes } from '../chain/useTapes';
 import { useChainStats } from '../chain/useChainStats';
+import type { TradableMarket } from '../chain/markets';
 
 /** Above this width the hero splits into copy + device columns. */
 const WIDE = 900;
@@ -52,6 +53,9 @@ export default function LandingScreen() {
   const { width } = useWindowDimensions();
   const wide = width >= WIDE;
   const [stake, setStake] = useState(0.1); // SOL
+  // The hero is a live preview: it lists the same real markets the app does,
+  // so what a visitor sees on the landing page is what they get at /play.
+  const [previewMarket, setPreviewMarket] = useState<TradableMarket | null>(null);
   const stats = useChainStats();
   const tickerItems = useTickerItems();
   const { tapes, loaded: tapesLoaded } = useTapes();
@@ -98,7 +102,7 @@ export default function LandingScreen() {
       </Stack>
 
       <PixelText variant="body">
-        1v1 fog duels. Two traders stake a pot and trade the same token for five minutes with every position
+        1v1 fog duels. Two traders stake a pot and trade the same token for {roundPhrase()} with every position
         hidden. At the buzzer the tape reveals — best PnL takes the pot.
       </PixelText>
 
@@ -141,6 +145,8 @@ export default function LandingScreen() {
             onStakeChange={setStake}
             pot={stake * 2 * (1 - RAKE)}
             onFind={goPlay}
+            selected={previewMarket}
+            onSelectMarket={setPreviewMarket}
           />
         </ScrollView>
         <TabBar active="duel" onChange={goPlay} />

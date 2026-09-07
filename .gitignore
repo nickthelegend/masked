@@ -10,3 +10,7 @@ chain/target/
 chain/node_modules/
 chain/.anchor/
 dist/
+
+# Local validator ledgers — see scripts/localnet.sh
+.localnet/
+magicblock-test-storage/

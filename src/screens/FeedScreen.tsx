@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { MatchCard, PixelText, PixelButton, Row, Stack, color, space } from '../ui';
 import { BIG_POT_LAMPORTS, FEED_FILTERS, type FeedFilter } from './data';
-import { DEMO_MINT, marketLabel } from '../chain/market';
+import { marketLabel } from '../chain/market';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { bpsPct, short, useTapes } from '../chain/useTapes';
 
@@ -49,7 +49,9 @@ export default function FeedScreen({ onChallenge }: FeedScreenProps) {
       {tapes.map((t) => (
         <MatchCard
           key={t.match}
-          token={marketLabel(DEMO_MINT)}
+          // Off the tape itself. An older tape written before the market was
+          // recorded falls back to naming its mint rather than inventing one.
+          token={t.symbol || marketLabel(t.mint)}
           pot={`${(t.potPaid / 1e9).toFixed(2)}◎`}
           ago={ago(t.settledTs)}
           winner={short(t.winner)}

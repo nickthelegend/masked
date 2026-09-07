@@ -32,7 +32,13 @@ ER_PORT="${MB_ER_PORT:-7799}"
 PUBLIC_PORT="${MB_PUBLIC_PORT:-6699}"
 HOST=127.0.0.1
 
-DIR="${MASKED_LEDGER_DIR:-${TMPDIR:-/tmp}/masked-localnet}"
+# Ledgers live beside the repo, not in /tmp.
+#
+# The base layer writes on the order of a gigabyte an hour and TMPDIR is on the
+# boot volume, so a long session there fills the disk — at which point nothing
+# can write, including the tools you would use to clean it up. Kept here it is
+# visible, gitignored, and on whatever volume the repo is on.
+DIR="${MASKED_LEDGER_DIR:-$(cd "$(dirname "$0")/.." && pwd)/.localnet}"
 mkdir -p "$DIR"
 
 up() { lsof -ti:"$1" >/dev/null 2>&1; }
@@ -61,15 +67,17 @@ if up "$BASE_PORT"; then
   echo "base   already up on :$BASE_PORT"
 else
   echo "starting base on :$BASE_PORT"
-  # --limit-ledger-size: /proof replays the whole match history, and the
-  #   default 100MB prunes it out from under us inside an hour.
+  # --limit-ledger-size is a shred count, not a byte count. The default is
+  #   200,000,000, which this validator never reaches in a session, so it is
+  #   effectively unbounded — 50,000,000 keeps the ledger to a few hundred MB
+  #   while still holding far more history than /proof replays.
   # --faucet-port: off the 9900 default, so a test validator from another
   #   project does not fight ours for it.
   mb-test-validator \
     --rpc-port "$BASE_PORT" \
     --ledger "$DIR/ledger" \
     --faucet-port 9899 \
-    --limit-ledger-size 500000000 \
+    --limit-ledger-size 50000000 \
     >"$DIR/base.log" 2>&1 &
   wait_rpc "$BASE_PORT" base
 fi

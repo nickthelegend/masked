@@ -570,9 +570,19 @@ export class FogduelClient {
     const current = await this.fetchPrice(match, onEr);
     if (current <= 0) return null;
 
-    const maxStep = (current * MAX_PUSH_BPS) / BPS;
-    const clamped = Math.round(
-      Math.max(current - maxStep, Math.min(current + maxStep, targetPx))
+    // Floored, and divided before multiplying, for two separate reasons.
+    //
+    // Floored because the on-chain cap is an exact integer comparison: a 5%
+    // step is very often fractional, and rounding it up puts the post one
+    // lamport over the limit, which the program rejects outright.
+    //
+    // Divided first because px runs to 1e15 for SOL, and `px * 10000` leaves
+    // the range where a double is exact — the cap would then be computed from
+    // a number that is already wrong.
+    const maxStep = Math.floor((current / BPS) * MAX_PUSH_BPS);
+    const clamped = Math.max(
+      current - maxStep,
+      Math.min(current + maxStep, Math.round(targetPx))
     );
     if (clamped === current || clamped <= 0) return null;
 

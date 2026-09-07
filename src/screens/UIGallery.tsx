@@ -46,7 +46,47 @@ import {
   space,
   toEnd,
   type ButtonTone,
+  TokenLogo,
+  MarketRow,
+  MarketTabs,
+  MarketPicker,
+  MarketHeader,
+  type MarketKindKey,
+  type PickableMarket,
 } from '../ui';
+
+/**
+ * Fixed rows, so the gallery renders the same thing every time.
+ *
+ * The app's picker is fed by live HTTP; a component catalogue that changed
+ * every reload would be useless for spotting a visual regression.
+ */
+const GALLERY_MARKETS: PickableMarket[] = [
+  {
+    mint: 'ujpDypnBtY8hEFvPSJyo7uP6Ds8a18qPJxhZVQRpump',
+    symbol: 'NTDA',
+    name: 'National Trump Digital Accounts',
+    price: '$1.00',
+    cap: '$1.00B',
+    source: 'pump.fun',
+  },
+  {
+    mint: 'ARtjW78Jy285Np4f2K1fM2zNCskezrnK1YJehjbFpump',
+    symbol: 'WOFI',
+    name: 'WOFI',
+    price: '$0.8329',
+    cap: '$832.9M',
+    source: 'pump.fun',
+  },
+  {
+    mint: 'qX4gjQfLKZaTfLKZaTfLKZaTfLKZaTfLKZaTfLKZpump',
+    symbol: 'WOTF',
+    name: 'World Of The Future',
+    price: '$0.8061',
+    cap: '$806.1M',
+    source: 'pump.fun',
+  },
+];
 
 const TONES: ButtonTone[] = ['primary', 'danger', 'gold', 'quiet', 'info'];
 
@@ -78,6 +118,7 @@ export default function UIGallery() {
   const [stake, setStake] = useState(5);
   const [claimed, setClaimed] = useState(false);
   const [curtain, setCurtain] = useState(false);
+  const [galleryKind, setGalleryKind] = useState<MarketKindKey>('meme');
   const [odo, setOdo] = useState(4.12);
   const toast = useToast();
 
@@ -348,6 +389,99 @@ export default function UIGallery() {
             { label: 'rollup latency', value: '1.6ms', tone: 'good' },
           ]}
         />
+      </Section>
+
+      <Section title="TOKENLOGO" note="drawn marks · remote image · fallback tile">
+        <Stack gap={space.sm}>
+          <Row gap={space.md} align="center">
+            <TokenLogo mint="So11111111111111111111111111111111111111112" symbol="SOL" size={40} />
+            <TokenLogo mint="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" symbol="USDC" size={40} />
+            {/* A mint with no logo: the tile is keyed off the address, so a
+                given coin always gets the same colour. */}
+            <TokenLogo mint="ujpDypnBtY8hEFvPSJyo7uP6Ds8a18qPJxhZVQRpump" symbol="NTDA" size={40} />
+            <TokenLogo mint="ARtjW78Jy285Np4f2K1fM2zNCskezrnK1YJehjbFpump" symbol="WOFI" size={40} />
+            <TokenLogo mint="9cRCn9rGrRKn5Vc8kQpnvcRmXQZm7dHFLzsKgC5WfwUT" symbol="ANSEM" size={40} />
+          </Row>
+          <PixelText variant="bodySmall" size={10} color={color.textFaint}>
+            SOL and USDC are drawn — neither feed carries a logo for them.
+            Everything else loads a real image and falls back to a tile.
+          </PixelText>
+        </Stack>
+      </Section>
+
+      <Section title="MARKETROW / SOURCEBADGE" note="one live market">
+        <Stack gap={space.sm}>
+          <MarketRow
+            mint="ujpDypnBtY8hEFvPSJyo7uP6Ds8a18qPJxhZVQRpump"
+            symbol="NTDA"
+            name="National Trump Digital Accounts"
+            price="$1.00"
+            cap="$1.00B"
+            source="pump.fun"
+            selected
+          />
+          <MarketRow
+            mint="So11111111111111111111111111111111111111112"
+            symbol="SOL"
+            name="Solana"
+            price="$106.12"
+            source="jupiter"
+          />
+        </Stack>
+      </Section>
+
+      <Section title="MARKETTABS" note="segmented control, not the tab bar">
+        <MarketTabs
+          tabs={[
+            { key: 'meme', label: 'MEMES' },
+            { key: 'major', label: 'MAJORS' },
+          ]}
+          active={galleryKind}
+          onChange={setGalleryKind}
+        />
+      </Section>
+
+      <Section title="MARKETPICKER" note="loading · empty · failed · listed">
+        <Stack gap={space.md}>
+          <MarketPicker
+            kind={galleryKind}
+            onKindChange={setGalleryKind}
+            markets={GALLERY_MARKETS}
+            selectedMint={GALLERY_MARKETS[0].mint}
+            onSelect={() => {}}
+            maxHeight={160}
+          />
+          <MarketPicker kind="meme" onKindChange={() => {}} markets={[]} onSelect={() => {}} loading />
+          <MarketPicker kind="meme" onKindChange={() => {}} markets={[]} onSelect={() => {}} />
+          <MarketPicker
+            kind="meme"
+            onKindChange={() => {}}
+            markets={[]}
+            onSelect={() => {}}
+            error="pump.fun returned HTTP 503"
+            onRetry={() => {}}
+          />
+        </Stack>
+      </Section>
+
+      <Section title="MARKETHEADER" note="what the live round is fought over">
+        <Stack gap={space.sm}>
+          <MarketHeader
+            mint="ujpDypnBtY8hEFvPSJyo7uP6Ds8a18qPJxhZVQRpump"
+            symbol="NTDA"
+            name="National Trump Digital Accounts"
+            price="0.009450◎"
+            changePct={4.21}
+            source="pump.fun"
+          />
+          <MarketHeader
+            mint="So11111111111111111111111111111111111111112"
+            symbol="SOL"
+            name="Solana"
+            price="1.0000◎"
+            source="jupiter"
+          />
+        </Stack>
       </Section>
 
       <Section title="POCKETSHELL" note="screen clipped to 180px here">

@@ -14,7 +14,10 @@
  * The UI says so.
  */
 
-const API = 'https://frontend-api-v3.pump.fun';
+import { feedBase } from './marketEndpoints';
+
+/** Direct from a script, through the CORS shim in a browser. */
+const api = () => feedBase('pump');
 
 /** Never let a hung request stall a render or a script. */
 const TIMEOUT_MS = 12_000;
@@ -123,7 +126,7 @@ export class PumpFunError extends Error {
  * rather than substituting placeholder tokens.
  */
 export async function fetchTopMarkets(limit = 12, signal?: AbortSignal): Promise<PumpMarket[]> {
-  const url = `${API}/coins?limit=${limit}&sort=market_cap&order=DESC&includeNsfw=false`;
+  const url = `${api()}/coins?limit=${limit}&sort=market_cap&order=DESC&includeNsfw=false`;
   const res = await fetch(url, { signal: withTimeout(signal), headers: HEADERS });
   if (!res.ok) throw new PumpFunError(`pump.fun returned ${res.status}`);
 
@@ -139,7 +142,7 @@ export async function fetchTopMarkets(limit = 12, signal?: AbortSignal): Promise
 
 /** A single market by mint, for refreshing the price of a live duel. */
 export async function fetchMarket(mint: string, signal?: AbortSignal): Promise<PumpMarket | null> {
-  const res = await fetch(`${API}/coins/${mint}`, { signal: withTimeout(signal), headers: HEADERS });
+  const res = await fetch(`${api()}/coins/${mint}`, { signal: withTimeout(signal), headers: HEADERS });
   if (!res.ok) return null;
   return toMarket(await res.json());
 }
