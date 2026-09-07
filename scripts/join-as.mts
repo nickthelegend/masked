@@ -13,6 +13,8 @@ import { readFileSync } from 'node:fs';
 import nacl from 'tweetnacl';
 import { FogduelClient } from '../src/chain/client';
 import { CLUSTERS } from '../src/chain/config';
+import { fetchMemeMarkets } from '../src/chain/markets';
+import { pxFromSolPerToken } from '../src/chain/units';
 
 const creatorArg = process.argv[2];
 const keyfile = process.argv[3] ?? '.keys/player-b.json';
@@ -52,8 +54,24 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`joining ${mine.address.toBase58()} — ${mine.symbol} at ${mine.entry / LAMPORTS_PER_SOL}◎`);
-  await client.joinMatch(mine.address, joiner.publicKey, creator);
+  // Bring my own market. The creator's is `legA`; mine becomes `legB`, and
+  // the two no longer have to agree.
+  const market = (await fetchMemeMarkets(1))[0];
+  if (!market) {
+    console.error('no live market to join with');
+    process.exit(1);
+  }
+  console.log(
+    `joining ${mine.address.toBase58()} — they have ${mine.legA.symbol}, ` +
+      `I bring ${market.symbol}, at ${mine.entry / LAMPORTS_PER_SOL}◎`
+  );
+  await client.joinMatch(mine.address, joiner.publicKey, creator, {
+    mint: new PublicKey(market.mint),
+    startPx: pxFromSolPerToken(market.priceSol),
+    marketType: 'meme',
+    symbol: market.symbol,
+    name: market.name,
+  });
   const after = (await client.fetchMatch(mine.address))!;
   console.log(`status=${after.status} pot=${after.pot / LAMPORTS_PER_SOL}◎ joiner=${after.joiner?.toBase58()}`);
   console.log('the creator\'s client should now seal both positions and start the round');

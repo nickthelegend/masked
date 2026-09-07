@@ -63,7 +63,13 @@ const wrap = (kp: Keypair) => ({
   console.log('   open matches visible:', open.length);
 
   console.log('3. join_match');
-  await joinerClient.joinMatch(match, joiner.publicKey, creator.publicKey);
+  await joinerClient.joinMatch(match, joiner.publicKey, creator.publicKey, {
+    mint: DEMO_MINT,
+    startPx: pxFromSolPerToken(0.1),
+    marketType: 'meme',
+    symbol: 'VERIFY',
+    name: 'Verify Client',
+  });
   m = (await client.fetchMatch(match))!;
   assert.equal(m.status, 'live');
   assert.equal(m.pot, ENTRY * 2);
@@ -104,12 +110,15 @@ const wrap = (kp: Keypair) => ({
 
   // Both players crank the same feed, so losing the race is the normal case.
   // It must not surface as an error to whoever lost it.
+  // There is one feed per player now, so "the same feed" means both crankers
+  // posting to the *creator's*. Cranking is permissionless by design, so this
+  // is still a real race and still has to be lost gracefully.
   console.log('6a. two crankers race the same mark');
-  const px = await client.fetchPrice(match, false);
-  const bumped = px + Math.floor(px / 1000);
+  const px = await client.fetchPrice(match, creator.publicKey, false);
+  const bumped = px + px / 1000n;
   const [a, b] = await Promise.all([
-    client.crankPrice(match, creator.publicKey, bumped),
-    joinerClient.crankPrice(match, joiner.publicKey, bumped),
+    client.crankPrice(match, creator.publicKey, bumped, creator.publicKey),
+    joinerClient.crankPrice(match, joiner.publicKey, bumped, creator.publicKey),
   ]);
   assert.ok(
     (a === null) !== (b === null),
@@ -118,7 +127,7 @@ const wrap = (kp: Keypair) => ({
   console.log('   one landed, one was declined without erroring');
 
   console.log('6. price moves, commit + undelegate');
-  await client.walkPriceTo(match, creator.publicKey, pxFromSolPerToken(0.118));
+  await client.walkPriceTo(match, creator.publicKey, pxFromSolPerToken(0.118), creator.publicKey);
   await new Promise((r) => setTimeout(r, 13_000));
   await client.commitAndUndelegate(match, creator.publicKey, creator.publicKey, joiner.publicKey);
 
@@ -151,8 +160,8 @@ const wrap = (kp: Keypair) => ({
   // before — most recently rendering a flat position as +29,813,639%.
   console.log('7a. client PnL agrees with the chain');
   const settledPos = (await client.fetchPosition(match, creator.publicKey, false))!;
-  const finalPx = await client.fetchPrice(match, false);
-  const clientBps = pnlBps(settledPos, finalPx, ENTRY);
+  const finalPx = await client.fetchPrice(match, creator.publicKey, false);
+  const clientBps = pnlBps(settledPos, Number(finalPx), ENTRY);
   assert.equal(
     clientBps, m.pnlABps,
     `client says ${clientBps}bps, chain says ${m.pnlABps}bps`

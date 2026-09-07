@@ -99,7 +99,13 @@ async function main() {
 
   // Joining your own duel would let one wallet take both sides of a pot.
   await refuses('the creator joining their own match', () =>
-    clientA.joinMatch(open, a.publicKey, a.publicKey)
+    clientA.joinMatch(open, a.publicKey, a.publicKey, {
+      mint: new PublicKey(market.mint),
+      startPx: pxFromSolPerToken(market.priceSol),
+      marketType: 'meme',
+      symbol: market.symbol,
+      name: market.name,
+    })
   );
 
   console.log('2. a live match');
@@ -114,7 +120,13 @@ async function main() {
     symbol: market.symbol,
     name: market.name,
   });
-  await clientB.joinMatch(live, b.publicKey, a.publicKey);
+  await clientB.joinMatch(live, b.publicKey, a.publicKey, {
+      mint: new PublicKey(market.mint),
+      startPx: pxFromSolPerToken(market.priceSol),
+      marketType: 'meme',
+      symbol: market.symbol,
+      name: market.name,
+    });
   const m = await clientA.fetchMatch(live);
   if (m?.status !== 'live') fail(`match should be live, is ${m?.status}`);
 
@@ -145,12 +157,14 @@ async function main() {
   // throwing — `prove:privacy` walks the mark alone and crashed on exactly
   // this, in a script both the README and SUBMISSION tell judges to run.
   console.log('3. the same cranker posting twice in a row');
-  const feedNow = await clientA.fetchPrice(live, false);
-  const target = Math.round(feedNow * 1.02);
-  await clientA.crankPrice(live, a.publicKey, target, false);
+  const feedNow = await clientA.fetchPrice(live, a.publicKey, false);
+  // Basis points, in bigint: px reaches 1e17 for a major, past where a double
+  // can hold consecutive integers, and the on-chain cap is an exact compare.
+  const target = (feedNow * 10_200n) / 10_000n;
+  await clientA.crankPrice(live, a.publicKey, target, a.publicKey, false);
   let secondThrew = false;
   try {
-    await clientA.crankPrice(live, a.publicKey, target, false);
+    await clientA.crankPrice(live, a.publicKey, target, a.publicKey, false);
   } catch {
     secondThrew = true;
   }
@@ -159,7 +173,9 @@ async function main() {
   console.log('   absorbed — the rate limit reported no-post rather than throwing');
 
   // And the walk itself must reach its target despite that limit.
-  const walked = await clientA.walkPriceTo(live, a.publicKey, Math.round(feedNow * 1.08), false);
+  const walked = await clientA.walkPriceTo(
+    live, a.publicKey, (feedNow * 10_800n) / 10_000n, a.publicKey, false
+  );
   checks += 1;
   if (walked <= feedNow) fail(`walkPriceTo did not move the mark: ${feedNow} -> ${walked}`);
   console.log(`   walkPriceTo moved the mark ${feedNow} -> ${walked}`);
@@ -176,7 +192,13 @@ async function main() {
     symbol: market.symbol,
     name: market.name,
   });
-  await clientB.joinMatch(shortLived, b.publicKey, a.publicKey);
+  await clientB.joinMatch(shortLived, b.publicKey, a.publicKey, {
+      mint: new PublicKey(market.mint),
+      startPx: pxFromSolPerToken(market.priceSol),
+      marketType: 'meme',
+      symbol: market.symbol,
+      name: market.name,
+    });
   await clientA.sealAndDelegateMatch(shortLived, a.publicKey, b.publicKey, a.publicKey);
   const started = (await clientA.fetchMatch(shortLived))!.startTs;
   while (Date.now() / 1000 < started + 11) await new Promise((r) => setTimeout(r, 500));
@@ -196,7 +218,13 @@ async function main() {
   } else {
     const age = nowSecs - old.createdTs;
     await refuses(`joining a match opened ${Math.round(age / 60)}m ago`, () =>
-      clientB.joinMatch(old.address, b.publicKey, old.creator)
+      clientB.joinMatch(old.address, b.publicKey, old.creator, {
+      mint: new PublicKey(market.mint),
+      startPx: pxFromSolPerToken(market.priceSol),
+      marketType: 'meme',
+      symbol: market.symbol,
+      name: market.name,
+    })
     );
   }
 

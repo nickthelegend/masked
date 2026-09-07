@@ -74,7 +74,10 @@ async function main() {
       durationSecs: 120, entryLamports: ENTRY, startPx: pxFromSolPerToken(0.1),
       marketType: 'meme', symbol, name: symbol,
     });
-    await them.joinMatch(match, opponent.publicKey, creator.publicKey);
+    await them.joinMatch(match, opponent.publicKey, creator.publicKey, {
+      mint: DEMO_MINT, startPx: pxFromSolPerToken(0.1),
+      marketType: 'meme', symbol, name: symbol,
+    });
     return match;
   };
 

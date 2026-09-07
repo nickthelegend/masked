@@ -91,7 +91,10 @@ async function main() {
   console.log(`   ${address.toBase58()}`);
 
   console.log('2. B joins');
-  await clientB.joinMatch(address, b.publicKey, a.publicKey);
+  await clientB.joinMatch(address, b.publicKey, a.publicKey, {
+    mint: new PublicKey(market.mint), startPx: pxFromSolPerToken(market.priceSol),
+    marketType: 'meme', symbol: market.symbol, name: market.name,
+  });
   const live = await clientA.fetchMatch(address);
   ok(live?.status === 'live', `match should be live, is ${live?.status}`);
 
@@ -135,8 +138,8 @@ async function main() {
   checks += 1;
 
   console.log('6. both trade on their own private books');
-  const mark = await clientA.fetchPrice(address, true);
-  ok(mark > 0, 'no mark posted to the rollup');
+  const mark = await clientA.fetchPrice(address, a.publicKey, true);
+  ok(mark > 0n, 'no mark posted to the rollup');
   await clientA.applyFill(address, a.publicKey, 'buy', Math.round(ENTRY * LAMPORTS_PER_SOL * 0.5));
   await clientB.applyFill(address, b.publicKey, 'buy', Math.round(ENTRY * LAMPORTS_PER_SOL * 0.25));
 

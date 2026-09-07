@@ -77,7 +77,10 @@ async function main() {
     durationSecs: 15, entryLamports: ENTRY, startPx: pxFromSolPerToken(0.1),
     marketType: 'meme', symbol: 'PROOF', name: 'Privacy Proof',
   });
-  await them.joinMatch(match, opponent.publicKey, creator.publicKey);
+  await them.joinMatch(match, opponent.publicKey, creator.publicKey, {
+    mint: DEMO_MINT, startPx: pxFromSolPerToken(0.1),
+    marketType: 'meme', symbol: 'PROOF', name: 'Privacy Proof',
+  });
   const m = (await me.fetchMatch(match))!;
   line(`    match ${match.toBase58()}`);
   line(`    status=${m.status} pot=${m.pot / LAMPORTS_PER_SOL} SOL`);
@@ -169,7 +172,7 @@ async function main() {
   line('[5] the market moves, then the buzzer');
   // Move the mark so the settlement produces a real result rather than a
   // flat 0.00% on both sides.
-  await me.walkPriceTo(match, creator.publicKey, pxFromSolPerToken(0.1215));
+  await me.walkPriceTo(match, creator.publicKey, pxFromSolPerToken(0.1215), creator.publicKey);
   line('    mark walked 0.1000 -> 0.1215 SOL, 5% a second, in public');
   await new Promise((r) => setTimeout(r, 16_000));
   const commitSigs = await me.commitAndUndelegate(match, creator.publicKey, creator.publicKey, opponent.publicKey);

@@ -93,7 +93,10 @@ async function main() {
     symbol: market.symbol,
     name: market.name,
   });
-  await clientB.joinMatch(match, b.publicKey, a.publicKey);
+  await clientB.joinMatch(match, b.publicKey, a.publicKey, {
+    mint: new PublicKey(market.mint), startPx: pxFromSolPerToken(market.priceSol),
+    marketType: 'meme', symbol: market.symbol, name: market.name,
+  });
   await clientA.sealAndDelegateMatch(match, a.publicKey, b.publicKey, a.publicKey);
   console.log(`   ${match.toBase58()}`);
 

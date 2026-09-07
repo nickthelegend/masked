@@ -60,7 +60,10 @@ async function main() {
     durationSecs: 60, entryLamports: ENTRY, startPx: pxFromSolPerToken(0.1),
     marketType: 'meme', symbol: 'SEALED', name: 'Seal Check',
   });
-  await them.joinMatch(match, joiner.publicKey, creator.publicKey);
+  await them.joinMatch(match, joiner.publicKey, creator.publicKey, {
+    mint: DEMO_MINT, startPx: pxFromSolPerToken(0.1),
+    marketType: 'meme', symbol: 'SEALED', name: 'Seal Check',
+  });
 
   console.log('2. sealAndDelegateMatch — the exact call the UI makes');
   await me.sealAndDelegateMatch(match, creator.publicKey, joiner.publicKey, creator.publicKey);

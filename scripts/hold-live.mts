@@ -15,6 +15,7 @@ import nacl from 'tweetnacl';
 import { FogduelClient } from '../src/chain/client';
 import { CLUSTERS } from '../src/chain/config';
 import { fetchMemeMarkets } from '../src/chain/markets';
+import { pxFromSolPerToken } from '../src/chain/units';
 import { positionPda } from '../src/chain/pdas';
 
 const DURATION = Math.max(60, Math.min(3600, Number(process.argv[2] ?? 300)));
@@ -48,7 +49,10 @@ async function main() {
     durationSecs: DURATION, entryLamports: entry, startPx: market.startPx,
     marketType: market.kind, symbol: market.symbol, name: market.name,
   });
-  await them.joinMatch(match, joiner.publicKey, creator.publicKey);
+  await them.joinMatch(match, joiner.publicKey, creator.publicKey, {
+    mint: new PublicKey(market.mint), startPx: pxFromSolPerToken(market.priceSol),
+    marketType: 'meme', symbol: market.symbol, name: market.name,
+  });
   await me.sealAndDelegateMatch(match, creator.publicKey, joiner.publicKey, creator.publicKey);
   await me.applyFill(match, creator.publicKey, 'buy', Math.floor(entry * 0.4));
   await them.applyFill(match, joiner.publicKey, 'buy', Math.floor(entry * 0.25));

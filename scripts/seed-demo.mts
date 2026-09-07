@@ -90,7 +90,17 @@ async function main() {
       durationSecs: 30, entryLamports: entry, startPx: market.startPx,
       marketType: market.kind, symbol: market.symbol, name: market.name,
     });
-    await oppClient.joinMatch(match, opponent.publicKey, house.publicKey);
+    // The opponent brings their own market — that is what a v2 duel is. Using
+    // the next market in the list keeps seeded history varied rather than
+    // every duel being two people on the same coin.
+    const oppMarket = markets[(i + 1) % markets.length];
+    await oppClient.joinMatch(match, opponent.publicKey, house.publicKey, {
+      mint: new PublicKey(oppMarket.mint),
+      startPx: oppMarket.startPx,
+      marketType: oppMarket.kind,
+      symbol: oppMarket.symbol,
+      name: oppMarket.name,
+    });
 
     // Seal exactly as the product does, so seeded history is indistinguishable
     // from a match a player actually played.
@@ -102,8 +112,15 @@ async function main() {
 
     // Relative to this market's own opening mark, not an absolute price —
     // these markets are nine orders of magnitude apart.
+    // bigint throughout: px reaches 1e17 for a major, well past where a double
+    // holds consecutive integers. The move is applied as basis points so the
+    // arithmetic stays exact.
+    const moveBps = BigInt(Math.round(moves[i % moves.length] * 10_000));
     await houseClient.walkPriceTo(
-      match, house.publicKey, Math.round(market.startPx * moves[i % moves.length]),
+      match,
+      house.publicKey,
+      (market.startPx * moveBps) / 10_000n,
+      house.publicKey
     );
     await new Promise((r) => setTimeout(r, 31_000));
 
