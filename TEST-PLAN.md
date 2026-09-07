@@ -417,15 +417,29 @@ actually bite.
 | T12 | Live standings rank | Both rows show `#?` — a rank needs both PnLs and one is sealed |
 | T13 | Live opponent PnL | Fog bar and the word FOGGED. Never `0.00%` |
 | T14 | Live opponent side | Padlock and SEALED. Never a direction |
-| T15 | Live opponent token | **Shown** — each leg is in the match account on L1, so hiding it would imply a secret the chain does not keep |
+| T15 | Live opponent token | **Shown** — each leg is in the match account on L1, so hiding it would imply a secret the chain does not keep. Asserted against the chain by `npm run check:legs`, not by reading the program |
 | T16 | Your side chip | `▲ LONG` / `▼ SHORT` / `FLAT`, matching the position on chain |
 | T17 | Result board | 1V1, settle date, entry fee, both rows ranked by PnL, trophy on #1 and skull on last |
 | T18 | Result sides | Read off the tape via `carriedSide` — opening fills only, so a buzzer close does not report everyone flat |
 | T19 | Result headline | `YOU TOOK THE POT` or `OOF… SO CLOSE` with the exact gap in percentage points |
 | T20 | Tier ladder | Five tiers derived from the same on-chain `wins` the HUD prints |
 
-**Executed** against the running app across four duels, two wallets, two
+**Executed** against the running app across six duels, two wallets, two
 origins. T1–T20 **P**, with the defects below found and fixed in the same run.
+
+Two items were re-done because the first pass proved them weakly:
+
+- **T4** was inferred from the card being absent 20s after a join, which a
+  card that never rendered would also satisfy. Re-executed by sampling the
+  button label through the join: `4, 3, 2, 1`, then gone.
+- **T15** was argued from the program source, which is exactly the kind of
+  claim that should not be taken on the author's word in a privacy product —
+  the whole board was showing the opponent's ticker on the strength of it.
+  `scripts/check-legs.mts` now reads a *running* match the way a stranger
+  would: a bare RPC connection to the base layer, no wallet, no gate, no
+  session token. Both legs come back; both positions are delegated away behind
+  the ACL. It runs in `npm run check`, so if a future change ever seals a leg
+  the board's display fails the build instead of quietly leaking.
 
 ### Found while executing T
 
