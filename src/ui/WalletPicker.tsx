@@ -1,4 +1,4 @@
-import { Modal, Pressable, View } from 'react-native';
+import { Modal, Pressable } from 'react-native';
 import Stack from './Stack';
 import Row from './Row';
 import PixelText from './PixelText';
@@ -26,8 +26,14 @@ export interface WalletPickerProps {
  * offers an in-page key, and there was no way to reach it.
  */
 export default function WalletPicker({ visible, wallets, onSelect, onClose }: WalletPickerProps) {
+  // Unmounted when closed, not merely hidden. React Native's Modal keeps its
+  // children in the tree on web, so a closed picker still contributed its
+  // buttons to the page text and the accessibility tree — a screen reader
+  // would read out a wallet chooser that is not on screen.
+  if (!visible) return null;
+
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       {/* Tapping the scrim dismisses, which is what every picker does. */}
       <Pressable
         onPress={onClose}
@@ -72,7 +78,6 @@ export default function WalletPicker({ visible, wallets, onSelect, onClose }: Wa
           </Stack>
         </Pressable>
       </Pressable>
-      <View />
     </Modal>
   );
 }
