@@ -2,13 +2,19 @@
 
 **Hidden-position 1v1 trading on Solana, built on MagicBlock Ephemeral Rollups.**
 
-Two traders stake an equal entry into an escrowed pot and trade the same token
-for a fixed window. During the round each player's position is delegated to an
-Ephemeral Rollup, so fills land in milliseconds — and on a TEE validator the
-position is *private*, so neither the opponent nor a public RPC can read size,
-side or fill count. At the buzzer the positions commit back to Solana, PnL is
-compared, the winner takes the pot less a 2% rake, and a public `Tape` is
-written.
+Two traders stake an equal entry into an escrowed pot and trade for five
+minutes — **each on a token of their own choosing**, long or short, scored on
+PnL. Any token Jupiter can price is duelable, from SOL and wrapped BTC down to
+a pump.fun memecoin minted an hour ago.
+
+During the round each player's position is delegated to an Ephemeral Rollup, so
+fills land in milliseconds — and on a TEE validator the position is *private*,
+so neither the opponent nor a public RPC can read size, side or fill count. A
+short is real margin: size is capped at one times the entry, and a position
+whose equity reaches zero is liquidated and **announced**, which is the one
+deliberate hole in the fog. At the buzzer the positions commit back to Solana,
+PnL is compared, the winner takes the pot less a 2% rake, and a public `Tape`
+is written recording both players' markets and every fill.
 
 Every other 1v1 trading product on Solana (VERSUS, SolDuel, TradeLeague) is
 **public during the fight**. Fogduel is **private during the fight, public
@@ -165,7 +171,7 @@ The exact click path, in the order that makes the argument.
    - LIVE RIGHT NOW: duels in progress, each linking into `/spectate`.
    - None of this needs a wallet. It is public account state.
 
-**2. Terminal — the privacy proof (60s)**
+**2. Terminal — the privacy proof (~10s)**
 
 ```bash
 npm run prove:privacy
@@ -176,17 +182,21 @@ npm run prove:privacy
    TEE cluster the opponent read is refused; on local it says so plainly
    rather than pretending.
 
-**3. `/play` — play one (60s)**
+**3. `/play` — play one (5 min, or 60s with the env override)**
    - OPEN BOOK shows real unjoined matches from other wallets. JOIN one.
    - Joining seals the match: two access-control lists are created on chain and
      delegated before either position is. The opponent panel carries a
      **SEALED** badge that reflects a real `getAccountInfo`, not a local flag —
      `SEALED · ACL ON CHAIN` locally, `SEALED · TEE ENFORCED` on a TEE.
-   - LONG. The orb turns green, the PnL odometer rolls, the clock pulses under
-     10 seconds.
+   - Pick your market first — search any ticker, name or mint address. Your
+     opponent picks their own; you are scored against each other, not against
+     the same coin.
+   - LONG, or SHORT. The orb turns green, the PnL odometer rolls, the clock
+     pulses under 10 seconds.
    - The opponent panel shows a fill count and nothing else, all round.
-   - Rounds are 60s by default so this is watchable; set
-     `EXPO_PUBLIC_ROUND_SECONDS=300` for the real five-minute round.
+   - Rounds are five minutes. For a recording, `EXPO_PUBLIC_ROUND_SECONDS=60`
+     shortens them — the program accepts anything from 10s to 3600s, so that
+     is a real 60-second round rather than a shortened display.
    - SIZE (1/4, 1/2, MAX) changes what a fill costs, and the line under it
      quotes the impact before you sign. It is exact, not an estimate — MAX
      quotes 1.56% and the chain charges 1.56%.

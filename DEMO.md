@@ -146,7 +146,8 @@ Two browsers side by side, both already connected and funded.
      The receipt shows the mark and what you actually filled at.
    - B: **1/4** → `0.39%`. LONG.
    > "That quote is exact, not an estimate — the chain charges 1.56%."
-5. **Let the buzzer go.** Rounds are 60s by default.
+5. **Let the buzzer go.** Rounds are five minutes; record with
+   `EXPO_PUBLIC_ROUND_SECONDS=60` so the take fits under three minutes.
    **SETTLING ON SOLANA** shows three real stages: the commit reports how many
    rollup transactions it took, undelegation reports both positions home,
    settle reports the pot paid.
@@ -155,7 +156,10 @@ Two browsers side by side, both already connected and funded.
    real fills on one axis, replayed from the tape the program just wrote.
    The head-to-head record and what the market itself did sit underneath.
 
-**Timing note:** the round is 60s and the two settle paths take ~20s more.
+**Timing note:** the product round is five minutes. Record with
+`EXPO_PUBLIC_ROUND_SECONDS=60` — the app reads it and the program accepts it,
+so the round on camera is a real 60s round, not a shortened display. The two
+settle paths take ~20s more.
 Do not narrate over the buzzer — let the settle stages play.
 
 ---

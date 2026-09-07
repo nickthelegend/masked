@@ -261,3 +261,33 @@ Legend: **P** pass · **F** fail · **U** untestable (missing real dependency)
 | R6 | no hardcoded test data | product screens read chain/API only | |
 | R7 | error messages readable | no raw Anchor/fetch strings anywhere a user can reach | |
 | R8 | check suites | all green | |
+
+---
+
+## S. v2 — any token, both directions, five minutes
+
+Added when the product changed under the plan. Everything above still applies;
+these are the items the old plan could not have covered.
+
+| # | Item | Correct means | St |
+|---|---|---|---|
+| S1 | round length | 300s on chain and on screen; `EXPO_PUBLIC_ROUND_SECONDS` still overrides | |
+| S2 | copy follows the constant | landing says "five minutes", badge says "5 MIN", nothing hardcodes 60 | |
+| S3 | token search | any ticker, name or mint; exact match ranks first | |
+| S4 | search ranking | "btc" → WBTC above BTCBANK; "bonk" → Bonk; "wif" → $WIF | |
+| S5 | majors have logos | every verified market carries its own icon, none are letter tiles by default | |
+| S6 | big prices | WBTC at ~$79k lists and duels; px is a u64, not a JS safe integer | |
+| S7 | per-player market | creator's mint ≠ joiner's mint on chain (`legA` vs `legB`) | |
+| S8 | chosen market is used | the token picked in the lobby is the token on chain | |
+| S9 | any match joinable | the book no longer filters by market | |
+| S10 | SHORT opens | selling without holding gives a negative `base_qty` on chain | |
+| S11 | margin cap | a short beyond one times equity is refused by the program | |
+| S12 | CLOSE both ways | closes a long by selling and a short by buying | |
+| S13 | liquidation | equity ≤ 0 → force-closed at the mark, recorded as LIQUIDATION | |
+| S14 | liquidation is permissionless | the opponent can call it; a solvent position is untouched | |
+| S15 | liquidation is public | `RoundStatus` served through the gate; the position still refused | |
+| S16 | per-leg market move | one line per token; never one number averaging two assets | |
+| S17 | tape records both legs | `legA`/`legB` and both liquidation flags on the permanent record | |
+| S18 | replay handles shorts | a short and a liquidation replay to the chain's own bps | |
+| S19 | fill labels | BUY/SELL/BUZZER/LIQUIDATED — never LONG/CLOSE, which a sell no longer means | |
+| S20 | rate limits | a Jupiter 429 retries rather than blanking the market list | |
