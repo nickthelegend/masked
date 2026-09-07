@@ -1,4 +1,4 @@
-import { Pressable } from 'react-native';
+import { Pressable, useWindowDimensions } from 'react-native';
 import {
   Box,
   ConnectWalletButton,
@@ -31,7 +31,20 @@ const BUTTON_HEIGHT = 44;
  * needs somewhere: the round has a buzzer and a countdown, and audio nobody
  * can switch off is audio that gets the tab muted instead.
  */
+/**
+ * Below this the wordmark is dropped.
+ *
+ * The header is five fixed-width controls and one piece of decoration, and at
+ * 375px they do not fit: the sound toggle was rendering at x=374 in a 375px
+ * viewport — entirely off screen, on an app with a buzzer and a countdown and
+ * no other way to mute it. The wordmark is the only thing here that is not a
+ * control, and the shell above it already says MASKED, so it is what gives way.
+ */
+const WORDMARK_MIN_WIDTH = 420;
+
 export default function AppHeader({ balance, onHome }: AppHeaderProps) {
+  const { width } = useWindowDimensions();
+  const showWordmark = width >= WORDMARK_MIN_WIDTH;
   const [sound, setSound] = useSoundEnabled();
 
   const toggleSound = () => {
@@ -64,9 +77,14 @@ export default function AppHeader({ balance, onHome }: AppHeaderProps) {
         </PixelText>
       </Row>
 
-      <PixelText variant="wordmark" size={13} align="center" style={{ flex: 1 }}>
-        MASKED
-      </PixelText>
+      {showWordmark ? (
+        <PixelText variant="wordmark" size={13} align="center" style={{ flex: 1 }}>
+          MASKED
+        </PixelText>
+      ) : (
+        // Keeps the controls pushed to the edges without occupying width.
+        <Box flex={1} />
+      )}
 
       <ConnectWalletButton size={8} padY={8} />
 
