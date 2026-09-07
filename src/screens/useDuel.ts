@@ -289,6 +289,19 @@ export function useDuel(): Duel {
   const [match, setMatch] = useState<MatchState | null>(null);
   const [myPosition, setMyPosition] = useState<PositionState | null>(null);
   const [opponentPosition, setOpponentPosition] = useState<PositionState | null>(null);
+  /**
+   * The live match, readable without subscribing to its identity.
+   *
+   * `setMatch` runs once a second with a freshly decoded object, so anything
+   * that lists `match` in a dependency array is torn down and rebuilt every
+   * second. That is fine for rendering and ruinous for an interval: the crank
+   * never survived long enough to fire on its own schedule.
+   */
+  const matchRef = useRef<MatchState | null>(null);
+  matchRef.current = match;
+  /** Stable identity for effects that must outlive a poll tick. */
+  const matchKey = match ? match.address.toBase58() : null;
+
   const [price, setPrice] = useState(0);
   const [series, setSeries] = useState<number[]>([]);
   const [equity, setEquity] = useState<number[]>([0]);
@@ -471,7 +484,10 @@ export function useDuel(): Duel {
       alive = false;
       clearInterval(id);
     };
-  }, [client, match, phase, wallet.publicKey]);
+    // Keyed on the match's address, not the object: the poll replaces that
+    // object once a second, and depending on it rebuilt this interval — and
+    // every other second-scale timer — once a second too.
+  }, [client, matchKey, phase, wallet.publicKey]);
 
   /* ---------------------- live round: crank the mark --------------------- */
   //
@@ -484,26 +500,41 @@ export function useDuel(): Duel {
   // the other to. On-chain it is capped at 5% per second, and `crankPrice`
   // clamps to that rather than being rejected.
   useEffect(() => {
-    // Stops at the buzzer, not at settlement: the program refuses a mark once
-    // the clock has run out, so cranking through the commit-and-settle window
-    // just posts failing transactions to the rollup ledger.
-    if (!client || !match || phase !== 'live' || secondsLeft <= 0 || !wallet.publicKey) {
+    const m0 = matchRef.current;
+    if (!client || !m0 || phase !== 'live' || !wallet.publicKey) {
       return undefined;
     }
     // My market, not the match's — there is no such thing any more.
-    const mine = legFor(match, wallet.publicKey);
+    const mine = legFor(m0, wallet.publicKey);
     if (!mine || !mine.symbol) return undefined;
     const mint = mine.mint.toBase58();
     const kind = mine.marketType;
+    const address = m0.address;
 
     let alive = true;
     const ac = new AbortController();
 
-    const opponent = match.creator.equals(wallet.publicKey)
-      ? match.joiner
-      : match.creator;
+    const opponent = m0.creator.equals(wallet.publicKey) ? m0.joiner : m0.creator;
+
+    // Stops at the buzzer, not at settlement: the program refuses a mark once
+    // the clock has run out, so cranking through the commit-and-settle window
+    // just posts failing transactions to the rollup ledger.
+    //
+    // Checked inside the tick, deliberately. This used to be `secondsLeft <= 0`
+    // in the guard above with `secondsLeft` in the dependency array — and that
+    // value changes every second, so the effect tore itself down and rebuilt
+    // once a second. Each rebuild ran `tick()` immediately and then created an
+    // interval that was cleared before it could ever fire. The five-second
+    // heartbeat never once ran at five seconds: the market fetch, the L1 crank
+    // and both rollup liquidation probes all went out every second instead,
+    // per player. Measured at 11 market requests in 22 seconds from one tab.
+    const expired = () => {
+      const m = matchRef.current;
+      return !m || Math.floor(Date.now() / 1000) >= m.startTs + m.duration;
+    };
 
     const tick = async () => {
+      if (expired()) return;
       try {
         const px = await livePxFor({ kind, mint }, ac.signal);
         if (!alive) return;
@@ -511,7 +542,7 @@ export function useDuel(): Duel {
         // only the positions are — so the rollup rejects a write to it with
         // InvalidWritableAccount, and every mark was silently failing. The
         // rollup clones the feed for reads, so fills there see the new mark.
-        await client.crankPrice(match.address, wallet.publicKey!, px, wallet.publicKey!, false);
+        await client.crankPrice(address, wallet.publicKey!, px, wallet.publicKey!, false);
       } catch {
         // The market API or the rate limit said no. The next tick tries again;
         // a failed crank must never interrupt a round in progress.
@@ -528,11 +559,11 @@ export function useDuel(): Duel {
         await Promise.all(
           [wallet.publicKey!, opponent]
             .filter((k): k is PublicKey => !!k)
-            .map((owner) => client.liquidate(match.address, wallet.publicKey!, owner).catch(() => {}))
+            .map((owner) => client.liquidate(address, wallet.publicKey!, owner).catch(() => {}))
         );
-        const status = await client.fetchRoundStatus(match.address, true);
+        const status = await client.fetchRoundStatus(address, true);
         if (alive && status) {
-          const iAmCreator = match.creator.equals(wallet.publicKey!);
+          const iAmCreator = m0.creator.equals(wallet.publicKey!);
           setLiquidated({
             me: iAmCreator ? status.liquidatedA : status.liquidatedB,
             opponent: iAmCreator ? status.liquidatedB : status.liquidatedA,
@@ -550,7 +581,7 @@ export function useDuel(): Duel {
       ac.abort();
       clearInterval(id);
     };
-  }, [client, match, phase, secondsLeft, wallet.publicKey]);
+  }, [client, match, phase, wallet.publicKey]);
 
   /**
    * Settle this player's own abandoned round.
