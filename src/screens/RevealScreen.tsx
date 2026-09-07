@@ -60,6 +60,9 @@ export interface RevealScreenProps {
  * public tape, and the replay lands on the chain's own PnL to the basis point
  * (`npm run check:tape` asserts exactly that against every settled tape).
  */
+/** Basis points as a signed percentage: `+2.10%`, `-0.44%`. */
+const signedPct = (bps: number) => `${bps >= 0 ? '+' : ''}${(bps / 100).toFixed(2)}%`;
+
 export default function RevealScreen({
   won,
   pot,
@@ -114,10 +117,16 @@ export default function RevealScreen({
    * Losing 0.4% while the market fell 6% is a good round; the two numbers above
    * cannot say that on their own.
    */
-  const move = useMemo(
-    () => (tape ? marketMove(tape.fillsA, tape.fillsB, entryLamports) : null),
-    [tape, entryLamports]
+  const myMove = useMemo(
+    () => (tape ? marketMove(isPlayerA ? tape.fillsA : tape.fillsB, entryLamports) : null),
+    [tape, entryLamports, isPlayerA]
   );
+  const theirMove = useMemo(
+    () => (tape ? marketMove(isPlayerA ? tape.fillsB : tape.fillsA, entryLamports) : null),
+    [tape, entryLamports, isPlayerA]
+  );
+  const myLeg = tape ? (isPlayerA ? tape.legA : tape.legB) : null;
+  const theirLeg = tape ? (isPlayerA ? tape.legB : tape.legA) : null;
 
   return (
     <View>
@@ -181,11 +190,21 @@ export default function RevealScreen({
         </PixelPanel>
       </Row>
 
-      {move ? (
+      {/* One line per market, because there are two of them now. "Both traded a
+          market that moved X%" was true when the duel had one token; with a leg
+          each it averaged a memecoin against SOL and reported +11,975%. */}
+      {myMove || theirMove ? (
         <PixelText variant="bodySmall" size={9} align="center" color={color.textDim}>
-          {`${opponentName.toUpperCase()} AND YOU BOTH TRADED A MARKET THAT MOVED ${
-            move.bps >= 0 ? '+' : ''
-          }${(move.bps / 100).toFixed(2)}%`}
+          {[
+            myMove && myLeg?.symbol
+              ? `${myLeg.symbol.toUpperCase()} MOVED ${signedPct(myMove.bps)}`
+              : null,
+            theirMove && theirLeg?.symbol
+              ? `${theirLeg.symbol.toUpperCase()} MOVED ${signedPct(theirMove.bps)}`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
         </PixelText>
       ) : null}
 

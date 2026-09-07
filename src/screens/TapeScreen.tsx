@@ -214,10 +214,18 @@ export default function TapeScreen({ address }: TapeScreenProps) {
         </Row>
 
         {(() => {
-          const move = marketMove(tape.fillsA, tape.fillsB, data.entry);
-          return move ? (
+          // Per leg: the two players traded different tokens, so one combined
+          // "the market moved" would be an average of unrelated assets.
+          const pct = (bps: number) => `${bps >= 0 ? '+' : ''}${(bps / 100).toFixed(2)}%`;
+          const lines = [
+            { move: marketMove(tape.fillsA, data.entry), leg: tape.legA },
+            { move: marketMove(tape.fillsB, data.entry), leg: tape.legB },
+          ]
+            .filter((x) => x.move && x.leg.symbol)
+            .map((x) => `${x.leg.symbol.toUpperCase()} MOVED ${pct(x.move!.bps)}`);
+          return lines.length ? (
             <PixelText variant="bodySmall" size={9} align="center" color={color.textDim}>
-              {`THE MARKET ITSELF MOVED ${move.bps >= 0 ? '+' : ''}${(move.bps / 100).toFixed(2)}% OVER THIS ROUND`}
+              {`${lines.join(' · ')} OVER THIS ROUND`}
             </PixelText>
           ) : null;
         })()}

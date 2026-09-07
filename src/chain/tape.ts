@@ -233,9 +233,16 @@ export const fillValue = (f: TapeFill): number => (f.qty * f.px) / VALUE_DIV;
  * question worth answering is the other one. A player who lost 0.4% while the
  * token fell 6% traded well; the scoreboard alone cannot say that.
  *
- * The marks are recovered from the fills of *both* players, because either may
- * be the one who traded, and a recorded execution price carries that fill's own
- * impact — `markFromFill` takes it back out. Earliest and latest by timestamp,
+ * One player's market, from that player's own fills.
+ *
+ * It used to pool both players' fills, on the reasoning that either might be
+ * the one who traded. That was right while they shared a token and is nonsense
+ * now: pooling a fill priced in WOFI with one priced in SOL reported the
+ * market as having moved +11,975%, which is the ratio between two unrelated
+ * assets and not a move at all.
+ *
+ * A recorded execution price carries that fill's own impact — `markFromFill`
+ * takes it back out. Earliest and latest by timestamp,
  * so the window is the round rather than one player's activity.
  *
  * Returns null when the tape cannot support the claim: fewer than two distinct
@@ -243,16 +250,15 @@ export const fillValue = (f: TapeFill): number => (f.qty * f.px) / VALUE_DIV;
  * inventing the most interesting number on the screen.
  */
 export function marketMove(
-  fillsA: TapeFill[],
-  fillsB: TapeFill[],
+  fills: TapeFill[],
   entry: number
 ): { openPx: number; closePx: number; bps: number } | null {
   if (entry <= 0) return null;
-  const all = [...fillsA, ...fillsB].sort((x, y) => x.ts - y.ts);
-  if (all.length < 2) return null;
+  const sorted = [...fills].sort((x, y) => x.ts - y.ts);
+  if (sorted.length < 2) return null;
 
-  const first = all[0];
-  const last = all[all.length - 1];
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
   if (first.ts === last.ts) return null;
 
   const openPx = markFromFill(first, entry);
