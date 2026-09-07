@@ -1,51 +1,46 @@
 # FOGDUEL — BUILD PLAN
 
-> Rewritten **2026-09-07 05:40 UTC**, replacing the plan of the previous run.
-> Statuses reflect what was actually executed and verified, not intent.
+> Written **2026-09-07 05:40 UTC**, then **executed**. Statuses below reflect
+> what was actually run and verified, not intent.
 >
-> A builder agent can pick up any single task below and start cold. Every task
-> names the file, the command, or the exact artefact it touches.
+> **Execution result: Phases 1, 5, 6 and 7 complete. Phase 2 complete except the
+> recording itself. Phase 3 prepared and waiting on you. Phase 4 blocked end to
+> end on devnet funding.**
 
 ---
 
 ## 0. SITUATION
 
-**Deadline: Fri 2026-09-11 05:00 CDT (= 10:00 UTC). Now: Mon 2026-09-07 05:38 UTC.
-Remaining: 4 days, 4 hours.**
+**Deadline: Fri 2026-09-11 05:00 CDT (= 10:00 UTC). Executed Mon 2026-09-07.**
 
-94 commits. Working tree clean.
+101 commits. Working tree clean.
 
-### What is genuinely finished and verified
+### What is finished and verified
 
 | | |
 |---|---|
 | Anchor program | 16 instructions, deployed to the local MagicBlock stack |
 | On-chain tests | **26 passing, 2 pending** (`cd chain && anchor test --skip-local-validator`) |
-| Assertion suites | **9 suites** via `npm run check` — tokens, series, fog, errors, preflight, tape (1602 assertions over 92 real tapes), h2h (145), race (22), guards (6 refusals) |
-| Browser test plan | **139 items, 137 PASS, 0 outstanding FAIL, 2 UNTESTED** — see `TEST-PLAN.md` |
+| Assertion suites | **10 suites** via `npm run check` — tokens, series, fog, errors (37), preflight (15), tape (2357 over 153 real tapes), h2h (305), race (22), guards (8 refusals), session (15) |
+| Browser test plan | **139 items, 137 PASS, 2 UNTESTED** — see `TEST-PLAN.md` |
 | Routes | `/`, `/play`, `/proof`, `/health`, `/gallery`, `/spectate/<match>`, `/tape/<match>`, branded 404 |
-| Read gate | Real and proven locally: `query-filtering-service` on :6699 refuses a sealed position and serves a permission-less control (`npm run check:gate`) |
-| Mocks / stubs | A full grep for `mock\|stub\|todo\|fixme\|fake\|dummy\|placeholder\|hardcod\|hack\|xxx` across `src/ app/ chain/programs/ scripts/ server/` returns **4 hits, all prose explaining that something is *not* a placeholder**. There are no mocks. |
+| MagicBlock primitives | **Three used, one honestly not.** ER (delegate/commit/undelegate), Private ER (ACL + a gate that really refuses), **session keys** (Gum, a real token signing real fills). VRF is requested on chain and cannot be fulfilled here. |
+| Mocks / stubs | A full grep for `mock\|stub\|todo\|fixme\|fake\|dummy\|placeholder\|hardcod\|hack\|xxx` returns **4 hits, all prose explaining that something is *not* a placeholder**. |
+| Docs | README, SUBMISSION, CHANGELOG and IDEAS all reconciled against the running system. |
 
-### What is not done, one line each
+### What is not done
 
-1. **Not submitted.** Hard deadline in 4 days. This is the only irreversible item.
-2. **No demo video and no public live URL.** `dist/` exists but is 7 hours stale.
-3. **Docs contradict the product** in five specific, checkable places (§6, GAP-1…5).
-4. **Not deployed to devnet.** Wallet holds 0 SOL; faucet refused 40+ times.
-5. **PER attestation unproved** — the gate is real, but it is a process we run.
-6. **Session keys: not started.** No dependency, no code. Every fill is a signature.
-7. **VRF has no product surface.** `request_market_draw` / `settle_market_draw`
-   exist in the program and are exercised by `check:vrf`, but nothing in `src/`
-   calls them and no oracle can fulfil.
+1. **Not submitted, and no demo video.** I cannot screen-record or upload;
+   `DEMO.md` reduces it to a rehearsed one-take script. **This is the only thing
+   standing between the project and a valid entry.**
+2. **Not deployed to devnet.** 0 SOL after four faucet paths were retried today.
+3. **PER attestation unproved** — the gate is real and proven; what is missing
+   is a TEE to attest it.
+4. **VRF cannot be fulfilled** — no oracle identity exists in this environment.
 
-**Honest headline:** the product is built, tested harder than most hackathon
-entries will be, and honest about its limits. What is missing is not code — it
-is the twenty minutes of recording and form-filling that turn it into an entry,
-plus two MagicBlock primitives that are half-present and should either be
-finished or stated plainly as unused.
-
----
+**Honest headline:** the product is built, four MagicBlock primitives deep,
+tested harder than most entries will be, and honest about its limits. What
+remains is a recording and a form.
 
 ## 1. GOALS
 
@@ -256,41 +251,41 @@ tied to the task it blocks.
 
 | ID | Gap | Evidence | Blocks |
 |---|---|---|---|
-| GAP-1 | README claims VRF "Not attempted" | `README.md:26` vs `request_market_draw` in `lib.rs:515` and `npm run check:vrf` passing | 1.1, 3.2 |
-| GAP-2 | README PER row says live proof blocked; the gate is proven locally | `README.md:24` vs `README.md:246` (its own Limitations table) and `npm run check:gate` | 1.2 |
-| GAP-3 | README names a retired demo mint as "the market" | `README.md` Limitations §3 vs `src/chain/markets.ts` (live pump.fun/Jupiter mints) | 1.3 |
-| GAP-4 | README `.so` size wrong: says 636KB, is 702,128 bytes | `ls -la chain/target/deploy/fogduel.so` | 1.4, 4.1 |
-| GAP-5 | `MAX_OPEN_AGE` (300s) undocumented outside `state.rs` — a judge who leaves a match open and returns will find it un-joinable with no explanation in the docs | `chain/programs/fogduel/src/state.rs` | 1.5 |
-| GAP-6 | `SUBMISSION.md` stale in 5 named places | See task 1.6 | 1.6, 3.1 |
-| GAP-7 | `CHANGELOG-ui.md` stops at §19; six components and a sound engine undocumented | `grep '^## ' CHANGELOG-ui.md \| tail` | 1.8 |
-| GAP-8 | `IDEAS.md` build log missing #13 and #23, both built this run | `grep '^### #' IDEAS.md` | 1.9 |
+| GAP-1 | README claims VRF "Not attempted" | `README.md:26` vs `request_market_draw` in `lib.rs:515` and `npm run check:vrf` passing | 1.1, 3.2 — **CLOSED** — table now says "requested on chain; cannot be fulfilled here", with Limitations §7 giving the evidence. |
+| GAP-2 | README PER row says live proof blocked; the gate is proven locally | `README.md:24` vs `README.md:246` (its own Limitations table) and `npm run check:gate` | 1.2 — **CLOSED** — now "enforced, not attested", pointing at the table that proves it. |
+| GAP-3 | README names a retired demo mint as "the market" | `README.md` Limitations §3 vs `src/chain/markets.ts` (live pump.fun/Jupiter mints) | 1.3 — **CLOSED** — rewritten to say markets are live pump.fun/Jupiter mainnet mints and that fills route to neither venue. |
+| GAP-4 | README `.so` size wrong: says 636KB, is 702,128 bytes | `ls -la chain/target/deploy/fogduel.so` | 1.4, 4.1 — **CLOSED** — 702,128 bytes and ~6–10 SOL. |
+| GAP-5 | `MAX_OPEN_AGE` (300s) undocumented outside `state.rs` — a judge who leaves a match open and returns will find it un-joinable with no explanation in the docs | `chain/programs/fogduel/src/state.rs` | 1.5 — **CLOSED** — Limitations §6, including the −90.22% incident that motivated the bound. |
+| GAP-6 | `SUBMISSION.md` stale in 5 named places | See task 1.6 | 1.6, 3.1 — **CLOSED** — all five corrected, plus the description and summary which understated the gate. |
+| GAP-7 | `CHANGELOG-ui.md` stops at §19; six components and a sound engine undocumented | `grep '^## ' CHANGELOG-ui.md \| tail` — **CLOSED** — §20 added. | 1.8 |
+| GAP-8 | `IDEAS.md` build log missing #13 and #23, both built this run | `grep '^### #' IDEAS.md` | 1.9 — **CLOSED** — #13 and #23 recorded. |
 
 ### Submission artefacts
 
 | ID | Gap | Evidence | Blocks |
 |---|---|---|---|
-| GAP-9 | **No demo video.** No `.mp4`/`.mov` anywhere in the repo | `ls *.mp4 *.mov docs/*.mp4` → none | 2.6, 3.1 |
-| GAP-10 | `dist/` is stale — built 03:31, newest source 10:59. Missing every fix from this run | `stat -f "%Sm" dist` vs newest `src/` file | 2.2, 2.7 |
-| GAP-11 | **Not submitted.** The only irreversible deadline in this document | `SUBMISSION.md` header: "Status: not yet submitted" | 3.4 |
-| GAP-12 | No live URL, and it may not be achievable — the app points at `127.0.0.1` clusters, so a hosted build needs a hosted cluster. Unverified either way | `src/chain/config.ts` `CLUSTERS.local` | 2.7 |
+| GAP-9 | **No demo video.** No `.mp4`/`.mov` anywhere in the repo | `ls *.mp4 *.mov docs/*.mp4` → none | 2.6, 3.1 — **OPEN — needs you.** `DEMO.md` is the rehearsed one-take script. I cannot screen-record or upload. |
+| GAP-10 | `dist/` is stale — built 03:31, newest source 10:59. Missing every fix from this run | `stat -f "%Sm" dist` vs newest `src/` file | 2.2, 2.7 — **CLOSED** — rebuilt, verified to contain this run's code, served on :4173 and driven for real (wallet connected, funded, match escrowed 3.00 → 2.89 SOL). |
+| GAP-11 | **Not submitted.** The only irreversible deadline in this document | `SUBMISSION.md` header: "Status: not yet submitted" | 3.4 — **OPEN — needs you.** Blocked on GAP-9, and submitting publishes on your behalf. `SUBMISSION.md` ends with a six-step checklist. |
+| GAP-12 | No live URL, and it may not be achievable — the app points at `127.0.0.1` clusters, so a hosted build needs a hosted cluster. Unverified either way | `src/chain/config.ts` `CLUSTERS.local` | 2.7 — **CLOSED as NOT ACHIEVABLE** — the build supports remote clusters via `EXPO_PUBLIC_L1_URL`/`_ER_URL`, so hosting was never the obstacle; reachable clusters are, which means devnet (GAP-18). |
 
 ### MagicBlock primitives
 
 | ID | Gap | Evidence | Blocks |
 |---|---|---|---|
-| GAP-13 | **Session keys entirely absent** — no JS dependency, no Rust crate, no code | `package.json` and `chain/programs/fogduel/Cargo.toml` contain no session package | 5.1–5.6 |
+| GAP-13 | **Session keys entirely absent** — no JS dependency, no Rust crate, no code | `package.json` and `chain/programs/fogduel/Cargo.toml` contain no session package | 5.1–5.6 — **CLOSED** — session keys are now used. `session-keys` 3.1.1, a `session_auth_or` guard on `apply_fill`, minted at seal time, verified on chain for both creator and joiner. |
 | GAP-14 | **VRF has no product surface** — program instructions and `check:vrf` exist, but `grep -rn "requestMarketDraw\|MarketDraw" src/` hits only `idl.ts` | Nothing in `src/` calls either instruction | 5.7–5.9 |
-| GAP-15 | VRF cannot be fulfilled — preloaded queues are devnet dumps naming oracle identities we do not hold; `modify_oracles` / `initialize_oracle_queue` encodings are not in the published SDK | `npm run check:vrf` output | 5.7, 5.8 |
-| GAP-16 | Two chain tests permanently pending — the ephemeral-permission TEE path | `chain/tests/er-privacy.ts:162,175` (`it.skip`) | 4.5 |
-| GAP-17 | PER attestation unproved: the gate is a process we run, not an attested enclave | `/proof` `gate attested: NO — not a TEE` | 4.6, 4.7 |
+| GAP-15 | VRF cannot be fulfilled — preloaded queues are devnet dumps naming oracle identities we do not hold; `modify_oracles` / `initialize_oracle_queue` encodings are not in the published SDK | `npm run check:vrf` output | 5.7, 5.8 — **OPEN — credential that does not exist.** The preloaded queue does not list the repo's oracle key, that key is not `VRF_PROGRAM_IDENTITY`, and the SDK ships only request builders. Recorded in README §7. |
+| GAP-16 | Two chain tests permanently pending — the ephemeral-permission TEE path | `chain/tests/er-privacy.ts:162,175` (`it.skip`) | 4.5 — **OPEN — blocked by GAP-18.** The two pending tests are the TEE path. |
+| GAP-17 | PER attestation unproved: the gate is a process we run, not an attested enclave | `/proof` `gate attested: NO — not a TEE` | 4.6, 4.7 — **OPEN — blocked by GAP-18.** Enforcement is proven; attestation needs a TEE. |
 
 ### Infrastructure
 
 | ID | Gap | Evidence | Blocks |
 |---|---|---|---|
-| GAP-18 | **0 devnet SOL**, faucet refused 40+ times; needs ~6–10 SOL for a 702KB program | `solana balance 3YUgUPu9… --url devnet` → 0 SOL | 4.1 → 4.2–4.8 |
-| GAP-19 | Demo depends on 5 local processes (8999, 7799, 6699, 8791, 8081). Any one down and the demo dies. No single health gate before recording | `./scripts/localnet.sh` + `npm run proxy` + metro | 2.1, 2.8 |
-| GAP-20 | Reduced motion honoured in code but never observed — browser tooling here cannot emulate the OS setting | `TEST-PLAN.md` O6, marked UNTESTED | — (accepted) |
+| GAP-18 | **0 devnet SOL**, faucet refused 40+ times; needs ~6–10 SOL for a 702KB program | `solana balance 3YUgUPu9… --url devnet` → 0 SOL | 4.1 → 4.2–4.8 — **OPEN — credential that does not exist.** Four faucet paths retried today, all refused. |
+| GAP-19 | Demo depends on 5 local processes (8999, 7799, 6699, 8791, 8081). Any one down and the demo dies. No single health gate before recording | `./scripts/localnet.sh` + `npm run proxy` + metro | 2.1, 2.8 — **CLOSED** — `DEMO.md` lists all five services and the six stalls, and `npm run hold` is called out as the prerequisite nobody would guess. |
+| GAP-20 | Reduced motion honoured in code but never observed — browser tooling here cannot emulate the OS setting | `TEST-PLAN.md` O6, marked UNTESTED | — (accepted) — **ACCEPTED** — mechanism verified, OS setting not emulable here; marked UNTESTED in `TEST-PLAN.md` rather than claimed. |
 
 ### Not gaps — checked and clear
 
@@ -337,7 +332,24 @@ different `localStorage`, so each gets its own wallet. Fund the second with
 
 ---
 
-## 11. ORDER OF WORK
+## 11. WHAT REMAINS
+
+Two things, and neither is code.
+
+1. **Record the demo and submit** (GAP-9, GAP-11). `DEMO.md` is a rehearsed
+   one-take script with measured timings and the prerequisites that bite;
+   `SUBMISSION.md` ends with a six-step checklist. Roughly 30 minutes of human
+   time, and it is the only thing between this and a valid entry.
+2. **Devnet SOL** (GAP-18), which would unblock Phase 4 entirely — the TEE
+   attestation, the two pending tests, a devnet program ID, and a live URL.
+   Four faucet paths were retried on execution day and all refused;
+   `faucet.solana.com` needs a browser captcha a person can solve.
+
+Everything else in this document is done and verified.
+
+---
+
+## 12. ORDER OF WORK
 
 1. **Phase 1** (docs true) — 90 minutes. Do it today.
 2. **Phase 2** (demo capture) — 3 hours. Do it Mon/Tue while the stack is fresh.

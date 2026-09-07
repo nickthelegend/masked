@@ -82,7 +82,12 @@ Open `/proof`. Do not scroll fast; each panel is a claim.
    **Click one row** — it opens the real Solana explorer pointed at this cluster.
    > "The delegation story as signatures, not as a claim. The doubled steps are
    > real: one per position, because two don't fit in a 1232-byte transaction."
-5. No wallet is connected for any of this. Say that.
+5. **WHAT ONE DUEL COSTS** — 10 transactions, 0.000535 SOL, 0.267% of the pot.
+   Summed from the very transactions listed above it, not a fee table.
+6. **RUN THIS YOURSELF** — eight commands, each saying what it proves, each one
+   tap to copy. Say that everything on the page is reproducible from a clean
+   checkout.
+7. No wallet is connected for any of this. Say that.
 
 ---
 
@@ -128,19 +133,27 @@ Two browsers side by side, both already connected and funded.
    Both screens show **SEALED · ACL ON CHAIN** — read back from chain, not a
    local flag. Each shows the opponent as **FOGGED**, with a fill count and
    nothing else.
-3. **Trade at different sizes so the book is visible.**
+3. **Point at the SESSION KEY badge.** It appears once the round is sealed.
+   > "One signature for the whole round. The player signed once to mint a Gum
+   > session token; a throwaway key signs each fill on their behalf, bounded to
+   > an hour and scoped to this program. It can fill and it can do nothing
+   > else."
+   If you have a terminal free, `npm run check:session` proves it in 15
+   assertions — including that a token for one owner cannot move another's book.
+4. **Trade at different sizes so the book is visible.**
+   Keys work if your hands are already there: **L** long, **C** close.
    - A: **MAX** → the note reads `THAT SIZE COSTS 1.56% IN IMPACT`. LONG.
      The receipt shows the mark and what you actually filled at.
    - B: **1/4** → `0.39%`. LONG.
    > "That quote is exact, not an estimate — the chain charges 1.56%."
-4. **Let the buzzer go.** Rounds are 60s by default.
+5. **Let the buzzer go.** Rounds are 60s by default.
    **SETTLING ON SOLANA** shows three real stages: the commit reports how many
    rollup transactions it took, undelegation reports both positions home,
    settle reports the pot paid.
-5. **The reveal, on both screens at once.** They mirror: A's "you" is B's
+6. **The reveal, on both screens at once.** They mirror: A's "you" is B's
    "opponent" to the basis point. The **ROUND TIMELINE** draws both players'
    real fills on one axis, replayed from the tape the program just wrote.
-   The head-to-head record sits underneath.
+   The head-to-head record and what the market itself did sit underneath.
 
 **Timing note:** the round is 60s and the two settle paths take ~20s more.
 Do not narrate over the buzzer — let the settle stages play.
