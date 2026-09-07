@@ -475,6 +475,19 @@ export function useDuel(): Duel {
   const settle = useCallback(async () => {
     if (!client || !match || !wallet.publicKey || settledRef.current) return;
     if (!match.joiner) return;
+    // The program will not settle a round whose clock is still running, and
+    // the commit that starts settlement is not reversible: it takes both
+    // positions off the rollup. Starting early therefore left the round
+    // un-tradeable *and* unsettleable — the positions were home, request_settle
+    // answered ROUND STILL RUNNING, and the player sat there until the buzzer
+    // with a broken match and no reveal. So the clock is checked first.
+    if (secondsLeft > 0) {
+      toast.info(
+        'THE ROUND IS STILL RUNNING',
+        'Settlement opens at the buzzer — for anyone, not just you.'
+      );
+      return;
+    }
     settledRef.current = true;
     setBusy(true);
     const step = (id: SettleStage['id'], state: SettleStage['state'], detail?: string) =>
@@ -550,7 +563,7 @@ export function useDuel(): Duel {
     } finally {
       setBusy(false);
     }
-  }, [client, match, wallet.publicKey, toast, showReveal]);
+  }, [client, match, wallet.publicKey, toast, showReveal, secondsLeft]);
 
   useEffect(() => {
     if (phase === 'live' && secondsLeft === 0) void settle();

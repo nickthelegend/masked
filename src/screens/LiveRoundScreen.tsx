@@ -198,9 +198,21 @@ export default function LiveRoundScreen({
       <FillTape fills={fills} note="HIDDEN UNTIL REVEAL" />
 
       <Box>
-        {/* Settles early on purpose. Permissionless on-chain once the clock
-            expires; this just triggers it now so a demo need not wait. */}
-        <PixelButton tone="quiet" bg={color.panelLight} label="SETTLE NOW" size={8} padY={space.sm} loading={busy} onPress={onSkip} />
+        {/* Settlement is permissionless, but only once the clock has run out —
+            the program refuses request_settle before the buzzer. This used to
+            offer SETTLE NOW throughout the round, and pressing it committed
+            both positions off the rollup before failing, leaving a match that
+            could neither be traded nor settled. It says what it can do. */}
+        <PixelButton
+          tone="quiet"
+          bg={color.panelLight}
+          label={secondsLeft > 0 ? 'SETTLES AT THE BUZZER' : 'SETTLE NOW'}
+          size={8}
+          padY={space.sm}
+          disabled={secondsLeft > 0}
+          loading={busy}
+          onPress={onSkip}
+        />
       </Box>
     </Stack>
   );

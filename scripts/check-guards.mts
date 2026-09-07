@@ -30,7 +30,12 @@ async function refuses(what: string, fn: () => Promise<unknown>) {
   try {
     await fn();
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
+    // Anchor sometimes carries the reason only in the simulation logs, and the
+    // message itself is empty — reporting "refused: " tells nobody anything.
+    const logs = (e as { logs?: string[] })?.logs ?? [];
+    const fromLogs = logs.find((l) => /Error Code:|Error Message:|failed:/.test(l)) ?? '';
+    const raw = e instanceof Error ? e.message : String(e);
+    const msg = [raw, fromLogs, raw ? '' : JSON.stringify(e).slice(0, 120)].filter(Boolean).join(' | ');
     // Trim to the first line that names the reason.
     // Anchor names the constraint when it can; a rollup that refuses an
     // account it does not own reports it in the simulation logs instead.
@@ -133,7 +138,30 @@ async function main() {
   // A match that has sat on the book long enough for its seeded price to be
   // wrong must not be joinable — see MAX_OPEN_AGE in state.rs. This uses a
   // genuinely old match from the cluster rather than waiting five minutes.
-  console.log('3. a stale open match');
+  console.log('3. a round past its buzzer');
+  const shortLived = await clientA.createMatch({
+    creator: a.publicKey,
+    matchId: Date.now() + 2,
+    mint: new PublicKey(market.mint),
+    durationSecs: 10,
+    entryLamports: Math.round(ENTRY * LAMPORTS_PER_SOL),
+    startPx: pxFromSolPerToken(market.priceSol),
+    marketType: 'meme',
+    symbol: market.symbol,
+    name: market.name,
+  });
+  await clientB.joinMatch(shortLived, b.publicKey, a.publicKey);
+  await clientA.sealAndDelegateMatch(shortLived, a.publicKey, b.publicKey, a.publicKey);
+  const started = (await clientA.fetchMatch(shortLived))!.startTs;
+  while (Date.now() / 1000 < started + 11) await new Promise((r) => setTimeout(r, 500));
+
+  // A fill after the buzzer would let a player trade on a price the round has
+  // already been decided at.
+  await refuses('filling after the buzzer', () =>
+    clientA.applyFill(shortLived, a.publicKey, 'buy', Math.round(ENTRY * LAMPORTS_PER_SOL * 0.25))
+  );
+
+  console.log('4. a stale open match');
   const book = await clientA.fetchOpenMatches();
   const nowSecs = Math.floor(Date.now() / 1000);
   const old = book.find((x) => nowSecs - x.createdTs > MAX_OPEN_AGE_SECS && !x.creator.equals(b.publicKey));
