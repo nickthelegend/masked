@@ -150,4 +150,48 @@ first thing on this list.
 
 ## Build log
 
-Filled in as each is built and verified.
+Filled in as each is built and verified. "Verified" means run against the
+real stack — deployed program, real signed transactions, real settled tapes —
+not that it compiles.
+
+### #9 — Settlement progress · built, verified
+
+`src/ui/SettleProgress.tsx`, stages in `useDuel.ts`. Commit, undelegate and
+settle shown as real stages carrying their real results: the commit reports
+the transaction count (two, one per position, because two do not fit in 1232
+bytes), undelegation reports both accounts home, settle reports the pot paid.
+A throwing stage goes red rather than freezing on a spinner.
+
+Verified by pressing SETTLE NOW mid-round in a real duel and reading the panel
+out of the DOM: `COMMIT · 2 tx on the rollup`, `UNDELEGATE · both positions
+back under the program`, `SETTLE · PnL compared, pot paid, tape written`.
+
+### #7 — Round timeline on the reveal · built, verified
+
+`src/chain/tape.ts`, `src/ui/RoundTimeline.tsx`. Both players' real fills on
+one shared time axis, replayed from the fill lists `settle_match` writes into
+the public Tape.
+
+This removed invented data rather than adding a chart. The opponent's curve
+had been a seeded random walk pinned to their final PnL, your own fell back to
+a five-element constant, and the feed's sparklines were a straight line drawn
+from the fill *count*. All three are gone.
+
+- `replayEquity` reconstructs a position from its fills using the same
+  arithmetic that produced them, so the final point *is* the chain's
+  `pnl_*_bps`, not an approximation of it.
+- `markFromFill` backs the re-pegged mark out of an execution price, which is
+  invertible because depth is fixed at `entry * BOOK_DEPTH`. That makes the
+  intermediate points true mark-to-market — and is why both lanes now visibly
+  dip on their own slippage before the price runs.
+- The line stops between fills. The one segment that is extended is extended
+  because it is a fact: a position holding no base is all quote, and quote does
+  not move with the market.
+
+Verified by `npm run check:tape` — 715 assertions over 54 real settled tapes,
+every replay landing on the chain's own bps — and by playing two duels through
+the UI against a second signing wallet, the reveal printing −0.47% / 2 fills
+against −0.59% / 4 fills, exactly what the tape holds.
+
+Bug this surfaced: a player with zero fills stamped their opening point at
+unix epoch zero, collapsing any shared axis to its right edge.
