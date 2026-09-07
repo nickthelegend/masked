@@ -348,14 +348,25 @@ Read this before judging — none of it is hidden in the code.
    rather than offering a JOIN the program will refuse. The creator cancels and
    reopens at a fresh price, which costs one transaction.
 7. **VRF is requested but never fulfilled.** `request_market_draw` builds a real
-   request with the official SDK and the VRF program accepts it on chain. No
-   oracle answers, because the queues this validator preloads were dumped from
-   devnet and list oracle identities we do not hold the keys for; registering
-   our own needs `modify_oracles` / `initialize_oracle_queue`, whose instruction
-   encoding is not in the published SDK — only the request builders are.
-   `settle_market_draw` is guarded by `#[vrf_callback]`, so only the VRF program
-   could ever write a result. **Nothing simulates a draw**, and the BLIND DRAFT
-   mode that would consume one stays a `SOON` tile rather than being faked.
+   request with the official SDK and the VRF program accepts it on chain
+   (`npm run check:vrf`). No oracle answers, and this was checked rather than
+   assumed:
+
+   - The queue this validator preloads (`GKE6d7iv…`) is a 9500-byte account
+     owned by the VRF program, dumped from devnet.
+   - It does not list the repo's `.keys/vrf-oracle.json` (`5DBVUoQ3…`), and
+     that key is not `VRF_PROGRAM_IDENTITY` either.
+   - Registering our own oracle needs `modify_oracles` /
+     `initialize_oracle_queue`. `ephemeral-vrf-sdk` 0.17 exports only the
+     *request* builders — `create_request_randomness_ix` and its variants — so
+     neither the account layout nor the queue's admin authority is available
+     to us.
+
+   So fulfilment needs an oracle identity that does not exist in this repo or
+   environment. `settle_market_draw` is guarded by `#[vrf_callback]`, so only
+   the VRF program could ever write a result. **Nothing simulates a draw**, and
+   the BLIND DRAFT mode that would consume one stays a `SOON` tile rather than
+   being faked.
 
 ---
 
