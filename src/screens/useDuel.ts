@@ -25,7 +25,7 @@ import { assertFogIntact } from '../chain/fog';
 import { FogduelClient, pnlBps, type MatchLeg, type MatchState, type PositionState } from '../chain/client';
 import { formatSolPrice, MAX_OPEN_AGE_SECS, VALUE_DIV } from '../chain/units';
 import type { TapeState } from '../chain/tape';
-import { buyImpact, quoteToBuyBase, sellImpact } from '../chain/book';
+import { buyImpact, maxShortBase, quoteToBuyBase, sellImpact } from '../chain/book';
 import { useHeadToHead, describeRecord } from '../chain/useHeadToHead';
 import { fetchMemeMarkets, livePxFor, type TradableMarket } from '../chain/markets';
 import { mintSession, type ActiveSession } from '../chain/session';
@@ -1233,7 +1233,12 @@ export function useDuel(): Duel {
         ? myPosition.quoteBalance + (myPosition.baseQty * mark) / VALUE_DIV
         : match.entry;
       // Room left before the program's own cap, in base units.
-      const capacity = (equity * VALUE_DIV) / mark - Math.abs(myPosition?.baseQty ?? 0);
+      //
+      // Not `equity / mark`: that is the cap on the *notional*, and a short
+      // pays its own impact out of the equity being measured against, so
+      // sizing to it overshoots by exactly that impact. `maxShortBase` solves
+      // the cap instead of approximating it — see book.ts.
+      const capacity = maxShortBase(myPosition?.baseQty ?? 0, equity, mark, match.entry);
       const qty = Math.floor(capacity * fillSize);
       if (qty <= 0) {
         toast.error('NO ROOM TO SHORT', 'Your equity is already fully committed. Close some of it first.');

@@ -85,3 +85,41 @@ export function quoteToBuyBase(baseOut: number, mark: number, entry: number): nu
   // would leave exactly the dust this exists to avoid.
   return Math.ceil((Q * baseOut) / (B - baseOut));
 }
+
+/**
+ * The largest short that still clears the program's margin cap.
+ *
+ * `apply_fill` caps a position at one times its collateral, comparing the
+ * notional and the equity it computes *after* the fill. A long reaches that
+ * cap exactly: it spends quote `q` and receives base worth `q / (1 + impact)`,
+ * so its post-fill notional and equity are the same number.
+ *
+ * A short does not, because it pays its impact immediately. Selling notional
+ * `d` from flat leaves equity `E - d²/(Q + d)` against a notional of `d`, so
+ * sizing a short at the full equity overshoots the cap by exactly its own
+ * impact — which is why every MAX short came back `NOT ENOUGH QUOTE` while
+ * every MAX long went through.
+ *
+ * Solving `b + d + d²/(Q + d) <= E` for `d`, with `b` the notional already
+ * held and `Q` the re-pegged depth, gives a quadratic:
+ *
+ *   2d² + d(b + Q - E) - Q(E - b) <= 0
+ *
+ * and this returns its positive root — the exact edge, so a MAX short is as
+ * large as the program will actually accept and not a hand-picked haircut
+ * below it.
+ */
+export function maxShortNotional(heldNotional: number, equity: number, entry: number): number {
+  const Q = depthFor(entry);
+  const room = equity - heldNotional;
+  if (Q <= 0 || room <= 0) return 0;
+  const b = heldNotional + Q - equity;
+  return (-b + Math.sqrt(b * b + 8 * Q * room)) / 4;
+}
+
+/** The same edge, expressed as base units at `mark`. */
+export function maxShortBase(baseHeld: number, equity: number, mark: number, entry: number): number {
+  if (mark <= 0) return 0;
+  const held = (Math.abs(baseHeld) * mark) / VALUE_DIV;
+  return (maxShortNotional(held, equity, entry) * VALUE_DIV) / mark;
+}
