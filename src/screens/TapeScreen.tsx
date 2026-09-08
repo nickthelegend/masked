@@ -198,7 +198,12 @@ export default function TapeScreen({ address }: TapeScreenProps) {
               outline={side.won ? color.yellow : color.blue}
               align="center"
             >
-              <MaskAvatar size={40} glyphSize={15} ring={side.won ? color.yellow : color.panelLight} />
+              <MaskAvatar
+                size={40}
+                seed={side.who.toBase58()}
+                glyphSize={15}
+                ring={side.won ? color.yellow : color.panelLight}
+              />
               <PixelText variant="bodySmall" size={10} color={side.tone}>
                 {short(side.who)}
               </PixelText>

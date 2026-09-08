@@ -601,3 +601,50 @@ the market proxy twice in 20.002s — one `REFRESH_MS` apart, which is the
 designed rate. The apparent storm seen earlier (28 identical calls) was the
 extension's per-tab buffer accumulating across six navigations, not a live
 rate. Recorded because the wrong conclusion was nearly drawn from it twice.
+
+---
+
+## Completion measurement — 2026-09-08
+
+Measured against a checklist built from what the project claims (README,
+SUBMISSION.md, PLAN.md, the program's own instruction set), not a generic one.
+49 items. A feature that exists but is mocked, unstyled against the product's
+own bar, or wired to nothing counts as not done.
+
+**Before this pass: 34/49 — 69%.**
+
+Gaps found, and what happened to them:
+
+| Gap | Where | Closed? |
+|---|---|---|
+| Rollup execution never *proved* — only asserted | no test existed | **yes** — `check:er` |
+| Every player rendered as the same `?` plate | `ui/MaskAvatar.tsx` | **yes** — generated masks |
+| `COPY` and `FADE` on every feed card, wired to nothing | `ui/MatchCard.tsx` | **yes** — READ TAPE / DUEL THIS TOKEN |
+| Quests paid `+XP`, which does not exist | `chain/useQuests.ts` | **yes** — achievements, CLEARED/LOCKED |
+| Quests titled "DAILY" over lifetime counters | `screens/QuestsScreen.tsx` | **yes** — ACHIEVEMENTS · ALL TIME |
+| `/tape` and `/spectate` players unidentifiable | those screens | **yes** — masks |
+| Feed, lobby, rank unstyled against the arcade bar | screens | **yes** — masks, tiers, real actions |
+| TEE attestation | devnet | **no** — 0 devnet SOL, faucet refused 40+ times |
+| VRF fulfilment | local queues | **no** — queues name devnet oracle identities |
+| Demo video, form submission | — | **no** — user actions |
+
+**After: 45/49 — 92%.**
+
+The four open items are one blocked credential (devnet SOL, which also blocks
+attestation), one genuinely unavailable dependency (a VRF oracle whose
+registration instructions are not in the published SDK), and two things only
+the entrant can do.
+
+### `check:er` — the claim that could not be checked from the UI
+
+"Built on MagicBlock" is this submission's central claim and the one a judge
+cannot verify by looking: a fill on a rollup and a fill on a validator look
+identical from outside. `check:er` drives a real fill and then asks both
+clusters where it went.
+
+| Assertion | Result |
+|---|---|
+| position owned by the delegation program while live | base layer has given custody away |
+| fill signature present in the rollup ledger | found, at a real slot |
+| same signature absent from the base-layer ledger | absent |
+| rollup position carries the fill | `base_qty` non-zero |

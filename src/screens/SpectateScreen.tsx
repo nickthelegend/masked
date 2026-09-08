@@ -173,6 +173,10 @@ export default function SpectateScreen({ address }: SpectateScreenProps) {
             >
               <MaskAvatar
                 size={44}
+                // A spectator is told who is playing — the match account is
+                // public — so the mask is generated. It is their position
+                // that is sealed, not their name.
+                seed={side.who ? side.who.toBase58() : null}
                 glyphSize={17}
                 ring={done && match.winner && side.who?.equals(match.winner) ? color.yellow : color.panelLight}
               />
