@@ -273,8 +273,7 @@ export default function LandingScreen() {
                 winnerSeries={t.winnerSeries}
                 loserSeries={t.loserSeries}
                 onChallenge={goPlay}
-                onCopy={goPlay}
-                onFade={goPlay}
+                onReadTape={() => router.push(`/tape/${t.match}`)}
               />
             </Box>
           ))}

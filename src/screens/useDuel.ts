@@ -131,6 +131,8 @@ export interface Duel {
   sealed: boolean;
   /** Ticker of the market being fought over, as written on chain. */
   market: string;
+  /** The opponent's full wallet, for their generated mask. */
+  opponentAddress: string | null;
   /** Their ticker and mint. Public — see `opponentLeg`. */
   opponentMarket: string;
   opponentMarketMint: string;
@@ -1521,6 +1523,7 @@ export function useDuel(): Duel {
       ? selectedMarket.imageUri
       : null,
     marketSource: myLeg?.marketType === 'major' ? 'jupiter' : 'pump.fun',
+    opponentAddress: opponentKey ? opponentKey.toBase58() : null,
     opponentMarket: opponentLeg?.symbol || (opponentLeg ? marketLabel(opponentLeg.mint) : ''),
     opponentMarketMint: opponentLeg?.mint.toBase58() ?? '',
     // In SOL, not USD: the entry, the pot and the PnL are all lamports, so a

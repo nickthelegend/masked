@@ -64,7 +64,7 @@ export default function MatchRow({
       {mint ? (
         <TokenLogo mint={mint} symbol={symbol ?? '?'} uri={imageUri} size={30} />
       ) : (
-        <MaskAvatar size={30} ring={mine ? color.yellow : color.panelLight} glyphSize={11} />
+        <MaskAvatar size={30} seed={creator} ring={mine ? color.yellow : color.panelLight} glyphSize={11} />
       )}
 
       <Stack flex={1} gap={2}>

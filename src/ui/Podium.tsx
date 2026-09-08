@@ -54,6 +54,7 @@ export default function Podium({ entries, style }: PodiumProps) {
           <Stack key={place} flex={spec.flex} align="center" gap={space.xs}>
             <MaskAvatar
               size={spec.avatar}
+              seed={entry.name}
               ring={spec.plate}
               glyphSize={place === 1 ? 22 : 18}
             />

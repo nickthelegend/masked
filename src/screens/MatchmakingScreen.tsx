@@ -70,7 +70,12 @@ export default function MatchmakingScreen({
           naming a placeholder is the one thing a matchmaking screen must not
           do on a game whose whole premise is not knowing who is opposite. */}
       <Row align="center" gap={space.md} width="100%">
-        <VersusCard name={myAddress ? `${myAddress.slice(0, 6)}…` : 'YOU'} accent={color.cyan} you />
+        <VersusCard
+          name={myAddress ? `${myAddress.slice(0, 6)}…` : 'YOU'}
+          seed={myAddress}
+          accent={color.cyan}
+          you
+        />
         <Box
           width={38}
           height={38}

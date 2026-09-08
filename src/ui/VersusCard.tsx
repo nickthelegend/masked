@@ -14,6 +14,8 @@ export interface VersusCardProps {
   verified?: boolean;
   /** Marks which of the two cards is the reader's. */
   you?: boolean;
+  /** The wallet, for the generated mask. Falls back to the name. */
+  seed?: string | null;
   glyph?: string;
 }
 
@@ -29,6 +31,7 @@ export default function VersusCard({
   accent = color.cyan,
   verified = false,
   you = false,
+  seed = null,
   glyph,
 }: VersusCardProps) {
   return (
@@ -42,7 +45,7 @@ export default function VersusCard({
         align="center"
         width="100%"
       >
-        <MaskAvatar size={62} ring={accent} bg={color.ink} glyph={glyph} />
+        <MaskAvatar size={62} seed={glyph ? null : (seed ?? name)} ring={accent} bg={color.ink} glyph={glyph} />
       </Box>
       <Row align="center" gap={space.xs}>
         <PixelText variant="tabLabel" size={8} color={you ? color.yellow : color.white} numberOfLines={1}>

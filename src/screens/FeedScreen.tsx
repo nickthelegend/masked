@@ -6,11 +6,14 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import { bpsPct, short, useTapes } from '../chain/useTapes';
 
 export interface FeedScreenProps {
-  onChallenge: () => void;
+  /** Opens a duel on the token this tape was fought over. */
+  onChallenge: (mint: string, symbol: string) => void;
+  /** Opens a settled duel's public tape. */
+  onReadTape: (match: string) => void;
 }
 
 /** Reveals feed: finished duels you can copy, fade, or challenge into. */
-export default function FeedScreen({ onChallenge }: FeedScreenProps) {
+export default function FeedScreen({ onChallenge, onReadTape }: FeedScreenProps) {
   const [filter, setFilter] = useState<FeedFilter>(FEED_FILTERS[0]);
   const { publicKey } = useWallet();
   const { tapes: allTapes, loaded } = useTapes();
@@ -60,7 +63,8 @@ export default function FeedScreen({ onChallenge }: FeedScreenProps) {
           loserPnl={bpsPct(t.loserPnlBps)}
           winnerSeries={t.winnerSeries}
           loserSeries={t.loserSeries}
-          onChallenge={onChallenge}
+          onChallenge={() => onChallenge(t.mint.toBase58(), t.symbol || marketLabel(t.mint))}
+          onReadTape={() => onReadTape(t.match)}
         />
       ))}
 

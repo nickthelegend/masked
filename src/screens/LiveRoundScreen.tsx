@@ -98,6 +98,9 @@ export interface LiveRoundScreenProps {
   teeEnforced?: boolean;
   /** Your wallet, shortened, for the board row. */
   myName?: string;
+  /** Full wallets, for the generated masks — a shortened one collides. */
+  myAddress?: string | null;
+  opponentAddress?: string | null;
   /** Which way you are facing. Theirs is sealed and is never passed in. */
   mySide?: 'long' | 'short' | 'flat';
   /** Their ticker and mint — read off the match account, not the position. */
@@ -146,6 +149,8 @@ export default function LiveRoundScreen({
   settleStages,
   teeEnforced = false,
   myName = 'YOU',
+  myAddress = null,
+  opponentAddress = null,
   mySide = 'flat',
   opponentMarket = '',
   opponentMarketMint = '',
@@ -283,6 +288,7 @@ export default function LiveRoundScreen({
           rank={null}
           lastRank={2}
           name={myName}
+          seed={myAddress ?? myName}
           you
           pnl={myPnl}
           side={mySide}
@@ -294,6 +300,7 @@ export default function LiveRoundScreen({
             rank={null}
             lastRank={2}
             name={opponentName.toUpperCase()}
+            seed={opponentAddress ?? opponentName}
             pnl={null}
             side={null}
             token={

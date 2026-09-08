@@ -43,6 +43,9 @@ export interface RevealScreenProps {
   opponentName: string;
   /** The reader's own wallet, shortened, for the board row. */
   myName?: string;
+  /** Full wallets, for the generated masks. */
+  myAddress?: string | null;
+  opponentAddress?: string | null;
   /** The record against this opponent, counted off chain. Null while unknown. */
   record?: string | null;
   onRematch: () => void;
@@ -82,6 +85,8 @@ export default function RevealScreen({
   opponentFills,
   opponentName,
   myName = 'YOU',
+  myAddress = null,
+  opponentAddress = null,
   record,
   onRematch,
   onShare,
@@ -167,6 +172,7 @@ export default function RevealScreen({
     const mine = {
       rank: 0,
       name: myName,
+      seed: myAddress ?? myName,
       you: true,
       pnl: myPnl,
       // Nothing is sealed once the tape is written, so the side is read off it
@@ -178,6 +184,7 @@ export default function RevealScreen({
     const theirs = {
       rank: 0,
       name: opponentName.toUpperCase(),
+      seed: opponentAddress ?? opponentName,
       you: false,
       pnl: opponentPnl,
       side: tape ? carriedSide(theirFillList) : null,
@@ -186,7 +193,7 @@ export default function RevealScreen({
     };
     const ordered = won ? [mine, theirs] : [theirs, mine];
     return ordered.map((e, i) => ({ ...e, rank: i + 1 }));
-  }, [won, myPnl, opponentPnl, myLeg, theirLeg, opponentName, myName, tape, isPlayerA]);
+  }, [won, myPnl, opponentPnl, myLeg, theirLeg, opponentName, myName, myAddress, opponentAddress, tape, isPlayerA]);
 
   /**
    * A drawn round, decided by the program's tie-break rather than by trading.

@@ -22,6 +22,8 @@ export interface RankRowProps {
   rank: number | null;
   lastRank: number;
   name: string;
+  /** The wallet, for the generated mask. Falls back to the name. */
+  seed?: string | null;
   you?: boolean;
   verified?: boolean;
   /**
@@ -111,6 +113,7 @@ export default function RankRow({
   rank,
   lastRank,
   name,
+  seed = null,
   you = false,
   verified = false,
   pnl,
@@ -130,7 +133,7 @@ export default function RankRow({
       pad={space.sm}
     >
       <Medal rank={rank} lastRank={lastRank} />
-      <MaskAvatar size={34} ring={you ? color.cyan : color.panelLight} bg={color.ink} />
+      <MaskAvatar size={34} seed={seed ?? name} ring={you ? color.cyan : color.panelLight} bg={color.ink} />
       <Stack flex={1} gap={1}>
         <Row align="center" gap={space.xs}>
           <PixelText variant="tabLabel" size={8} color={color.white} numberOfLines={1}>

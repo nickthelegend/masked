@@ -4,47 +4,74 @@ import Row from './Row';
 import Stack from './Stack';
 import PixelText from './PixelText';
 import ProgressBar from './ProgressBar';
-import PixelButton from './PixelButton';
-import { color, space } from './theme';
+import Box from './Box';
+import { QuestIcon, TrophyIcon } from './icons';
+import { color, space, radius, border, onInk } from './theme';
 
 export interface QuestRowProps {
   name: string;
-  /** Reward as displayed: "+$5", "+250 XP". */
-  reward: string;
+  /**
+   * What clearing it actually gives.
+   *
+   * These used to read `+XP` on every row, and this product has no XP — no
+   * account holds it, no screen spends it, nothing on chain records it. A
+   * reward the game cannot pay is worse than no reward column, so what is
+   * shown now is the achievement's real state.
+   */
+  reward?: string;
   /** Completion from 0 to 1. */
   value: number;
   /** Progress caption: "2 / 3". */
   progress: string;
-  /** Shows a CLAIM button once the bar is full. */
-  onClaim?: () => void;
-  claimed?: boolean;
   style?: ViewStyle | ViewStyle[];
 }
 
 /**
- * One daily quest. The bar turns gold at 100% so a claimable quest is
- * distinguishable from a running one without reading the fraction.
+ * One achievement, against the player's own on-chain record.
+ *
+ * Cleared rows carry a gold medal and a filled bar; unfinished ones stay green
+ * and say how far off they are. There is no CLAIM: nothing is held back to be
+ * collected, because the thing being counted — wins, streak, SOL taken — is
+ * already the player's and is already on chain.
  */
-export default function QuestRow({ name, reward, value, progress, onClaim, claimed = false, style }: QuestRowProps) {
+export default function QuestRow({ name, reward, value, progress, style }: QuestRowProps) {
   const done = value >= 1;
   return (
-    <PixelPanel style={style}>
+    <PixelPanel
+      accent={done ? color.yellow : undefined}
+      style={style}
+    >
       <Stack gap={space.sm}>
-        <Row justify="space-between" gap={space.sm}>
-          <PixelText variant="body" size={12} color={color.white} numberOfLines={1} style={{ flex: 1 }}>
-            {name}
+        <Row justify="space-between" gap={space.sm} align="center">
+          <Row gap={space.sm} align="center" style={{ flex: 1 }}>
+            <Box
+              width={22}
+              height={22}
+              round={radius.tile}
+              bg={done ? color.yellow : color.ink}
+              outline={color.ink}
+              outlineWidth={border.thin}
+              align="center"
+              justify="center"
+            >
+              {done ? (
+                <TrophyIcon size={14} color={onInk.yellow} />
+              ) : (
+                <QuestIcon size={13} color={color.textFaint} />
+              )}
+            </Box>
+            <PixelText variant="body" size={12} color={color.white} numberOfLines={1} style={{ flex: 1 }}>
+              {name}
+            </PixelText>
+          </Row>
+          <PixelText variant="tabLabel" size={8} color={done ? color.yellow : color.textFaint}>
+            {reward ?? (done ? 'CLEARED' : 'LOCKED')}
           </PixelText>
-          <PixelText variant="label">{reward}</PixelText>
         </Row>
         <ProgressBar value={value} fill={done ? color.yellow : color.green} accessibilityLabel={`${name}: ${progress}`} />
-        <Row justify="space-between" gap={space.sm}>
-          <PixelText variant="bodySmall" size={10}>
-            {claimed ? 'CLAIMED' : progress}
-          </PixelText>
-          {done && onClaim && !claimed ? (
-            <PixelButton label="CLAIM" tone="gold" size={8} padY={space.sm} onPress={onClaim} />
-          ) : null}
-        </Row>
+        <PixelText variant="bodySmall" size={10} color={done ? color.textDim : color.textFaint}>
+          {progress}
+        </PixelText>
       </Stack>
     </PixelPanel>
   );

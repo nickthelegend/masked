@@ -27,9 +27,9 @@ export interface MatchCardProps {
   /** Equity curves. Drawn on one shared scale so the winner is always on top. */
   winnerSeries: number[];
   loserSeries: number[];
-  onCopy?: () => void;
-  onFade?: () => void;
   onChallenge?: () => void;
+  /** Opens this duel's public tape. Omitted, the button is not drawn. */
+  onReadTape?: () => void;
   style?: ViewStyle | ViewStyle[];
 }
 
@@ -54,9 +54,8 @@ export default function MatchCard({
   loserPnl,
   winnerSeries,
   loserSeries,
-  onCopy,
-  onFade,
   onChallenge,
+  onReadTape,
   style,
 }: MatchCardProps) {
   return (
@@ -75,7 +74,7 @@ export default function MatchCard({
 
       <Row gap={space.sm} pad={space.md} align="flex-start">
         <Stack width={SIDE_WIDTH} gap={space.xs}>
-          <MaskAvatar size={58} ring={color.yellow} glyphSize={20} />
+          <MaskAvatar size={58} seed={winner} ring={color.yellow} glyphSize={20} />
           <PixelText variant="bodySmall" numberOfLines={1} color={color.white}>
             {winner}
           </PixelText>
@@ -97,7 +96,7 @@ export default function MatchCard({
         </Box>
 
         <Stack width={SIDE_WIDTH} gap={space.xs} align="flex-end">
-          <MaskAvatar size={58} ring={color.panelLight} glyphSize={20} />
+          <MaskAvatar size={58} seed={loser} ring={color.panelLight} glyphSize={20} />
           <PixelText variant="bodySmall" numberOfLines={1}>
             {loser}
           </PixelText>
@@ -107,10 +106,19 @@ export default function MatchCard({
         </Stack>
       </Row>
 
+      {/* Two actions, both of which do something.
+          This row used to be COPY / FADE / CHALLENGE, and `onCopy` and
+          `onFade` were never passed by the feed — so two of the three buttons
+          were inert on every card. They also described moves the game does
+          not have: there is no position to copy from a settled duel and no
+          side to take against one, which is exactly why FADE WINNER was
+          removed from the reveal. READ TAPE opens the public record of this
+          duel; DUEL THIS TOKEN opens a new one on the same market. */}
       <Row gap={space.sm} padX={space.sm} style={{ paddingBottom: space.md }}>
-        <PixelButton flex={1} tone="primary" label="COPY" size={8} onPress={onCopy} />
-        <PixelButton flex={1} tone="danger" label="FADE" size={8} onPress={onFade} />
-        <PixelButton flex={1.4} tone="gold" label="CHALLENGE" size={8} onPress={onChallenge} />
+        {onReadTape ? (
+          <PixelButton flex={1} tone="info" label="READ TAPE" size={8} onPress={onReadTape} />
+        ) : null}
+        <PixelButton flex={1.4} tone="gold" label="DUEL THIS TOKEN" size={8} onPress={onChallenge} />
       </Row>
     </PixelPanel>
   );

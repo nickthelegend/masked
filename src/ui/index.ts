@@ -19,6 +19,7 @@ export { default as FogOverlay, type FogOverlayProps } from './FogOverlay';
 
 /* composites */
 export { default as MaskAvatar, type MaskAvatarProps } from './MaskAvatar';
+export { maskGrid, faceTone, FACE_TONES } from './maskFace';
 export { default as StatTile, type StatTileProps } from './StatTile';
 export { default as Orb, type OrbProps } from './Orb';
 export { orbStateForPnl, type OrbState } from './orbState';

@@ -16,6 +16,8 @@ import ModesScreen from './ModesScreen';
 import QuestsScreen from './QuestsScreen';
 import { useTickerItems } from '../chain/useTickerItems';
 import { usePlayerStats } from '../chain/usePlayerStats';
+import { searchMarkets } from '../chain/markets';
+import { useRouter } from 'expo-router';
 import { formatSolPrice } from '../chain/units';
 import { useDuel } from './useDuel';
 import { RAKE, TROPHIES_PER_WIN } from './data';
@@ -55,6 +57,29 @@ export default function MaskedApp() {
     // duel with two minutes left should drop straight into the round.
     if (duel.duration - duel.secondsLeft <= 20) setGreeted(duel.matchAddress);
   }, [duel.phase, duel.matchAddress, duel.duration, duel.secondsLeft]);
+
+  const router = useRouter();
+
+  /**
+   * Open a duel on the token a settled tape was fought over.
+   *
+   * The tape stores a mint and a ticker, not a priceable market, so the mint
+   * is resolved through the same search the picker uses before the lobby is
+   * handed it. If the token can no longer be priced the lobby simply opens on
+   * whatever was already selected — better than carrying a market forward that
+   * `create_match` would reject.
+   */
+  const duelToken = (mint: string) => {
+    setTab('duel');
+    void (async () => {
+      try {
+        const [found] = await searchMarkets(mint);
+        if (found && found.mint === mint) duel.selectMarket(found);
+      } catch {
+        /* the picker is still there; the player can choose by hand */
+      }
+    })();
+  };
 
   const toMatchmaking = () => {
     setTab('duel');
@@ -113,7 +138,9 @@ export default function MaskedApp() {
           {greeted && duel.phase === 'live' && greeted === duel.matchAddress ? (
             <MatchFound
               me={duel.myAddress ? `${duel.myAddress.slice(0, 6)}…` : 'YOU'}
+              meSeed={duel.myAddress}
               them={duel.opponentName}
+              themSeed={duel.opponentAddress}
               myToken={
                 duel.marketMint
                   ? { mint: duel.marketMint, symbol: duel.market, uri: duel.marketImageUri }
@@ -130,7 +157,12 @@ export default function MaskedApp() {
           ) : null}
 
           <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
-            {tab === 'feed' ? <FeedScreen onChallenge={toMatchmaking} /> : null}
+            {tab === 'feed' ? (
+              <FeedScreen
+                onChallenge={(mint) => duelToken(mint)}
+                onReadTape={(match) => router.push(`/tape/${match}`)}
+              />
+            ) : null}
             {tab === 'board' ? <LeaderboardScreen /> : null}
             {tab === 'modes' ? <ModesScreen wins={trophies} /> : null}
             {tab === 'quests' ? <QuestsScreen /> : null}
@@ -203,6 +235,8 @@ export default function MaskedApp() {
                 }
                 teeEnforced={duel.teeEnforced}
                 myName={duel.myAddress ? `${duel.myAddress.slice(0, 6)}…` : 'YOU'}
+                myAddress={duel.myAddress}
+                opponentAddress={duel.opponentAddress}
                 mySide={duel.mySide}
                 opponentMarket={duel.opponentMarket}
                 opponentMarketMint={duel.opponentMarketMint}
@@ -220,6 +254,8 @@ export default function MaskedApp() {
                 tape={duel.tape}
                 isPlayerA={duel.isPlayerA}
                 myName={duel.myAddress ? `${duel.myAddress.slice(0, 6)}…` : 'YOU'}
+                myAddress={duel.myAddress}
+                opponentAddress={duel.opponentAddress}
                 entryLamports={duel.entryLamports}
                 startTs={duel.startTs}
                 duration={duel.duration}

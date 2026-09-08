@@ -39,10 +39,14 @@ export function useQuests(owner: PublicKey | null) {
     });
 
     return [
-      mk('Settle your first duel', '+XP', played, 1),
-      mk('Win 3 fog duels', '+XP', wins, 3),
-      mk('Reach a 2-win streak', '+XP', streak, 2),
-      mk('Take 1◎ from the fog', '+XP', takenSol, 1, '◎'),
+      // No reward strings. Every row used to read `+XP`, and this product has
+      // no XP: nothing holds it, spends it or records it. The achievement is
+      // the achievement, and `QuestRow` prints CLEARED or LOCKED from the
+      // progress itself.
+      mk('Settle your first duel', '', played, 1),
+      mk('Win 3 fog duels', '', wins, 3),
+      mk('Reach a 2-win streak', '', streak, 2),
+      mk('Take 1◎ from the fog', '', takenSol, 1, '◎'),
     ];
   }, [board, owner]);
 

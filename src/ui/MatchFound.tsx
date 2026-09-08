@@ -15,6 +15,9 @@ export interface MatchFoundProps {
   me: string;
   /** Shortened wallet of the other side. */
   them: string;
+  /** Full wallets, for the generated masks. */
+  meSeed?: string | null;
+  themSeed?: string | null;
   /** Each side's ticker. Both are public — they live in the match account. */
   myToken?: { mint: string; symbol: string; uri?: string | null } | null;
   theirToken?: { mint: string; symbol: string; uri?: string | null } | null;
@@ -37,6 +40,8 @@ export interface MatchFoundProps {
 export default function MatchFound({
   me,
   them,
+  meSeed = null,
+  themSeed = null,
   myToken = null,
   theirToken = null,
   duration,
@@ -103,7 +108,7 @@ export default function MatchFound({
           </Row>
 
           <Row align="center" gap={space.md} width="100%">
-            <VersusCard name={me} accent={color.cyan} you />
+            <VersusCard name={me} seed={meSeed ?? me} accent={color.cyan} you />
             <Box
               width={40}
               height={40}
@@ -118,7 +123,7 @@ export default function MatchFound({
                 VS
               </PixelText>
             </Box>
-            <VersusCard name={them} accent={color.magenta} />
+            <VersusCard name={them} seed={themSeed ?? them} accent={color.magenta} />
           </Row>
 
           {/* Both tickers, side by side. Each leg is on chain the moment it is

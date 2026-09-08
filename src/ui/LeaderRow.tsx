@@ -46,7 +46,7 @@ export default function LeaderRow({
       <PixelText variant="label" color={color.yellow} align="center" style={{ width: 34 }}>
         #{rank}
       </PixelText>
-      <MaskAvatar size={30} ring={ring} glyphSize={11} />
+      <MaskAvatar size={30} seed={name} ring={ring} glyphSize={11} />
       <PixelText variant="body" size={12} numberOfLines={1} color={color.white} style={{ flex: 1 }}>
         {name}
       </PixelText>

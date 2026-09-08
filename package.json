@@ -40,7 +40,8 @@
     "check:guards": "tsx scripts/check-guards.mts",
     "check:session": "tsx scripts/check-session.mts",
     "check:short": "tsx scripts/check-short.mts",
-    "check:legs": "tsx scripts/check-legs.mts"
+    "check:legs": "tsx scripts/check-legs.mts",
+    "check:er": "tsx scripts/check-er.mts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",

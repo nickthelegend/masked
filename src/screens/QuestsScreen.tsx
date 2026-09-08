@@ -1,11 +1,17 @@
 import { useWallet } from '@solana/wallet-adapter-react';
-import { PixelText, QuestRow, Stack, color, space } from '../ui';
+import { Badge, PixelText, QuestRow, Row, Stack, color, space } from '../ui';
 import { useQuests } from '../chain/useQuests';
 
 /**
- * Daily quests, derived from the player's on-chain record. Without a wallet
+ * Achievements, derived from the player's on-chain record. Without a wallet
  * there is no record to derive from, and the screen says so rather than
  * showing someone else's numbers or invented ones.
+ *
+ * Not "daily". Every number behind these is a lifetime counter on the player's
+ * `PlayerStats` account — wins, best streak, total taken — and none of them
+ * resets at midnight. This is the same mistake the leaderboard made with a
+ * "24H" heading over all-time totals, and it is wrong for the same reason:
+ * the label described a window the data does not have.
  */
 export default function QuestsScreen() {
   const { publicKey } = useWallet();
@@ -13,7 +19,17 @@ export default function QuestsScreen() {
 
   return (
     <Stack pad={space.md} gap={space.md}>
-      <PixelText variant="h2">DAILY QUESTS</PixelText>
+      <Row justify="space-between" align="center">
+        <PixelText variant="h2">ACHIEVEMENTS</PixelText>
+        <Badge
+          label={`${quests.filter((q) => q.done).length}/${quests.length} CLEARED`}
+          tone={quests.every((q) => q.done) ? 'gold' : 'quiet'}
+          variant="tabLabel"
+        />
+      </Row>
+      <PixelText variant="bodySmall" size={10} color={color.textFaint}>
+        ALL TIME · read from your on-chain record
+      </PixelText>
 
       {!connected ? (
         <PixelText variant="bodySmall" color={color.textFaint}>
@@ -23,7 +39,7 @@ export default function QuestsScreen() {
 
       <Stack gap={space.md}>
         {quests.map((q) => (
-          <QuestRow key={q.name} name={q.name} reward={q.reward} value={q.value} progress={q.progress} />
+          <QuestRow key={q.name} name={q.name} value={q.value} progress={q.progress} />
         ))}
       </Stack>
     </Stack>

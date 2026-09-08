@@ -147,7 +147,6 @@ function Section({ title, note, children }: { title: string; note?: string; chil
 export default function UIGallery() {
   const [tab, setTab] = useState('feed');
   const [stake, setStake] = useState(5);
-  const [claimed, setClaimed] = useState(false);
   const [curtain, setCurtain] = useState(false);
   const [galleryKind, setGalleryKind] = useState<MarketKindKey>('meme');
   const [odo, setOdo] = useState(4.12);
@@ -371,14 +370,8 @@ export default function UIGallery() {
             <ModeTile name="CHICKEN" description="First seller pays a penalty to holders." status="SOON" />
           </Row>
           <QuestRow name="Win 3 fog duels" reward="+$5" value={0.66} progress="2 / 3" />
-          <QuestRow
-            name="Rematch the same wallet"
-            reward="+$1"
-            value={1}
-            progress="1 / 1"
-            claimed={claimed}
-            onClaim={() => setClaimed(true)}
-          />
+          <QuestRow name="Rematch the same wallet" value={1} progress="1 / 1" />
+          <QuestRow name="Take 1◎ from the fog" value={0.42} progress="0.42 / 1◎" />
         </Stack>
       </Section>
 
