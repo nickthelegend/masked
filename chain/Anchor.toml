@@ -8,6 +8,18 @@ skip-lint = false
 [programs.localnet]
 fogduel = "3K3v1bp6uUGVdzRfZmkwZGK82BHgCJxAroXJ3ZRs1Rj1"
 
+# Same program ID on devnet: the deploy keypair in target/deploy is the
+# authority for it, so a funded `anchor deploy --provider.cluster devnet`
+# publishes this exact address rather than minting a new one — which keeps
+# src/chain/config.ts's FOGDUEL_PROGRAM_ID correct on both clusters and makes
+# task 4.3 a no-op instead of an edit.
+#
+# `[provider]` deliberately stays on the local validator so the everyday
+# `anchor test` and the five-layer stack keep working untouched; devnet is
+# selected per-command with `--provider.cluster devnet`.
+[programs.devnet]
+fogduel = "3K3v1bp6uUGVdzRfZmkwZGK82BHgCJxAroXJ3ZRs1Rj1"
+
 [registry]
 url = "https://api.apr.dev"
 
