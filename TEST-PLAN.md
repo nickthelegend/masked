@@ -714,3 +714,26 @@ The app said CANNOT REACH THE CLUSTER while the validator answered every
 command-line probe in 18ms. `npm run check:build` now asserts the export
 contains the active cluster URLs and the deployed program id, and that no
 scratch-build port leaked in.
+
+### Phase 4 — full re-sweep after the section V fixes
+
+Every route re-driven with console, warning, unhandled-rejection and
+resource-error capture armed from load, after the three fixes above.
+
+| Surface | Console | Resource | Result |
+|---|---|---|---|
+| `/` landing | 0 | 0 | **P** — 13/13 logos |
+| `/proof` | 0 | 0 | **P** — gate YES, attested NO, 27 on-chain tests, lifecycle and cost panels |
+| `/health` | 0 | 0 | **P** — ALL SYSTEMS UP |
+| `/stats` | 0 | 0 | **P** — rake agrees to the lamport |
+| `/tape/<settled>` | 0 | 0 | **P** — after the fix below |
+| `/tape/<invalid>` | 0 | 0 | **P** — "NOTHING TO READ · That is not a match address." |
+| `/spectate/<settled>` | 0 | 0 | **P** — no live PnL leaked |
+| `/no-such-page` | 0 | 0 | **P** — 404 listing all 8 routes, including the new `/stats` |
+| `/play` — FEED, RANK, MODES, QUEST, DUEL | 0 | 0 | **P** — 19/19 logos on DUEL |
+
+**One more found and fixed during the sweep.** `/tape` labelled its pill `POT`
+while handing it `potPaid` — the payout wearing the pot's name, 0.196 rounding
+to 0.20 and reading as though no rake had been taken. It shows both now:
+`POT 0.20◎ · TAKES 0.196◎`, with `rake 0.004◎` on the line below, and the two
+add up.

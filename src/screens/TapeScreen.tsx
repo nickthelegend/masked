@@ -21,6 +21,7 @@ import { useHeadToHead } from '../chain/useHeadToHead';
 import { fillTokens, fillValue, marketMove, replayEquity, type TapeFill } from '../chain/tape';
 import { formatSolPrice } from '../chain/units';
 import { short } from '../chain/useTapes';
+import { RAKE } from './data';
 
 export interface TapeScreenProps {
   /** Match address from the URL. */
@@ -162,7 +163,15 @@ export default function TapeScreen({ address }: TapeScreenProps) {
               {sol(data.entry / 1e9)} a side · {duration}s
             </PixelText>
           </Stack>
-          <PotPill amount={tape.potPaid / 1e9} tone={color.yellow} />
+          {/* The pot, and what it paid. `potPaid` alone under a POT label is
+              the payout wearing the pot's name — 0.196 rounding to 0.20 and
+              reading as though no rake had been taken. The tape records both,
+              so both are shown. */}
+          <PotPill
+            amount={(tape.potPaid + tape.rake) / 1e9}
+            rake={RAKE}
+            tone={color.yellow}
+          />
         </Row>
 
         <PixelPanel flat bg={color.chartBg} pad={space.sm}>
