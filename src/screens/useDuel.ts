@@ -13,6 +13,7 @@
  * commit back to L1, PnL is compared, and the winner takes the pot less rake.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Platform } from 'react-native';
 import { LAMPORTS_PER_SOL, PublicKey } from '@solana/web3.js';
 import { useWallet } from '@solana/wallet-adapter-react';
 import type { AnchorWallet } from '@solana/wallet-adapter-react';
@@ -27,11 +28,12 @@ import { formatSolPrice, MAX_OPEN_AGE_SECS, VALUE_DIV } from '../chain/units';
 import type { TapeState } from '../chain/tape';
 import { buyImpact, maxShortBase, quoteToBuyBase, sellImpact } from '../chain/book';
 import { useHeadToHead, describeRecord } from '../chain/useHeadToHead';
-import { fetchMemeMarkets, livePxFor, type TradableMarket } from '../chain/markets';
+import { fetchMemeMarkets, livePxFor, searchMarkets, type TradableMarket } from '../chain/markets';
 import { mintSession, type ActiveSession } from '../chain/session';
 import { ACTIVE_CLUSTER } from '../chain/config';
 import { DEMO_MINT, marketLabel } from '../chain/market';
 import { OPPONENT_PENDING, RAKE, ROUND_SECONDS } from './data';
+import { readPrefs, writePrefs } from '../chain/prefs';
 
 export type DuelPhase = 'lobby' | 'searching' | 'live' | 'reveal';
 
@@ -169,6 +171,8 @@ export interface Duel {
   /** The market the next duel will be opened on, chosen in the lobby. */
   selectedMarket: TradableMarket | null;
   selectMarket: (m: TradableMarket) => void;
+  /** Select a market by mint — used by the `?market=` deep link. */
+  openMarketByMint: (mint: string) => void;
   /** Whether this cluster actually enforces the ACL at read time. */
   teeEnforced: boolean;
   /**
@@ -308,9 +312,42 @@ export function useDuel(): Duel {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meKey]);
 
+  /** Seeded from what this browser remembers — see chain/prefs.ts. */
+  const prefs = useMemo(() => readPrefs(), []);
   const [selectedMarket, setSelectedMarket] = useState<TradableMarket | null>(null);
+
+  /**
+   * Restore a market from `?market=<mint>` or from what this browser
+   * remembered, whichever is present — the deep link wins.
+   *
+   * Resolved through the picker's own search rather than reconstructed from
+   * the mint, because a market needs a *live price* to open a match and a
+   * remembered one is by definition stale. If it can no longer be priced the
+   * lobby simply opens unselected, which is the honest outcome: better than
+   * carrying forward a market `create_match` would reject.
+   */
+  const [deepLinkMint, setDeepLinkMint] = useState<string | null>(null);
+  const restoredMint = deepLinkMint ?? prefs.marketMint ?? null;
+  const restored = useRef(false);
+  useEffect(() => {
+    if (restored.current || !restoredMint) return;
+    restored.current = true;
+    let alive = true;
+    void (async () => {
+      try {
+        const [found] = await searchMarkets(restoredMint);
+        if (alive && found && found.mint === restoredMint) setSelectedMarket(found);
+      } catch {
+        /* the picker is still there; the player can choose by hand */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [restoredMint]);
+
   const [phase, setPhase] = useState<DuelPhase>('lobby');
-  const [stake, setStake] = useState(0.1); // SOL
+  const [stake, setStake] = useState(prefs.stake ?? 0.1); // SOL
   const [fillSize, setFillSize] = useState(DEFAULT_FILL_FRACTION);
   /**
    * Who has blown up. The one thing about a live round that is not fogged —
@@ -357,7 +394,17 @@ export function useDuel(): Duel {
    * stores it and refuses settlement before `start_ts + duration`. Joining
    * somebody else's match takes *their* duration; this only governs opening.
    */
-  const [openDuration, setOpenDuration] = useState(ROUND_SECONDS);
+  const [openDuration, setOpenDuration] = useState(prefs.duration ?? ROUND_SECONDS);
+  /**
+   * Remember the three things a player would otherwise re-pick every visit.
+   *
+   * Written on change rather than on unmount: a tab closed mid-round never
+   * runs a cleanup, which is exactly the session whose choices were worth
+   * keeping.
+   */
+  useEffect(() => {
+    writePrefs({ stake, duration: openDuration, marketMint: selectedMarket?.mint });
+  }, [stake, openDuration, selectedMarket?.mint]);
 
   const settledRef = useRef(false);
   /** Retries spent on the current settlement. Reset when a round begins. */
@@ -956,6 +1003,30 @@ export function useDuel(): Duel {
    * something that did not occur; a player who mis-clicks should be told
    * nothing happened, not congratulated for it.
    */
+  /**
+   * Warn before a live round is navigated away from or the tab closed.
+   *
+   * A round in progress holds real lamports in escrow and settles at the
+   * buzzer whether or not anyone is watching, so leaving is not destructive —
+   * but it is almost always accidental, and the player loses the ability to
+   * trade the rest of their own round. The browser decides the wording; all a
+   * page can do is ask for the prompt.
+   *
+   * Only while genuinely live: attaching this in the lobby would turn every
+   * ordinary navigation into a dialog, which trains people to dismiss it.
+   */
+  useEffect(() => {
+    if (phase !== 'live') return undefined;
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return undefined;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      // Legacy browsers need a returnValue set; modern ones ignore the string.
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [phase]);
+
   const guard = useCallback(
     async (label: string, fn: () => Promise<GuardOutcome>) => {
       if (!client || !wallet.publicKey) {
@@ -1566,6 +1637,8 @@ export function useDuel(): Duel {
     duration: match?.duration ?? 0,
     selectedMarket,
     selectMarket: setSelectedMarket,
+    /** Hand a mint from `?market=<mint>`; resolved and selected once. */
+    openMarketByMint: setDeepLinkMint,
     liquidated,
     teeEnforced: ACTIVE_CLUSTER.tee,
     error,

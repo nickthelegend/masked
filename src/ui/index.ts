@@ -30,6 +30,7 @@ export { default as TabBar, type TabBarProps, type TabSpec, TABS } from './TabBa
 export { default as PocketShell, type PocketShellProps } from './PocketShell';
 export { default as BeachBackdrop, type BeachBackdropProps } from './BeachBackdrop';
 export { default as PnLReadout, type PnLReadoutProps } from './PnLReadout';
+export { default as MarkTicker, type MarkTickerProps } from './MarkTicker';
 export { default as PotPill, type PotPillProps } from './PotPill';
 export { default as RoundClock, type RoundClockProps } from './RoundClock';
 export { default as SizePicker, SIZES, type SizePickerProps } from './SizePicker';
@@ -52,6 +53,7 @@ export { default as ProofPanel, type ProofPanelProps, type ProofRow } from './Pr
 export { ToastProvider, useToast, type Toast, type ToastTone } from './Toast';
 export { default as ErrorBoundary } from './ErrorBoundary';
 export { default as RevealCurtain, type RevealCurtainProps } from './RevealCurtain';
+export { default as WinBurst, type WinBurstProps } from './WinBurst';
 export { default as PnLOdometer, type PnLOdometerProps } from './PnLOdometer';
 export { useReducedMotion, DURATION, FRAME_MS } from './motion';
 export { default as TxFeed, type TxFeedProps, type TxFeedItem } from './TxFeed';

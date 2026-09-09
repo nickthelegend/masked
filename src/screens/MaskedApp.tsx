@@ -24,7 +24,12 @@ import { RAKE, TROPHIES_PER_WIN } from './data';
 
 const SCREEN_HEIGHT = 700;
 
-export default function MaskedApp() {
+export interface MaskedAppProps {
+  /** Mint from `?market=<mint>`, selected once on mount. */
+  initialMarketMint?: string;
+}
+
+export default function MaskedApp({ initialMarketMint }: MaskedAppProps = {}) {
   const [tab, setTab] = useState('duel');
   const duel = useDuel();
   const toast = useToast();
@@ -59,6 +64,12 @@ export default function MaskedApp() {
   }, [duel.phase, duel.matchAddress, duel.duration, duel.secondsLeft]);
 
   const router = useRouter();
+
+  // Hand the deep link's mint to the duel once. `openMarketByMint` resolves it
+  // through the picker's own search and selects it if it is still priceable.
+  useEffect(() => {
+    if (initialMarketMint) duel.openMarketByMint(initialMarketMint);
+  }, [initialMarketMint, duel.openMarketByMint]);
 
   /**
    * Open a duel on the token a settled tape was fought over.

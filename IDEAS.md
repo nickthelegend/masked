@@ -298,3 +298,88 @@ Verified in a live two-session duel: quoted 1.56% at MAX and 0.39% at a quarter,
 and the chain charged exactly 1.56% and 0.39%. On the tape, a buy of 4,994,030
 closed at half to exactly 2,497,015 and then to exactly 2,497,015 again —
 summing to what was bought, with nothing left over.
+
+### #100 — Invariant tests · built, verified
+
+`npm run check:invariants`, registered in `npm run check`. The properties that
+must hold of the money however anyone traded, asserted over every settled tape
+on the cluster: pot conservation (`pot_paid + rake == 2 × entry`), the rake
+exact to the lamport against the program's own `RAKE_BPS/BPS_DENOM` floor
+division, the winner matching the program's `pnl_a >= pnl_b` comparison,
+distinct players, fill lists inside `MAX_FILLS`, a liquidated side never
+out-scoring a solvent one, and settlement never dated before its round opened.
+**904 assertions over 89 real tapes; effective rake 2.0000% against a declared
+2.0000%.**
+
+The first draft reported 12 correct settlements as the program paying the
+wrong wallet. It compared Anchor `BN`s with `>=`, which coerces to strings, so
+`"-24" >= "-63"` is character-wise false. The comparison goes through `BigInt`
+now, with the reason recorded beside it — a test that cries wolf about
+settlement is worse than no test.
+
+### #99 — Fuzz tests on the book maths · built, verified
+
+`npm run check:fuzz`. `check:tape` proves the previewer against prices that
+really happened, which only covers sizes somebody traded; this covers the rest.
+**48,009 assertions over 4,000 seeded random books**, entries 0.05–1◎ and marks
+from a memecoin at 3e-11 to an xStock at 755 ◎/token: impact monotone and
+bounded, buys never below the mark and sells never above it, `quoteToBuyBase`
+inverting to within its deliberate one-lamport round-up, `maxShortNotional`
+tight against the margin cap and never over it, and no NaN on degenerate input.
+
+Its first draft failed too, and was also wrong: it demanded exact inversion
+from a function that rounds *up* on purpose, because rounding down re-creates
+the dust it was written to remove.
+
+### #43 / #44 / #21 — `/stats` · built, verified
+
+Protocol-wide numbers summed from chain with no analytics service behind them:
+duels settled, paid to winners, players, fills, open and live counts, biggest
+pot, and per-market history (duels, volume, biggest pot) with a bar per market.
+
+The rake is deliberately shown **twice from independent sources** — summed from
+every tape, and read off the treasury account the program pays into. That
+immediately earned itself: the two disagreed by 953,520 lamports, which is
+exactly the treasury's rent-exempt floor. `settle_match` refuses to pay below
+it, so those lamports are not rake and never can be. Subtracted and labelled,
+the two reads now agree to the lamport.
+
+### #57 — Round length chosen at open time · built, verified
+
+60s / 5m / 15m, each inside the program's own `MIN_DURATION..MAX_DURATION`.
+This was `EXPO_PUBLIC_ROUND_SECONDS`, baked at build time, which meant the
+product had one round length and a recording had another. Verified on chain:
+picking 1 MIN wrote `duration=60s` into the match account.
+
+Verifying it there rather than in the UI caught a real bug — `startMatch`
+omitted `openDuration` from its dependencies and captured the first render's
+value, opening every match at 300s however many times the picker was pressed.
+The same stale-closure defect that once joined a WOFI match while the lobby
+showed SOL.
+
+### #59 / #60 — Honest money copy · built, verified
+
+An insufficient balance now names the largest stake the wallet can actually
+afford, instead of leaving the player to subtract an invisible headroom figure.
+The pot pill prints what the winner *takes* beside the pot, because 0.20 on the
+pill and 0.196 in the wallet reads as a bug at the exact moment money moves;
+spectate's hardcoded `* 0.98` uses the same constant now.
+
+### #31 / #50 — Remembered choices and market deep links · built, verified
+
+`localStorage` remembers stake, round length and last market — validated on
+read, so a stale or hand-edited entry cannot put the lobby into a state
+`create_match` would refuse. `/play?market=<mint>` opens the lobby on that
+token, resolved through the picker's own search so it must still be priceable.
+Verified: deep-linked `8Vht7RWE…` selected WWR, and a reload with **no** query
+string still opened on WWR.
+
+### #52 / #56 / #25 / #46 — Safety, accessibility, motion · built, verified
+
+`beforeunload` asks before a live round is closed, and only while genuinely
+live — verified prevented mid-round. The clock and PnL are `aria-live`
+regions, with the clock announcing minutes and the final ten seconds rather
+than reciting every tick. The mark flashes the direction it last moved, on the
+*change* not the level — verified rendering a green caret after the crank
+moved it up. A short pixel burst on a win, once, `pointerEvents: none`, and
+skipped entirely under reduced motion.

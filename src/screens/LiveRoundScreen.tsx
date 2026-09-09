@@ -12,6 +12,7 @@ import {
   PotentialEarnings,
   RankRow,
   SizePicker,
+  MarkTicker,
   PixelPanel,
   PixelText,
   PnLOdometer,
@@ -243,13 +244,13 @@ export default function LiveRoundScreen({
         <Stack gap={space.xs}>
           <ArenaChart series={equity} height={200} elapsed={elapsed} />
           <Row justify="space-between" padX={space.sm} padY={space.xs}>
-            <Row gap={space.xs} align="center">
-              <PixelText variant="bodySmall">MARK {priceLabel ?? price}</PixelText>
-              <PixelText variant="bodySmall" size={9} color={color.textFaint}>
-                {marketSource}
-              </PixelText>
-            </Row>
-            <Row gap={space.xs}>
+            <MarkTicker label={String(priceLabel ?? price)} value={price} source={marketSource} />
+            {/* The other figure that changes with no interaction behind it. */}
+            <Row
+              gap={space.xs}
+              accessibilityLiveRegion="polite"
+              accessibilityLabel={`Your P and L, ${myPnl >= 0 ? 'up' : 'down'} ${Math.abs(myPnl).toFixed(2)} percent`}
+            >
               <PixelText variant="bodySmall" color={color.textDim}>
                 YOUR PNL
               </PixelText>

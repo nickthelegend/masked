@@ -4,6 +4,7 @@ import {
   Badge,
   PixelButton,
   ResultBoard,
+  WinBurst,
   PixelPanel,
   PixelText,
   RevealCurtain,
@@ -205,6 +206,8 @@ export default function RevealScreen({
 
   return (
     <View>
+    {/* Once, on a win, after the curtain has torn. */}
+    <WinBurst active={won && unsealed} />
     <RevealCurtain
       active
       label={won ? 'YOU TAKE THE POT' : 'POT LOST'}

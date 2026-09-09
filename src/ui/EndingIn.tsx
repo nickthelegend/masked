@@ -9,6 +9,20 @@ import { FRAME_MS, USE_NATIVE_DRIVER, useReducedMotion } from './motion';
 
 const HURRY = 15;
 
+/**
+ * What a screen reader should say, as distinct from what is drawn.
+ *
+ * The digits change every second and announcing each one would drown out
+ * everything else on the round. Minutes are announced as they turn, and the
+ * final ten seconds individually, which is where the number starts to matter.
+ */
+function announce(total: number): string {
+  const s = Math.max(0, Math.floor(total));
+  if (s <= 10) return `${s} seconds left`;
+  if (s % 60 === 0) return `${s / 60} minute${s === 60 ? '' : 's'} left`;
+  return '';
+}
+
 /** `mm:ss` as `00:00:14` — hours are impossible, a round is capped at an hour. */
 function clock(total: number): string {
   const s = Math.max(0, Math.floor(total));
@@ -56,8 +70,18 @@ export default function EndingIn({ seconds, label = 'ENDING IN' }: EndingInProps
           {label}
         </PixelText>
       </Row>
+      {/* Announced, but not every second.
+          A screen reader reciting a ticking clock is unusable, so the live
+          region carries a coarse announcement — the minute, and then each of
+          the last ten seconds — while the visible text keeps ticking. */}
       <Animated.View style={{ transform: [{ scale: beat }] }}>
-        <PixelText variant="statBig" size={22} color={hurry ? color.red : color.yellow}>
+        <PixelText
+          variant="statBig"
+          size={22}
+          color={hurry ? color.red : color.yellow}
+          accessibilityLiveRegion="polite"
+          accessibilityLabel={announce(seconds)}
+        >
           {clock(seconds)}
         </PixelText>
       </Animated.View>
