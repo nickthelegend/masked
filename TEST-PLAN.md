@@ -401,7 +401,7 @@ standings board, a result board, and a tier ladder. Every one of them has to
 hold the fog rule as well as look right, which is where most of these items
 actually bite.
 
-| # | What | Correct means | |
+| # | What | Correct means | Result |
 |---|---|---|---|
 | T1 | HUD balance | Reads the wallet's real SOL to 2dp and moves when a fill settles | **P** |
 | T2 | HUD trophies | Equals `wins` on this wallet's on-chain player account, not a local tally | **P** |
@@ -657,25 +657,60 @@ Nine features landed from `IDEAS.md` after the last full pass. Each gets an
 item here before it is executed, with the specific result that counts as
 correct — not "renders".
 
-| # | What | Correct means |
-|---|---|---|
-| V1 | `/stats` loads with no wallet | Every figure present and non-negative; `DUELS SETTLED` equals the tape count `check:invariants` reports |
-| V2 | `/stats` rake, two sources | `TREASURY, LESS RENT` equals `SUMMED FROM TAPES` to the lamport, and the badge reads `AGREES TO THE LAMPORT` |
-| V3 | `/stats` rent floor named | The note states what the treasury holds and how much is locked as rent; the locked figure is the account's real rent-exempt minimum |
-| V4 | `/stats` per-market table | One row per distinct leg mint, busiest first, each with duels / volume / biggest pot and a bar proportional to volume |
-| V5 | `/stats` cluster unreachable | Says the numbers are unknown, not zero |
-| V6 | Round length picker | 1 MIN / 5 MIN / 15 MIN; the selected one is highlighted and its note changes |
-| V7 | Round length reaches the chain | Opening after picking 1 MIN writes `duration=60` into the match account — checked on chain, not in the UI |
-| V8 | Insufficient balance | Names the largest **offered** stake the wallet can afford, or says to fund it when none is affordable |
-| V9 | Pot pill | Prints the pot *and* what the winner takes; the second equals pot × (1 − RAKE) |
-| V10 | Remembered choices | After a reload with no query string, stake, round length and market are the ones last used |
-| V11 | Bad stored prefs | A hand-edited `masked.prefs.v1` with a NaN stake or a 9999s duration is ignored, not applied |
-| V12 | `?market=<mint>` | Lobby opens on that mint; an unpriceable mint leaves it unselected rather than erroring |
-| V13 | `beforeunload`, live | A cancelable `beforeunload` is prevented while a round is live |
-| V14 | `beforeunload`, not live | The same event is **not** prevented in the lobby or on the reveal |
-| V15 | `aria-live` regions | Exactly two polite regions on the live round — the clock and the PnL — with the PnL label naming direction and magnitude |
-| V16 | Clock announcement | The clock's label is a minute boundary or one of the last ten seconds, and empty otherwise |
-| V17 | Mark direction flash | After the crank moves the mark, a caret renders beside it filled green for up and red for down; no caret before the first change |
-| V18 | Win burst | Fires once on a win after the curtain tears, does not intercept pointer events, absent on a loss |
-| V19 | `check:invariants` | Passes; pot conserved and rake exact over every settled tape |
-| V20 | `check:fuzz` | Passes; no NaN and no property violated across 4,000 randomised books |
+| # | What | Correct means | Result |
+|---|---|---|---|
+| V1 | `/stats` loads with no wallet | Every figure present and non-negative; `DUELS SETTLED` equals the tape count `check:invariants` reports | **P** (after fix — see below) |
+| V2 | `/stats` rake, two sources | `TREASURY, LESS RENT` equals `SUMMED FROM TAPES` to the lamport, and the badge reads `AGREES TO THE LAMPORT` | **P** |
+| V3 | `/stats` rent floor named | The note states what the treasury holds and how much is locked as rent; the locked figure is the account's real rent-exempt minimum | **P** |
+| V4 | `/stats` per-market table | One row per distinct leg mint, busiest first, each with duels / volume / biggest pot and a bar proportional to volume | **P** |
+| V5 | `/stats` cluster unreachable | Says the numbers are unknown, not zero | **P** |
+| V6 | Round length picker | 1 MIN / 5 MIN / 15 MIN; the selected one is highlighted and its note changes | **P** |
+| V7 | Round length reaches the chain | Opening after picking 1 MIN writes `duration=60` into the match account — checked on chain, not in the UI | **P** |
+| V8 | Insufficient balance | Names the largest **offered** stake the wallet can afford, or says to fund it when none is affordable | **P** |
+| V9 | Pot pill | Prints the pot *and* what the winner takes; the second equals pot × (1 − RAKE) | **P** (after fix) |
+| V10 | Remembered choices | After a reload with no query string, stake, round length and market are the ones last used | **P** |
+| V11 | Bad stored prefs | A hand-edited `masked.prefs.v1` with a NaN stake or a 9999s duration is ignored, not applied | **P** |
+| V12 | `?market=<mint>` | Lobby opens on that mint; an unpriceable mint leaves it unselected rather than erroring | **P** |
+| V13 | `beforeunload`, live | A cancelable `beforeunload` is prevented while a round is live | **P** |
+| V14 | `beforeunload`, not live | The same event is **not** prevented in the lobby or on the reveal | **P** |
+| V15 | `aria-live` regions | Exactly two polite regions on the live round — the clock and the PnL — with the PnL label naming direction and magnitude | **P** |
+| V16 | Clock announcement | The clock's label is a minute boundary or one of the last ten seconds, and empty otherwise | **P** — 49 samples, one non-empty: `00:04:00` → "4 minutes left" |
+| V17 | Mark direction flash | After the crank moves the mark, a caret renders beside it filled green for up and red for down; no caret before the first change | **P** |
+| V18 | Win burst | Fires once on a win after the curtain tears, does not intercept pointer events, absent on a loss | **P** — 28 pixels at peak on a win, 0 on a loss |
+| V19 | `check:invariants` | Passes; pot conserved and rake exact over every settled tape | **P** |
+| V20 | `check:fuzz` | Passes; no NaN and no property violated across 4,000 randomised books | **P** |
+
+### Found while executing V
+
+Three real defects, all caught because an item said what "correct" means as a
+number rather than as "renders".
+
+1. **The rake was subtracted twice.** `duel.pot` is already net of rake — a
+   field named `pot` that is not the pot — so the new pot pill and the arena's
+   potential-earnings figure each applied it again. The pill read `TAKES
+   0.1921` where the chain pays `0.196`, and the earnings figure had been wrong
+   since the arena shipped. `potGross` is exposed now and the pill applies rake
+   once. V9 only caught it because the item demanded `pot × (1 − RAKE)`, not
+   "shows a number".
+
+2. **`/stats` called 67 abandoned duels LIVE NOW**, noted "clock running".
+   Settlement is permissionless but not automatic, so a round whose clock ran
+   out with both tabs closed keeps its `live` status. This is the defect
+   `/proof` already fixed — twelve finished duels frozen at 0:00 — reappearing
+   in new code. Split the same way, with the remainder named as awaiting
+   settlement.
+
+3. **A mid-round reload stopped resuming the round.** The restore read the mark
+   through the read gate, which refuses until the client has signed in, and on
+   a cold load it often has not. The throw skipped `setPhase('live')` and
+   dropped the player into the lobby with their entry still escrowed in a round
+   running without them — the catch swallowing the reason. Those reads are
+   best-effort now.
+
+And one self-inflicted, worth recording because the symptom pointed nowhere
+near the cause: building the V5 dead-cluster variant with `--clear` poisoned
+Metro's cache, so the next ordinary export baked `127.0.0.1:9911` into `dist`.
+The app said CANNOT REACH THE CLUSTER while the validator answered every
+command-line probe in 18ms. `npm run check:build` now asserts the export
+contains the active cluster URLs and the deployed program id, and that no
+scratch-build port leaked in.
