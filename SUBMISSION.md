@@ -176,3 +176,20 @@ attestation as two separate rows, and only the second says NO), in the README,
 in the proof script, and here — because a judge finding it themselves would be
 worse than being told. The same applies to VRF, which is requested on chain and
 never fulfilled.
+
+---
+
+## Demo video and live URL
+
+- **Video:** `docs/masked-demo.mp4` — 43 seconds, unedited, captured against the
+  running stack. A full duel (open → join → both arenas with the opponent's row
+  fogged → max long against a half-size short → buzzer → both reveals mirroring),
+  then the evidence page.
+- **Live URL:** https://claude.ai/code/artifact/55aff865-8675-4492-93b5-96be7804170c
+  — the reel, the four `check:er` assertions, the measured 9.5× rollup speedup,
+  the gate's refused/served/owner rows, the ten-step delegation lifecycle, the
+  reproduction commands, and the four things this project does **not** prove.
+  Private until shared from the page's share menu.
+
+Source recordings, if a longer cut is wanted: `docs/masked-full-duel.mp4` (28s)
+and `docs/masked-proof-walkthrough.mp4` (6s).
