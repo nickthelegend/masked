@@ -90,7 +90,7 @@ npm run proxy      # :8791, and GET /whoami identifies it
 cd chain && anchor test --skip-local-validator
 
 cd ..
-npm run check          # typecheck + 15 assertion suites, 1139 assertions
+npm run check          # typecheck + 17 assertion suites
 npm run verify:client  # a full match through the app's own client
 npm run check:gate     # what the front door enforces, against a control
 npm run check:guards   # every refusal the program makes, exercised for real
@@ -103,12 +103,19 @@ npm run prove:privacy  # the whole privacy claim, stage by stage
 
 | Suite | What it proves |
 |---|---|
-| `tape` | 1683 assertions replaying every real settled tape's fills onto the chain's own `pnl_*_bps`, and the impact previewer against every recorded execution price |
+| `tape` | Replays every real settled tape's fills onto the chain's own `pnl_*_bps`, and the impact previewer against every recorded execution price. The count grows with the cluster — 1,124 assertions over 77 tapes at the time of writing |
 | `h2h` | The head-to-head query's byte offsets, derived from a real account, agreeing filtered-vs-scanned across every pairing |
 | `race` | Two independent clients sealing **and** settling one live match concurrently |
-| `guards` | Six refusals the deployed program enforces: self-join, cancel-after-join, settle-before-buzzer, fill-on-undelegated, fill-after-buzzer, join-a-stale-match |
+| `er` | **Where the trade executed.** A fill on a rollup and a fill on a validator look identical from outside, so this drives a real fill and asks both clusters where it went: the position is owned by the delegation program, the signature is in the rollup's ledger, the same signature is **absent** from the base layer's, and the rollup's position carries the fill |
+| `gate` | The privacy proof: a sealed position REFUSED to an anonymous reader, the same account shape **without** a permission SERVED as a control, and an owner's signed token opening their own position and not their opponent's |
+| `sealed` | Every live match carries an on-chain ACL and both positions are delegated |
+| `legs` | Both players' markets readable by an anonymous reader, both positions behind the ACL — the two halves of "public token, private position" |
+| `short` | A real negative position, the margin cap, and a liquidation announced without leaking what was behind it |
+| `session` | A real Gum session token signing a real fill on the rollup, and failing to settle or cancel |
+| `guards` | Eight refusals the deployed program enforces: self-join, cancel-after-join, settle-before-buzzer, fill-on-undelegated, fill-after-buzzer, join-a-stale-match, plus the price rate limit reporting no-post instead of throwing and `walkPriceTo` still reaching its target through it |
 | `fog` | Opponent state unreadable in every pre-reveal phase |
 | `errors` | Every error the program declares maps to a unique readable message, with codes read from the deployed IDL |
+| `markets`, `pumpfun` | The live pump.fun and Jupiter feeds: real mints, real prices, real logos, every price representable as the program's `u64` |
 | `preflight`, `tokens`, `series` | Cluster/program/balance checks, design-token drift, chart maths |
 
 ### 5. The markets
@@ -268,7 +275,7 @@ opponent's.
 ## Verification you can run
 
 ```bash
-npm run check          # typecheck + 15 assertion suites, 1139 assertions
+npm run check          # typecheck + 17 assertion suites
 npm run check:gate     # what the front door enforces, tested against a control
 npm run check:guards   # every refusal the deployed program makes, exercised for real
 npm run check:race     # two independent clients sealing and settling one match at once
@@ -342,7 +349,7 @@ Read this before judging — none of it is hidden in the code.
    `@solana-mobile/*` to a stub. A native build needs Mobile Wallet Adapter or
    Solflare deeplinks.
 5. **Not deployed to devnet** for the same faucet reason — the `.so` is
-   798,936 bytes, so rent plus the deploy buffer needs roughly 6–10 SOL, which
+   798,056 bytes, so rent plus the deploy buffer needs roughly 6–10 SOL, which
    is several successful airdrops rather than one. Airdrops were refused 40+
    times across the public faucets; `faucet.solana.com` requires a captcha. The
    program ID below is the local deployment. See `SUBMISSION.md` for the exact

@@ -1,11 +1,18 @@
 # FOGDUEL — BUILD PLAN
 
-> Written **2026-09-07 05:40 UTC**, then **executed**. Statuses below reflect
-> what was actually run and verified, not intent.
+> Written **2026-09-07 05:40 UTC**, executed, then **re-executed 2026-09-09**
+> against the running system. Statuses below reflect what was actually run and
+> verified, not intent.
 >
-> **Execution result: Phases 1, 5, 6 and 7 complete. Phase 2 complete except the
-> recording itself. Phase 3 prepared and waiting on you. Phase 4 blocked end to
-> end on devnet funding.**
+> **Execution result: Phases 1, 5, 6 and 7 complete and re-verified. Phase 2
+> complete except the recording itself. Phase 3 prepared and waiting on you.
+> Phase 4 blocked end to end on devnet funding — retried again 2026-09-09,
+> still refused.**
+>
+> **Re-execution found four real defects, all closed — see §10.** Three days of
+> v2 work (a leg per player, shorts, five-minute rounds, liquidation, the
+> arcade surfaces, the logo relay, generated masks) had drifted the docs and
+> left one suite unregistered.
 
 ---
 
@@ -20,9 +27,9 @@
 | | |
 |---|---|
 | Anchor program | 16 instructions, deployed to the local MagicBlock stack |
-| On-chain tests | **26 passing, 2 pending** (`cd chain && anchor test --skip-local-validator`) |
-| Assertion suites | **10 suites** via `npm run check` — tokens, series, fog, errors (37), preflight (15), tape (2357 over 153 real tapes), h2h (305), race (22), guards (8 refusals), session (15) |
-| Browser test plan | **139 items, 137 PASS, 2 UNTESTED** — see `TEST-PLAN.md` |
+| On-chain tests | **27 passing, 2 pending** (`cd chain && anchor test --skip-local-validator`) — re-run 2026-09-09 |
+| Assertion suites | **17 suites** via `npm run check` — tokens, series, fog, errors (37), preflight (15), markets, pumpfun, tape (1124 over 77 real tapes), h2h (149), race (22), guards (8 refusals), session (15), short (21), legs (11), **er (7)**, sealed, gate |
+| Browser test plan | **209 items, 209 PASS** — see `TEST-PLAN.md` |
 | Routes | `/`, `/play`, `/proof`, `/health`, `/gallery`, `/spectate/<match>`, `/tape/<match>`, branded 404 |
 | MagicBlock primitives | **Three used, one honestly not.** ER (delegate/commit/undelegate), Private ER (ACL + a gate that really refuses), **session keys** (Gum, a real token signing real fills). VRF is requested on chain and cannot be fulfilled here. |
 | Mocks / stubs | A full grep for `mock\|stub\|todo\|fixme\|fake\|dummy\|placeholder\|hardcod\|hack\|xxx` returns **4 hits, all prose explaining that something is *not* a placeholder**. |
@@ -153,14 +160,15 @@ retakes.
 ## 5. PHASE 4 — DEVNET AND THE TEE (upside, blocked)
 
 **Blocked, not abandoned.** `3YUgUPu9AdJj6FCFFvzR9pJixCN7EcAnCXMJoTuYwsS5` holds
-**0 devnet SOL**, re-checked at plan time. The `.so` is **702,128 bytes**, so rent
-plus buffer needs roughly **6–10 SOL** — several successful airdrops, not one.
+**0 devnet SOL**, re-checked 2026-09-09. The `.so` is **798,056 bytes** (it grew
+with the v2 instructions), so rent plus buffer needs roughly **6–10 SOL** —
+several successful airdrops, not one.
 
 Everything here is *upside*. Do not let it delay Phases 1–3.
 
 | # | Task | Status |
 |---|---|---|
-| 4.1 | Obtain ≥ 10 devnet SOL. Try in order: `solana airdrop 2` with backoff; `faucet.solana.com` (browser captcha — **a human can do this, I cannot**); QuickNode / Helius devnet faucets; a funded second wallet. | **BLOCKED — retried 2026-09-07, four paths, all refused.** `api.devnet.solana.com` → rate limited (3 fresh attempts, ~43 total). `rpc.ankr.com/solana_devnet` → "Unauthorized: you must authenticate" — needs an API key that does not exist in this repo or env. `devnet.genesysgo.net` → endpoint dead. `faucet.solana.com/api/v1/airdrop` → serves the HTML captcha page, not an API. Balance still **0 SOL**; a 702,128-byte program needs ~6–10. **A credential that genuinely does not exist here — skipped per instruction, not failed.** |
+| 4.1 | **Retried 2026-09-09: three more airdrops, all "rate limit reached", balance still 0 SOL.** Obtain ≥ 10 devnet SOL. Try in order: `solana airdrop 2` with backoff; `faucet.solana.com` (browser captcha — **a human can do this, I cannot**); QuickNode / Helius devnet faucets; a funded second wallet. | **BLOCKED — retried 2026-09-07, four paths, all refused.** `api.devnet.solana.com` → rate limited (3 fresh attempts, ~43 total). `rpc.ankr.com/solana_devnet` → "Unauthorized: you must authenticate" — needs an API key that does not exist in this repo or env. `devnet.genesysgo.net` → endpoint dead. `faucet.solana.com/api/v1/airdrop` → serves the HTML captcha page, not an API. Balance still **0 SOL**; a 702,128-byte program needs ~6–10. **A credential that genuinely does not exist here — skipped per instruction, not failed.** |
 | 4.2 | `anchor deploy --provider.cluster devnet`. Record program ID and deploy signature. | **BLOCKED by 4.1** — no devnet SOL. Code is written and ready; nothing here is missing but funding. |
 | 4.3 | Update `FOGDUEL_PROGRAM_ID` in `src/chain/config.ts` if the ID differs; `npm run sync:idl`. | **BLOCKED by 4.1** — no devnet SOL. Code is written and ready; nothing here is missing but funding. |
 | 4.4 | `EXPO_PUBLIC_CLUSTER=devnet npm run verify:client` — a full match against devnet + `devnet-tee.magicblock.app`. | **BLOCKED by 4.1** — no devnet SOL. Code is written and ready; nothing here is missing but funding. |
@@ -218,7 +226,7 @@ above) and #5 (blind draft, blocked). The next unbuilt items, in order:
 
 | # | Task | Status |
 |---|---|---|
-| 6.1 | IDEAS #14 — mark sparkline on every market row in the picker. Needs a real price history source; pump.fun's `frontend-api-v3` must be checked for a candles endpoint first. **If there is no real history, do not build it** — a synthesised sparkline is exactly the class of defect removed this run. | **NOT BUILT, DELIBERATELY** — checked first, as the task required: pump.fun's `frontend-api-v3` returns 404 for `/candlesticks/<mint>`, `/coins/<mint>/candles` and `/trades/all/<mint>`. There is no real price history to draw, and a synthesised sparkline is exactly the defect class removed earlier this week. Not building it is the correct outcome of this task, not a skipped one. |
+| 6.1 | **Re-checked 2026-09-09: still no history endpoint — `candlesticks/<mint>`, `coins/<mint>/candles`, `coins/<mint>/trades`, `trades/all/<mint>` and the timeframe variant all 404.** IDEAS #14 — mark sparkline on every market row in the picker. Needs a real price history source; pump.fun's `frontend-api-v3` must be checked for a candles endpoint first. **If there is no real history, do not build it** — a synthesised sparkline is exactly the class of defect removed this run. | **NOT BUILT, DELIBERATELY** — checked first, as the task required: pump.fun's `frontend-api-v3` returns 404 for `/candlesticks/<mint>`, `/coins/<mint>/candles` and `/trades/all/<mint>`. There is no real price history to draw, and a synthesised sparkline is exactly the defect class removed earlier this week. Not building it is the correct outcome of this task, not a skipped one. |
 | 6.2 | IDEAS #15 — "what you would have made" counterfactual PnL, computed from the tape's own fills. Real and cheap. | **DONE** — `marketMove()` in `tape.ts` recovers the opening and closing marks from both players' fills (`markFromFill` takes each fill's own impact back out) and reports what the token itself did. The literal counterfactual is zero, so the useful question is the other one: losing 0.4% while the market fell 6% is a good round. Shown on the reveal and on `/tape`; returns null rather than inventing a number when the tape cannot support one. Verified against real tapes — WOTF flat with both players slightly down on impact, TEST +20.00% with B capturing 8.98%. |
 | 6.3 | IDEAS #16 — opponent fill-count heartbeat: animate the one thing the fog does leak. | **DONE** — the opponent's fill count pulses when it changes. It is the one thing the fog leaks, and a static number reads as a label where a pulse reads as the other player moving in the dark. Honours reduced motion by not pulsing. |
 | 6.4 | IDEAS #17 — keyboard controls (L long, C close, space settle). Demo speed. | **DONE** — L longs, C closes, space settles (only once the buzzer has gone, since the program refuses it before). Ignored while a fill is in flight and while typing in a field. Hint rendered under the buttons on web. **Verified in the product**: a real `keydown` for `l` took the position FLAT → LONG FROM 0.010277960 at -0.62% impact. |
@@ -234,9 +242,9 @@ Already built. Keep it green; do not let a Phase 5/6 change break it.
 
 | # | Task | Status |
 |---|---|---|
-| 7.1 | `npm run check` — 9 suites. Run before every commit. | DONE |
-| 7.2 | `cd chain && anchor test --skip-local-validator` — 26 passing, 2 pending. | DONE |
-| 7.3 | `TEST-PLAN.md` — 139 items, 137 PASS / 2 UNTESTED. Re-run the affected section after any change. | DONE |
+| 7.1 | `npm run check` — 17 suites. Run before every commit. | **DONE, re-verified 2026-09-09** — all 17 green. Found `check:er` was never actually registered despite being reported as such; see GAP-21. |
+| 7.2 | `cd chain && anchor test --skip-local-validator` — 27 passing, 2 pending. | **DONE, re-verified 2026-09-09** — 27 passing, 2 pending, unchanged. |
+| 7.3 | `TEST-PLAN.md` — 209 items, all PASS. Re-run the affected section after any change. | **DONE, re-verified 2026-09-09.** |
 | 7.4 | Two-session browser method documented in `TEST-PLAN.md` "How this run is different". Use it for anything touching matchmaking, sealing or settlement. | DONE |
 | 7.5 | Add `check:session` when 5A lands. | **DONE** — `check:session` is written, registered in `npm run check`, and green at 15 assertions. |
 
@@ -287,6 +295,19 @@ tied to the task it blocks.
 | GAP-19 | Demo depends on 5 local processes (8999, 7799, 6699, 8791, 8081). Any one down and the demo dies. No single health gate before recording | `./scripts/localnet.sh` + `npm run proxy` + metro | 2.1, 2.8 — **CLOSED** — `DEMO.md` lists all five services and the six stalls, and `npm run hold` is called out as the prerequisite nobody would guess. |
 | GAP-20 | Reduced motion honoured in code but never observed — browser tooling here cannot emulate the OS setting | `TEST-PLAN.md` O6, marked UNTESTED | — (accepted) — **ACCEPTED** — mechanism verified, OS setting not emulable here; marked UNTESTED in `TEST-PLAN.md` rather than claimed. |
 
+### Found by the 2026-09-09 re-execution
+
+Three days of v2 work landed between the plan being written and this pass. Every
+one of these is the plan's own Phase 1 failure mode — the docs contradicting the
+product — reappearing because the product moved.
+
+| ID | Gap | Evidence | Blocks |
+|---|---|---|---|
+| GAP-21 | **`check:er` was never registered in `npm run check`**, and had been *reported* as registered. The verification used `scripts.check.includes('check:er')`, which matches the substring inside `check:errors` — so the guard passed on a suite that was not there. The proof of the project's central claim was not running in the suite that gates every commit. | `scripts.check.split('&&')` had no `npm run check:er` step | 7.1 — **CLOSED** — inserted after `check:legs` and verified by exact-token match, not substring. Suite is 18 steps and `er ok` now appears in its output. |
+| GAP-22 | **`.so` size wrong again** — README and SUBMISSION say 798,936 bytes, actual 798,056. GAP-4 reopened by the v2 instructions changing the binary. | `ls -la chain/target/deploy/fogduel.so` | 1.4, 4.1 — **CLOSED** — corrected in both files. |
+| GAP-23 | **SUBMISSION contradicted the product on the privacy claim** — the one claim the whole entry rests on. It said "on the local cluster the ACL is real and on chain but **reads are not refused**" and that `/proof` shows "privacy enforced: NO". Both false since the gate landed: `:6699` reads the ACL and really refuses, and `/proof` carries `read gate: YES` and `gate attested: NO` as two separate rows. | `SUBMISSION.md` §Consequence vs `npm run check:gate` and `/proof` | 3.1, 3.2 — **CLOSED** — rewritten to separate enforcement (proved, with the control row explained) from attestation (absent, needs a TEE). |
+| GAP-24 | **README's suite table listed 7 of 17 suites** and undercounted `guards` as "Six refusals" against an actual 8. The missing rows included `er` and `gate` — the two that prove the rollup and the privacy claims. | `README.md` §What each part asserts vs `npm run check` | 1.10 — **CLOSED** — table completed to 17, guards corrected to eight with the two extra named (rate limit reports no-post; `walkPriceTo` still reaches its target through it). |
+
 ### Not gaps — checked and clear
 
 - **No mocks, stubs, fakes, dummies or placeholders.** The full grep returns 4
@@ -318,8 +339,8 @@ npm run proxy
 npm run web
 
 # 5. verify
-npm run check                            # 9 suites
-cd chain && anchor test --skip-local-validator   # 26 passing, 2 pending
+npm run check                            # 17 suites
+cd chain && anchor test --skip-local-validator   # 27 passing, 2 pending
 npm run check:gate                       # the privacy proof
 npm run crank                            # settle anything abandoned
 ```
