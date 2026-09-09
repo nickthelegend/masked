@@ -141,7 +141,16 @@ export default function StatsScreen() {
             </Row>
             <Row gap={space.sm} align="stretch">
               <Figure label="OPEN NOW" value={String(s.open)} note="waiting for an opponent" tone={color.cyan} />
-              <Figure label="LIVE NOW" value={String(s.live)} note="clock running" tone={color.magenta} />
+              <Figure
+                label="LIVE NOW"
+                value={String(s.live)}
+                note={
+                  s.awaitingSettlement > 0
+                    ? `clock running · ${s.awaitingSettlement} awaiting settlement`
+                    : 'clock running'
+                }
+                tone={color.magenta}
+              />
             </Row>
 
             <Divider />

@@ -648,3 +648,34 @@ clusters where it went.
 | fill signature present in the rollup ledger | found, at a real slot |
 | same signature absent from the base-layer ledger | absent |
 | rollup position carries the fill | `base_qty` non-zero |
+
+---
+
+## V — surfaces added after section U
+
+Nine features landed from `IDEAS.md` after the last full pass. Each gets an
+item here before it is executed, with the specific result that counts as
+correct — not "renders".
+
+| # | What | Correct means |
+|---|---|---|
+| V1 | `/stats` loads with no wallet | Every figure present and non-negative; `DUELS SETTLED` equals the tape count `check:invariants` reports |
+| V2 | `/stats` rake, two sources | `TREASURY, LESS RENT` equals `SUMMED FROM TAPES` to the lamport, and the badge reads `AGREES TO THE LAMPORT` |
+| V3 | `/stats` rent floor named | The note states what the treasury holds and how much is locked as rent; the locked figure is the account's real rent-exempt minimum |
+| V4 | `/stats` per-market table | One row per distinct leg mint, busiest first, each with duels / volume / biggest pot and a bar proportional to volume |
+| V5 | `/stats` cluster unreachable | Says the numbers are unknown, not zero |
+| V6 | Round length picker | 1 MIN / 5 MIN / 15 MIN; the selected one is highlighted and its note changes |
+| V7 | Round length reaches the chain | Opening after picking 1 MIN writes `duration=60` into the match account — checked on chain, not in the UI |
+| V8 | Insufficient balance | Names the largest **offered** stake the wallet can afford, or says to fund it when none is affordable |
+| V9 | Pot pill | Prints the pot *and* what the winner takes; the second equals pot × (1 − RAKE) |
+| V10 | Remembered choices | After a reload with no query string, stake, round length and market are the ones last used |
+| V11 | Bad stored prefs | A hand-edited `masked.prefs.v1` with a NaN stake or a 9999s duration is ignored, not applied |
+| V12 | `?market=<mint>` | Lobby opens on that mint; an unpriceable mint leaves it unselected rather than erroring |
+| V13 | `beforeunload`, live | A cancelable `beforeunload` is prevented while a round is live |
+| V14 | `beforeunload`, not live | The same event is **not** prevented in the lobby or on the reveal |
+| V15 | `aria-live` regions | Exactly two polite regions on the live round — the clock and the PnL — with the PnL label naming direction and magnitude |
+| V16 | Clock announcement | The clock's label is a minute boundary or one of the last ten seconds, and empty otherwise |
+| V17 | Mark direction flash | After the crank moves the mark, a caret renders beside it filled green for up and red for down; no caret before the first change |
+| V18 | Win burst | Fires once on a win after the curtain tears, does not intercept pointer events, absent on a loss |
+| V19 | `check:invariants` | Passes; pot conserved and rake exact over every settled tape |
+| V20 | `check:fuzz` | Passes; no NaN and no property violated across 4,000 randomised books |

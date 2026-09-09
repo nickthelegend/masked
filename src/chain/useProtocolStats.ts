@@ -36,8 +36,19 @@ export interface ProtocolStats {
   settled: number;
   /** Matches open and waiting for an opponent. */
   open: number;
-  /** Matches with both players in, clock running. */
+  /**
+   * Matches with both players in and the clock genuinely still running.
+   *
+   * Not every match whose on-chain status is `live`. Settlement is
+   * permissionless but not automatic, so a round whose duration ran out while
+   * both players had their tabs closed keeps that status until somebody
+   * settles it. Counting those as live is the defect `/proof` already fixed —
+   * it listed twelve finished duels under LIVE RIGHT NOW, all frozen at 0:00,
+   * which reads as a broken clock rather than as the truth.
+   */
   live: number;
+  /** Status `live`, clock run out, nobody has settled them yet. */
+  awaitingSettlement: number;
   /** Lamports paid to winners, summed from every tape. */
   paidLamports: number;
   /** Lamports taken as rake, summed from every tape. */
@@ -74,6 +85,7 @@ const EMPTY: ProtocolStats = {
   settled: 0,
   open: 0,
   live: 0,
+  awaitingSettlement: 0,
   paidLamports: 0,
   rakeLamports: 0,
   treasuryLamports: 0,
@@ -123,7 +135,12 @@ export function useProtocolStats(pollMs = 20_000): ProtocolStats {
         /* eslint-disable @typescript-eslint/no-explicit-any */
         const statusOf = (m: any) => Object.keys(m.account.status)[0];
         const open = matches.filter((m: any) => statusOf(m) === 'open').length;
-        const live = matches.filter((m: any) => statusOf(m) === 'live').length;
+        const nowSecs = Math.floor(Date.now() / 1000);
+        const liveStatus = matches.filter((m: any) => statusOf(m) === 'live');
+        const isRunning = (m: any) =>
+          m.account.duration - (nowSecs - m.account.startTs.toNumber()) > 0;
+        const live = liveStatus.filter(isRunning).length;
+        const awaitingSettlement = liveStatus.length - live;
 
         let paid = 0;
         let rake = 0;
@@ -174,6 +191,7 @@ export function useProtocolStats(pollMs = 20_000): ProtocolStats {
           settled: tapes.length,
           open,
           live,
+          awaitingSettlement,
           paidLamports: paid,
           rakeLamports: rake,
           treasuryLamports: treasury,

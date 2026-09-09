@@ -116,7 +116,17 @@ export interface Duel {
    * client had never been given and could not have obtained.
    */
   opponentFills: number | null;
+  /**
+   * What the winner is paid, in SOL — the pot **less rake**, not the pot.
+   *
+   * The name is historical and every consumer means "what you take", so it
+   * stays. `potGross` is the number on the table. Multiplying this by
+   * `(1 - RAKE)` again is the bug that made the arena's potential-earnings
+   * figure read 0.1921 where the chain pays 0.196.
+   */
   pot: number;
+  /** The whole pot, both stakes, before rake. */
+  potGross: number;
   /**
    * What this round actually put at risk, in SOL.
    *
@@ -512,7 +522,9 @@ export function useDuel(): Duel {
    * running match was opened at some other size: the screen claimed 0.20 over
    * a 0.10 pot.
    */
-  const pot = match ? (match.pot / LAMPORTS_PER_SOL) * (1 - RAKE) : stake * 2 * (1 - RAKE);
+  const potGross = match ? match.pot / LAMPORTS_PER_SOL : stake * 2;
+  /** Net of rake — see the `pot` field's note. Named for what consumers mean. */
+  const pot = potGross * (1 - RAKE);
 
   /* ------------------------------- balance ------------------------------- */
   useEffect(() => {
@@ -949,12 +961,13 @@ export function useDuel(): Duel {
    * the screen forgot.
    */
   const resumedFor = useRef<string | null>(null);
+  const resuming = useRef(false);
   useEffect(() => {
     if (!client || !wallet.publicKey || phase !== 'lobby') return;
     const me = wallet.publicKey;
     const key = me.toBase58();
-    if (resumedFor.current === key) return;
-    resumedFor.current = key;
+    if (resumedFor.current === key || resuming.current) return;
+    resuming.current = true;
 
     let alive = true;
     void (async () => {
@@ -967,12 +980,33 @@ export function useDuel(): Duel {
           // The picker is back at its default after a reload; put it back on
           // the size this round was actually opened at.
           setStake(live.entry / LAMPORTS_PER_SOL);
-          setSealed(await client.isPositionSealed(live.address, live.creator));
           setSeries([]);
           setEquity([0]);
           setSecondsLeft(Math.max(0, live.duration - (Math.floor(Date.now() / 1000) - live.startTs)));
-          setPrice(Number(await client.fetchPrice(live.address, me, true)));
+
+          // Everything past here is decoration, and none of it may cost the
+          // player their round.
+          //
+          // These two reads used to sit inline. `fetchPrice(…, fromEr = true)`
+          // goes through the read gate, which refuses until this client has
+          // signed in — and on a cold reload it frequently has not yet. The
+          // throw skipped `setPhase('live')` entirely and dropped the player
+          // into the lobby while their entry was still escrowed in a round
+          // running without them, with the catch below swallowing the reason.
+          // The mark arrives from the crank within five seconds anyway.
+          try {
+            setSealed(await client.isPositionSealed(live.address, live.creator));
+          } catch {
+            /* the badge reads NOT SEALED until the next poll says otherwise */
+          }
+          try {
+            setPrice(Number(await client.fetchPrice(live.address, me, true)));
+          } catch {
+            /* the crank posts a mark within MARK_CRANK_MS */
+          }
+
           setPhase('live');
+          resumedFor.current = key;
           return;
         }
         // No live round, but perhaps an unclaimed one still waiting.
@@ -982,9 +1016,12 @@ export function useDuel(): Duel {
           setStake(open.entry / LAMPORTS_PER_SOL);
           setPhase('searching');
         }
+        resumedFor.current = key;
       } catch {
-        // Nothing to resume, or the cluster is unreachable. The lobby is a
-        // fine place to land either way.
+        // Left unlatched on purpose: a cluster that was unreachable for this
+        // one attempt should not permanently disable resuming for this wallet.
+      } finally {
+        resuming.current = false;
       }
     })();
 
@@ -1602,6 +1639,7 @@ export function useDuel(): Duel {
     // so this is null until then rather than a zero standing in for it.
     opponentFills: opponentPosition ? opponentPosition.fillCount : null,
     pot,
+    potGross,
     entrySol: match ? match.entry / LAMPORTS_PER_SOL : stake,
     won: match?.winner ? !!(wallet.publicKey && match.winner.equals(wallet.publicKey)) : false,
     connected,

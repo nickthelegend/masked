@@ -20,7 +20,7 @@ import { searchMarkets } from '../chain/markets';
 import { useRouter } from 'expo-router';
 import { formatSolPrice } from '../chain/units';
 import { useDuel } from './useDuel';
-import { RAKE, TROPHIES_PER_WIN } from './data';
+import { TROPHIES_PER_WIN } from './data';
 
 const SCREEN_HEIGHT = 700;
 
@@ -209,7 +209,7 @@ export default function MaskedApp({ initialMarketMint }: MaskedAppProps = {}) {
             {tab === 'duel' && duel.phase === 'live' ? (
               <LiveRoundScreen
                 secondsLeft={duel.secondsLeft}
-                pot={duel.pot}
+                pot={duel.potGross}
                 equity={duel.equity}
                 price={duel.price}
                 myPnl={duel.myPnl}
@@ -253,7 +253,7 @@ export default function MaskedApp({ initialMarketMint }: MaskedAppProps = {}) {
                 mySide={duel.mySide}
                 opponentMarket={duel.opponentMarket}
                 opponentMarketMint={duel.opponentMarketMint}
-                payout={solExact(duel.pot * (1 - RAKE))}
+                payout={solExact(duel.pot)}
                 trophies={TROPHIES_PER_WIN}
                 elapsed={Math.max(0, duel.duration - duel.secondsLeft)}
               />
