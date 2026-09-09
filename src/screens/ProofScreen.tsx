@@ -417,7 +417,7 @@ export default function ProofScreen() {
           },
           {
             cmd: 'cd chain && anchor test --skip-local-validator',
-            proves: '26 on-chain tests, 2 pending. Includes the negative case: a fill that succeeds on the rollup is rejected on L1 while the account is delegated.',
+            proves: '27 on-chain tests, 2 pending. Includes the negative case: a fill that succeeds on the rollup is rejected on L1 while the account is delegated.',
           },
         ]}
       />
