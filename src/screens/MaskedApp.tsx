@@ -171,6 +171,8 @@ export default function MaskedApp() {
               <DuelLobbyScreen
                 stake={duel.stake}
                 onStakeChange={duel.setStake}
+                duration={duel.openDuration}
+                onDurationChange={duel.setOpenDuration}
                 pot={duel.pot}
                 onFind={toMatchmaking}
                 selected={duel.selectedMarket}

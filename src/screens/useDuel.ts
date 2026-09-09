@@ -184,6 +184,15 @@ export interface Duel {
   fillSize: number;
   setFillSize: (qty: number) => void;
   setStake: (stake: number) => void;
+  /**
+   * Round length for the next match *this wallet opens*, in seconds.
+   *
+   * Distinct from `duration`, which is the live match's length — joining
+   * somebody else's duel takes theirs, so conflating the two would let the
+   * lobby's picker silently misreport the clock of a round already running.
+   */
+  openDuration: number;
+  setOpenDuration: (secs: number) => void;
   findMatch: () => void;
   startMatch: () => void;
   openLong: () => void;
@@ -341,6 +350,14 @@ export function useDuel(): Duel {
   const [series, setSeries] = useState<number[]>([]);
   const [equity, setEquity] = useState<number[]>([0]);
   const [secondsLeft, setSecondsLeft] = useState(ROUND_SECONDS);
+  /**
+   * Round length for the next match this wallet opens.
+   *
+   * A real argument to `create_match`, not a display setting — the program
+   * stores it and refuses settlement before `start_ts + duration`. Joining
+   * somebody else's match takes *their* duration; this only governs opening.
+   */
+  const [openDuration, setOpenDuration] = useState(ROUND_SECONDS);
 
   const settledRef = useRef(false);
   /** Retries spent on the current settlement. Reset when a round begins. */
@@ -1091,7 +1108,7 @@ export function useDuel(): Duel {
           creator: me,
           matchId,
           mint: myLeg.mint,
-          durationSecs: ROUND_SECONDS,
+          durationSecs: openDuration,
           entryLamports,
           startPx,
           marketType: market.kind,
@@ -1109,7 +1126,13 @@ export function useDuel(): Duel {
       if (!m || !m.joiner) return;
       await beginRound(m, creator, m.joiner, me);
     });
-  }, [guard, client, wallet.publicKey, entryLamports, selectedMarket, beginRound]);
+    // `openDuration` belongs here. Without it this callback captures whatever
+    // the round length was on first render and opens every match at that,
+    // however many times the picker is pressed — the same stale-closure bug
+    // that once let `joinMatchByAddress` omit `selectedMarket` and join a WOFI
+    // match while the lobby showed SOL, which was invisible until the settled
+    // tape named the wrong token.
+  }, [guard, client, wallet.publicKey, entryLamports, selectedMarket, openDuration, beginRound]);
 
   /**
    * Watch a match we opened until somebody takes it.
@@ -1551,6 +1574,8 @@ export function useDuel(): Duel {
     fillSize,
     setFillSize,
     setStake,
+    openDuration,
+    setOpenDuration,
     findMatch,
     startMatch,
     openLong,

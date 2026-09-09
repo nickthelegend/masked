@@ -29,13 +29,36 @@ export function checkWallet(publicKey: PublicKey | null): PreflightResult {
 export function checkBalance(lamports: number, stakeLamports: number): PreflightResult {
   const needed = stakeLamports + HEADROOM_LAMPORTS;
   if (lamports < needed) {
+    // Name the stake they *can* afford, when there is one. "Need ~0.12, hold
+    // 0.07" is true and leaves the player to do arithmetic against a headroom
+    // figure they cannot see; "the largest you can open is 0.05◎" is the same
+    // fact turned into the next move.
+    const affordable = affordableStake(lamports);
+    const advice = affordable
+      ? ` The largest you can open right now is ${affordable.toFixed(2)}◎.`
+      : ' Fund this wallet to open a duel.';
     return {
       ok: false,
       title: 'NOT ENOUGH SOL',
-      detail: `Need ~${(needed / 1e9).toFixed(2)} SOL, wallet holds ${(lamports / 1e9).toFixed(2)}.`,
+      detail:
+        `Need ~${(needed / 1e9).toFixed(2)} SOL, wallet holds ${(lamports / 1e9).toFixed(2)}.` + advice,
     };
   }
   return OK;
+}
+
+/**
+ * The biggest offered stake this balance covers, or null if it covers none.
+ *
+ * Deliberately picks from the stakes the picker actually offers rather than
+ * returning an arbitrary number: telling somebody they can afford 0.0731◎ is
+ * useless when the buttons are 0.05, 0.10, 0.50 and 1.
+ */
+export function affordableStake(lamports: number, options: number[] = [0.05, 0.1, 0.5, 1]): number | null {
+  const usable = lamports - HEADROOM_LAMPORTS;
+  let best: number | null = null;
+  for (const s of options) if (s * 1e9 <= usable) best = s;
+  return best;
 }
 
 /**

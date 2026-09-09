@@ -21,6 +21,7 @@ import {
 import { useSpectate } from '../chain/useSpectate';
 import { formatSolPrice } from '../chain/units';
 import { short } from '../chain/useTapes';
+import { RAKE } from './data';
 
 export interface SpectateScreenProps {
   /** Match address from the URL. */
@@ -112,7 +113,7 @@ export default function SpectateScreen({ address }: SpectateScreenProps) {
           </Row>
           <Row gap={space.sm} align="center">
             {live ? <RoundClock seconds={match.secondsLeft} /> : null}
-            <PotPill amount={(match.pot / 1e9) * 0.98} tone={done ? color.yellow : color.green} />
+            <PotPill amount={match.pot / 1e9} rake={RAKE} tone={done ? color.yellow : color.green} />
           </Row>
         </Row>
 

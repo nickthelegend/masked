@@ -33,7 +33,7 @@ import {
 } from '../ui';
 import AppHeader from './AppHeader';
 import DuelLobbyScreen from './DuelLobbyScreen';
-import { HOW_IT_WORKS, LANDING_STAT_LABELS, MODES, RAKE, roundPhrase } from './data';
+import { HOW_IT_WORKS, LANDING_STAT_LABELS, MODES, RAKE, ROUND_SECONDS, roundPhrase } from './data';
 import { useTickerItems } from '../chain/useTickerItems';
 import { marketLabel } from '../chain/market';
 import { bpsPct, short, useTapes } from '../chain/useTapes';
@@ -54,6 +54,8 @@ const REVEAL_PREVIEW = 2;
 
 export default function LandingScreen() {
   const router = useRouter();
+  /** The hero renders the real lobby, so its controls need real state. */
+  const [previewDuration, setPreviewDuration] = useState(ROUND_SECONDS);
   const { width } = useWindowDimensions();
   const wide = width >= WIDE;
   const [stake, setStake] = useState(0.1); // SOL
@@ -153,6 +155,8 @@ export default function LandingScreen() {
           <DuelLobbyScreen
             stake={stake}
             onStakeChange={setStake}
+            duration={previewDuration}
+            onDurationChange={setPreviewDuration}
             pot={stake * 2 * (1 - RAKE)}
             onFind={goPlay}
             selected={previewMarket}

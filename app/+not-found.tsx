@@ -41,6 +41,9 @@ export default function NotFound() {
         <Link href="/proof" asChild>
           <PixelButton tone="info" label="ON-CHAIN PROOF" size={10} />
         </Link>
+        <Link href="/stats" asChild>
+          <PixelButton tone="info" label="PROTOCOL STATS" size={10} />
+        </Link>
         <Link href="/health" asChild>
           <PixelButton tone="quiet" label="SYSTEM HEALTH" size={10} />
         </Link>

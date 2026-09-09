@@ -26,6 +26,7 @@ import {
 } from '../ui';
 import type { Fill, PriceSource } from '../ui';
 import { FRAME_MS, USE_NATIVE_DRIVER, useReducedMotion } from '../ui/motion';
+import { RAKE } from './data';
 
 export interface LiveRoundScreenProps {
   secondsLeft: number;
@@ -233,7 +234,7 @@ export default function LiveRoundScreen({
             {market}
           </PixelText>
         </Row>
-        <PotPill amount={pot} tone={color.green} />
+        <PotPill amount={pot} rake={RAKE} tone={color.green} />
       </Row>
 
       <EndingIn seconds={secondsLeft} />

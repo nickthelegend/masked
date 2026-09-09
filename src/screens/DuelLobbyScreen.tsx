@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
-  Badge, Box, MarketPicker, PixelButton, PixelText, Row, Stack, StakePicker, TokenLogo,
-  color, solExact, onInk, space, type MarketKindKey, type PickableMarket,
+  Badge, Box, DurationPicker, MarketPicker, PixelButton, PixelText, Row, Stack, StakePicker,
+  TokenLogo, color, solExact, onInk, space, type MarketKindKey, type PickableMarket,
 } from '../ui';
 import { useMarkets } from '../chain/useMarkets';
 import { formatCap, formatUsdPrice } from '../chain/units';
@@ -11,6 +11,9 @@ import { roundBadge } from './data';
 export interface DuelLobbyScreenProps {
   stake: number;
   onStakeChange: (stake: number) => void;
+  /** Round length for the match this wallet opens, in seconds. */
+  duration: number;
+  onDurationChange: (secs: number) => void;
   pot: number;
   onFind: () => void;
   /** The market the next duel opens on. Null until the player picks one. */
@@ -51,6 +54,8 @@ function Rail({ items }: { items: Array<[string, string, string]> }) {
 export default function DuelLobbyScreen({
   stake,
   onStakeChange,
+  duration,
+  onDurationChange,
   pot,
   onFind,
   selected,
@@ -131,6 +136,10 @@ export default function DuelLobbyScreen({
       />
 
       <StakePicker value={stake} onChange={onStakeChange} note={`WINNER TAKES ${solExact(pot)} · 2% RAKE`} />
+
+      {/* A real argument to `create_match`, not a display setting — see
+          DurationPicker. Joining somebody else's match takes their length. */}
+      <DurationPicker value={duration} onChange={onDurationChange} />
 
       <PixelButton
         tone="primary"
