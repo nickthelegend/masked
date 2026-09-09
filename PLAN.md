@@ -295,6 +295,27 @@ tied to the task it blocks.
 | GAP-19 | Demo depends on 5 local processes (8999, 7799, 6699, 8791, 8081). Any one down and the demo dies. No single health gate before recording | `./scripts/localnet.sh` + `npm run proxy` + metro | 2.1, 2.8 — **CLOSED** — `DEMO.md` lists all five services and the six stalls, and `npm run hold` is called out as the prerequisite nobody would guess. |
 | GAP-20 | Reduced motion honoured in code but never observed — browser tooling here cannot emulate the OS setting | `TEST-PLAN.md` O6, marked UNTESTED | — (accepted) — **ACCEPTED** — mechanism verified, OS setting not emulable here; marked UNTESTED in `TEST-PLAN.md` rather than claimed. |
 
+### Re-execution evidence — 2026-09-09
+
+Driven in the browser against the running stack, from a **brand-new wallet**
+with no history, which is what a judge opening the app actually gets.
+
+| What was exercised | Result |
+|---|---|
+| Fresh wallet, disconnected, presses the primary CTA | Toast: `CONNECT A WALLET — Nothing can be signed without one.` Immediate, once. |
+| Connected wallet holding 0.00 SOL presses OPEN A MATCH | Toast: `NOT ENOUGH SOL — Need ~0.12 SOL, wallet holds 0.00.` Once, not three times — the `withRetry` fix holding. |
+| Funded to 5 SOL, opens a match through the UI | Real escrow: 5.00 → 4.89. On chain: `status=open, entry=0.10◎, leg=WOFI, dur=300s`. |
+| Cancels that match through the UI | On chain: `status=cancelled`. Balance 4.89 → **4.9926** — the entry refunded, minus fees. |
+| `/proof` | `read gate: YES` and `gate attested: NO` as two separate rows, run-this-yourself commands, and `WHAT ONE DUEL COSTS` summed from the listed transactions' own fees. 0 console errors. |
+| Lobby, 12 market logos | 12/12 rendering through the relay, 0 console errors, 0 resource errors. |
+
+One correction worth recording, because it nearly became a false bug report: the
+0-SOL press was first measured as doing *nothing at all*, and the "silence" was
+an artefact of the probe — a regex that matched `NOT ENOUGH|INSUFFICIENT|FUND`
+but not `CONNECT`. A `MutationObserver` on the toast host showed the app had
+answered correctly and immediately all along. Text-polling for an expected
+string cannot tell "no answer" from "an answer I did not think to look for".
+
 ### Found by the 2026-09-09 re-execution
 
 Three days of v2 work landed between the plan being written and this pass. Every
