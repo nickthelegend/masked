@@ -750,15 +750,49 @@ sealed read (A3, F3). These twelve are the ones nothing ever drove.
 
 | # | What | Correct means | Result |
 |---|---|---|---|
-| W1 | Read gate `:6699` **unreachable** mid-round | The round keeps running off L1 state; a fill reports a readable failure and never claims success. No raw fetch/RPC string reaches the screen |  |
-| W2 | Gate restored | The next fill succeeds without a reload |  |
-| W3 | Search: garbage that is not a mint or ticker (`!!!!`) | Honest empty result, no crash, no console error |  |
-| W4 | Search: a syntactically valid mint that is not a token | No row offered, no crash — better than offering a market `create_match` would reject |  |
-| W5 | Search: a real mint pasted whole | That exact token ranks first |  |
-| W6 | Feed `MINE` with a wallet that has settled nothing | "YOU HAVE NOT SETTLED A DUEL YET" — an empty state, not an empty list |  |
-| W7 | `/img` refuses a private address | `localhost`, `127.0.0.1` and `169.254.169.254` all refused — this relay runs beside a validator holding keys |  |
-| W8 | `/img` refuses non-https | An `http://` target is refused |  |
-| W9 | `/img` refuses a non-image | A URL returning HTML is refused with 415, not relayed |  |
-| W10 | `/img` relays a real logo | An allowlisted CDN image comes back with `content-type: image/*` and a `cross-origin-resource-policy` header |  |
-| W11 | `/whoami` identity | Names this service, so a wrong process on the port is obvious rather than mysterious |  |
-| W12 | Two tabs, same wallet, same live round | Both show the same clock and the same position; no double fill and no double settle on chain |  |
+| W1 | Read gate `:6699` **unreachable** mid-round | The round keeps running off L1 state; a fill reports a readable failure and never claims success. No raw fetch/RPC string reaches the screen | **P** — after fix; message no longer blames the validator |
+| W2 | Gate restored | The next fill succeeds without a reload | **P** — next fill succeeded, no reload; 1.56% quoted / 1.5625% filled |
+| W3 | Search: garbage that is not a mint or ticker (`!!!!`) | Honest empty result, no crash, no console error | **P** — `!!!!` returned three real tokens whose names contain it |
+| W4 | Search: a syntactically valid mint that is not a token | No row offered, no crash — better than offering a market `create_match` would reject | **P** — `NOTHING MATCHING "KETQZ6…"` |
+| W5 | Search: a real mint pasted whole | That exact token ranks first | **P** — PONYX, first and only |
+| W6 | Feed `MINE` with a wallet that has settled nothing | "YOU HAVE NOT SETTLED A DUEL YET" — an empty state, not an empty list | **P** — "YOU HAVE NOT SETTLED A DUEL YET" |
+| W7 | `/img` refuses a private address | `localhost`, `127.0.0.1` and `169.254.169.254` all refused — this relay runs beside a validator holding keys | **P** — after fix; 403 by policy, not 502 |
+| W8 | `/img` refuses non-https | An `http://` target is refused | **P** — `{"error":"https only"}` |
+| W9 | `/img` refuses a non-image | A URL returning HTML is refused with 415, not relayed | **P** — 415, not relayed |
+| W10 | `/img` relays a real logo | An allowlisted CDN image comes back with `content-type: image/*` and a `cross-origin-resource-policy` header | **P** — irys, images.pump.fun, twimg all `image/*` + CORP |
+| W11 | `/whoami` identity | Names this service, so a wrong process on the port is obvious rather than mysterious | **P** — names `masked-market-proxy` |
+| W12 | Two tabs, same wallet, same live round | Both show the same clock and the same position; no double fill and no double settle on chain | **P** — two tabs, one position, `YOUR FILLS 3` (two opens + buzzer) |
+
+### Found while executing W
+
+**The app blamed the wrong service.** Killing the read gate mid-round produced
+"CANNOT REACH THE CLUSTER — Is the validator running?" while the validator
+answered every probe. This project runs two independent services and the
+message named the healthy one. It now says the base layer *or* the rollup gate
+and points at `/health`, which distinguishes them; where an error carries a
+port it names the service outright.
+
+**The image relay claimed an upstream failure for its own refusals.** A private
+address came back 502 — "upstream failed" — about a host the relay had
+deliberately never contacted. Policy refusals carry their own status now: 403
+for a private address, 400 for one that does not resolve.
+
+**And one measurement error worth recording.** `!!!!` was written as the
+"garbage input" case, and it is not garbage: three real tokens have it in their
+names ("DEV IS LIVE!!!!"). The search returned them correctly. My DOM probe
+counted zero rows and nearly filed a bug; the screenshot showed three. On this
+react-native-web tree the rendered pixels are the authority, not a querySelector
+over a tree that also contains inert copies — the third time that has caught me
+in this project.
+
+### Phase 4 — re-sweep after the section W fixes
+
+| Surface | Console | Resource | Result |
+|---|---|---|---|
+| `/health` | 0 | 0 | **P** — ALL SYSTEMS UP; "base layer" and "ephemeral rollup" are separate rows, and the rollup row probes `:6699`, so it is the gate |
+| `/stats` | 0 | 0 | **P** — 104 settled, rake still agrees to the lamport, LIVE NOW honest |
+| Full suite | — | — | **P** — 20 steps, 1,658 tape assertions over 102 tapes, 1,037 invariant assertions |
+
+The error wording was then aligned to `/health`'s own row labels — "base layer"
+and "ephemeral rollup" — so somebody who follows the pointer finds the row it
+names rather than a third name for the same service.

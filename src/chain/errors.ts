@@ -90,11 +90,11 @@ const PATTERNS: Array<[RegExp, FriendlyError]> = [
   // suspect. `/health` is the page that distinguishes them, so that is where
   // the generic case points.
   [/(6699|6700)/i,
-    { title: 'CANNOT REACH THE ROLLUP', detail: 'The read gate on :6699 is not answering. See /health.', retryable: true }],
+    { title: 'CANNOT REACH THE ROLLUP', detail: 'The ephemeral rollup is not answering. See /health.', retryable: true }],
   [/8999/i,
-    { title: 'CANNOT REACH THE BASE LAYER', detail: 'The validator on :8999 is not answering. See /health.', retryable: true }],
+    { title: 'CANNOT REACH THE BASE LAYER', detail: 'The base layer is not answering. See /health.', retryable: true }],
   [/failed to fetch|network request failed|econnrefused|fetch failed/i,
-    { title: 'CANNOT REACH THE CLUSTER', detail: 'The base layer or the rollup gate is not answering. See /health.', retryable: true }],
+    { title: 'CANNOT REACH THE CLUSTER', detail: 'The base layer or the ephemeral rollup is not answering. See /health.', retryable: true }],
   [/timed out|timeout/i, { title: 'TIMED OUT', retryable: true }],
   [/wallet not connected|no wallet/i,
     { title: 'CONNECT A WALLET', detail: 'Nothing can be signed without one.', retryable: false }],
