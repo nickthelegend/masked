@@ -95,13 +95,33 @@ function isPrivateAddress(ip, family) {
   );
 }
 
+/**
+ * A refusal by policy, as distinct from an upstream that failed.
+ *
+ * These carry their own status so the relay does not answer 502 — "the
+ * upstream failed" — about a host it deliberately never contacted. Naming the
+ * wrong cause is the same defect as reporting a transaction that was never
+ * sent.
+ */
+class Refused extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+
 /** Refuse a host that resolves anywhere private. Checked per redirect hop. */
 async function assertPublicHost(hostname) {
-  const addrs = await lookup(hostname, { all: true });
-  if (addrs.length === 0) throw new Error(`${hostname} does not resolve`);
+  let addrs;
+  try {
+    addrs = await lookup(hostname, { all: true });
+  } catch {
+    throw new Refused(400, `${hostname} does not resolve`);
+  }
+  if (addrs.length === 0) throw new Refused(400, `${hostname} does not resolve`);
   for (const a of addrs) {
     if (isPrivateAddress(a.address, a.family)) {
-      throw new Error(`${hostname} resolves to a private address`);
+      throw new Refused(403, `${hostname} resolves to a private address`);
     }
   }
 }
@@ -211,6 +231,9 @@ const server = createServer(async (req, res) => {
       res.end(buf);
       return;
     } catch (e) {
+      // A policy refusal keeps its own status; only a genuine upstream
+      // failure is a 502.
+      if (e instanceof Refused) return send(res, e.status, { error: e.message });
       return send(res, 502, { error: `logo ${target.hostname} failed: ${e?.message ?? e}` });
     }
   }

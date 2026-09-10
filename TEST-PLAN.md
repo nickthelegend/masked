@@ -737,3 +737,28 @@ while handing it `potPaid` — the payout wearing the pot's name, 0.196 rounding
 to 0.20 and reading as though no rake had been taken. It shows both now:
 `POT 0.20◎ · TAKES 0.196◎`, with `rake 0.004◎` on the line below, and the two
 add up.
+
+---
+
+## W — the failure modes the plan never drove
+
+Audited section by section against the goal's own list — invalid input, empty
+states, failed requests, mid-flow interruptions. Most are already covered:
+double-click OPEN / CANCEL / LONG (E4, E6, F9), refresh mid-transaction (Q1),
+market feed down (C9, C10, M3), an unknown proxy path (O6), the gate refusing a
+sealed read (A3, F3). These twelve are the ones nothing ever drove.
+
+| # | What | Correct means | Result |
+|---|---|---|---|
+| W1 | Read gate `:6699` **unreachable** mid-round | The round keeps running off L1 state; a fill reports a readable failure and never claims success. No raw fetch/RPC string reaches the screen |  |
+| W2 | Gate restored | The next fill succeeds without a reload |  |
+| W3 | Search: garbage that is not a mint or ticker (`!!!!`) | Honest empty result, no crash, no console error |  |
+| W4 | Search: a syntactically valid mint that is not a token | No row offered, no crash — better than offering a market `create_match` would reject |  |
+| W5 | Search: a real mint pasted whole | That exact token ranks first |  |
+| W6 | Feed `MINE` with a wallet that has settled nothing | "YOU HAVE NOT SETTLED A DUEL YET" — an empty state, not an empty list |  |
+| W7 | `/img` refuses a private address | `localhost`, `127.0.0.1` and `169.254.169.254` all refused — this relay runs beside a validator holding keys |  |
+| W8 | `/img` refuses non-https | An `http://` target is refused |  |
+| W9 | `/img` refuses a non-image | A URL returning HTML is refused with 415, not relayed |  |
+| W10 | `/img` relays a real logo | An allowlisted CDN image comes back with `content-type: image/*` and a `cross-origin-resource-policy` header |  |
+| W11 | `/whoami` identity | Names this service, so a wrong process on the port is obvious rather than mysterious |  |
+| W12 | Two tabs, same wallet, same live round | Both show the same clock and the same position; no double fill and no double settle on chain |  |

@@ -82,8 +82,19 @@ const PATTERNS: Array<[RegExp, FriendlyError]> = [
     { title: 'ACCOUNT NOT DELEGATED', detail: 'That write is only legal on the base layer.', retryable: false }],
   [/already in use/i,
     { title: 'ALREADY EXISTS', detail: 'That account has been created before.', retryable: false }],
+  // Named by endpoint where the error carries one, and deliberately vague
+  // where it does not. This app talks to two independent services — the base
+  // layer and the rollup's read gate — and "Is the validator running?" sent
+  // people to check the one that was fine. The gate was killed mid-round to
+  // test exactly this, and the app reported a healthy validator as the
+  // suspect. `/health` is the page that distinguishes them, so that is where
+  // the generic case points.
+  [/(6699|6700)/i,
+    { title: 'CANNOT REACH THE ROLLUP', detail: 'The read gate on :6699 is not answering. See /health.', retryable: true }],
+  [/8999/i,
+    { title: 'CANNOT REACH THE BASE LAYER', detail: 'The validator on :8999 is not answering. See /health.', retryable: true }],
   [/failed to fetch|network request failed|econnrefused|fetch failed/i,
-    { title: 'CANNOT REACH THE CLUSTER', detail: 'Is the validator running?', retryable: true }],
+    { title: 'CANNOT REACH THE CLUSTER', detail: 'The base layer or the rollup gate is not answering. See /health.', retryable: true }],
   [/timed out|timeout/i, { title: 'TIMED OUT', retryable: true }],
   [/wallet not connected|no wallet/i,
     { title: 'CONNECT A WALLET', detail: 'Nothing can be signed without one.', retryable: false }],
