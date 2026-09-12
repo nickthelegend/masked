@@ -14,3 +14,4 @@ dist/
 # Local validator ledgers — see scripts/localnet.sh
 .localnet/
 magicblock-test-storage/
+test-ledger/
