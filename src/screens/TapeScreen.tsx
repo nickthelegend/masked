@@ -1,9 +1,10 @@
 import { useMemo } from 'react';
-import { Pressable, ScrollView } from 'react-native';
+import { Linking, Pressable, ScrollView } from 'react-native';
 import { router } from 'expo-router';
 import {
   Badge,
   MaskAvatar,
+  PixelButton,
   PixelPanel,
   PixelText,
   PotPill,
@@ -24,6 +25,7 @@ import { fillTokens, fillValue, marketMove, replayEquity, tapeWindowNote, type T
 import { formatSolPrice } from '../chain/units';
 import { bpsPct, short, useTapes } from '../chain/useTapes';
 import { RAKE } from './data';
+import { proxyBase } from '../chain/marketEndpoints';
 
 export interface TapeScreenProps {
   /** Match address from the URL. */
@@ -396,6 +398,25 @@ export default function TapeScreen({ address }: TapeScreenProps) {
             </PixelText>
           </Row>
         </Stack>
+
+        {/* The link goes to the proxy's share page rather than straight to this
+            screen: a static export hands every crawler the same HTML, so only
+            the server can name this tape's card (server/src/og.ts) in og:image.
+            A person following it is redirected here. */}
+        <PixelButton
+          tone="info"
+          size={10}
+          label="SHARE ON X"
+          onPress={() => {
+            const url = `${proxyBase}/t/${tape.match.toBase58()}`;
+            const text =
+              `${tape.legA.symbol || 'UNNAMED'} ${pct(tape.pnlABps)} vs ${tape.legB.symbol || 'UNNAMED'} ${pct(tape.pnlBBps)}, ` +
+              'settled on MASKED. Private during the fight, public after.';
+            void Linking.openURL(
+              `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`
+            );
+          }}
+        />
 
         <PixelText variant="bodySmall" size={10} color={color.textFaint}>
           {tape.match.toBase58()}

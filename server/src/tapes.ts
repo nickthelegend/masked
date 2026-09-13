@@ -22,6 +22,10 @@ import { replayEquity, tapeWindowNote, toTapeState, type TapeFill, type TapeStar
 /** The base layer the program is deployed on. MagicBlock's devnet RPC by default. */
 export const L1_URL = process.env.TAPES_L1_URL ?? 'https://rpc.magicblock.app/devnet';
 export const PROGRAM_ID = FOGDUEL_IDL.address;
+/** Named on the share card, so a devnet duel never passes for a mainnet one. */
+export const CLUSTER_LABEL = /devnet/.test(L1_URL) ? 'DEVNET' : /mainnet/.test(L1_URL) ? 'MAINNET' : 'LOCALNET';
+
+export { renderTapeCard, sharePageHtml } from './og';
 
 const readOnlyWallet = {
   publicKey: null,
@@ -51,6 +55,7 @@ function side(
   start: TapeStart | null,
   fillCount: number,
   entry: number | null,
+  startTs: number | undefined,
   detail: boolean
 ) {
   const base = {
@@ -73,11 +78,12 @@ function side(
     equity:
       entry === null
         ? null
-        : replayEquity(fills, entry, undefined, start).map((p) => ({ ts: p.ts, equity: p.equity, bps: p.bps })),
+        : replayEquity(fills, entry, startTs, start).map((p) => ({ ts: p.ts, equity: p.equity, bps: p.bps })),
   };
 }
 
-function shape(t: TapeState, entry: number | null, detail: boolean) {
+/** `round` is the Match's start and length, when the match account still exists. */
+function shape(t: TapeState, entry: number | null, detail: boolean, round?: { startTs: number; duration: number }) {
   return {
     match: b58(t.match),
     winner: b58(t.winner),
@@ -85,8 +91,12 @@ function shape(t: TapeState, entry: number | null, detail: boolean) {
     rake: t.rake,
     settledTs: t.settledTs,
     entry,
-    a: side(t.playerA, t.legA, t.pnlABps, t.liquidatedA, t.fillsA, t.startA, t.fillCountA, entry, detail),
-    b: side(t.playerB, t.legB, t.pnlBBps, t.liquidatedB, t.fillsB, t.startB, t.fillCountB, entry, detail),
+    ...(detail ? { startTs: round?.startTs ?? null, duration: round?.duration ?? null } : {}),
+    // The round's start stamps each curve's opening point. Without it a side
+    // that never traded opened at unix time zero, and a chart drawn across both
+    // sides squashed the other one against its right edge.
+    a: side(t.playerA, t.legA, t.pnlABps, t.liquidatedA, t.fillsA, t.startA, t.fillCountA, entry, round?.startTs, detail),
+    b: side(t.playerB, t.legB, t.pnlBBps, t.liquidatedB, t.fillsB, t.startB, t.fillCountB, entry, round?.startTs, detail),
   };
 }
 
@@ -126,7 +136,12 @@ export async function getTape(matchParam: string) {
     cluster: L1_URL,
     programId: PROGRAM_ID,
     tapeAccount: b58(tapePda(match)),
-    tape: shape(s, m ? m.entry.toNumber() : null, true),
+    tape: shape(
+      s,
+      m ? m.entry.toNumber() : null,
+      true,
+      m ? { startTs: m.startTs.toNumber(), duration: m.duration.toNumber() } : undefined
+    ),
   };
 }
 

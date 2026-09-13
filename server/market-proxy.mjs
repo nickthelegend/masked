@@ -356,43 +356,65 @@ const server = createServer(async (req, res) => {
       service: SERVICE,
       upstreams: Object.keys(ROUTES),
       imageRelay: '/img?url=',
-      tapes: ['/api/tapes', '/api/tapes/<match>'],
+      tapes: ['/api/tapes', '/api/tapes/<match>', '/og/tape/<match>.png', '/t/<match>'],
     });
   }
 
-  // Settled duels, read from chain. See server/src/tapes.ts.
-  if (url.pathname === '/api/tapes' || url.pathname.startsWith('/api/tapes/')) {
+  // Settled duels, read from chain: the JSON API, each tape's share card, and
+  // the page a shared link lands on. See server/src/tapes.ts and og.ts.
+  const tapeRoute =
+    url.pathname === '/api/tapes'
+      ? { kind: 'list', param: null }
+      : url.pathname.startsWith('/api/tapes/')
+        ? { kind: 'json', param: url.pathname.slice('/api/tapes/'.length) }
+        : url.pathname.startsWith('/og/tape/') && url.pathname.endsWith('.png')
+          ? { kind: 'png', param: url.pathname.slice('/og/tape/'.length, -'.png'.length) }
+          : url.pathname.startsWith('/t/')
+            ? { kind: 'page', param: url.pathname.slice('/t/'.length) }
+            : null;
+  if (tapeRoute) {
     let api;
     try {
       api = await loadTapesApi();
     } catch (e) {
       return send(res, 503, { error: `tapes API not built (npm run build:server): ${e?.message ?? e}` });
     }
-    const param = url.pathname.slice('/api/tapes/'.length);
-    const key = url.pathname === '/api/tapes' ? 'list' : `tape:${param}`;
     try {
-      const hit = tapeCache.get(key);
-      let body;
-      let state = 'HIT';
-      if (hit && (hit.forever || Date.now() - hit.at < TAPE_LIST_TTL_MS)) {
-        body = hit.body;
-      } else {
-        let job = inflight.get(key);
-        if (!job) {
-          job = (key === 'list' ? api.listTapes() : api.getTape(param)).finally(() => inflight.delete(key));
-          inflight.set(key, job);
-        }
-        body = await job;
-        state = 'MISS';
-        // A settled tape never changes, so a found one is kept; the list, and
-        // a match with no tape yet, are asked again after the TTL.
-        tapeCache.set(key, { body, at: Date.now(), forever: key !== 'list' && body !== null });
-        while (tapeCache.size > CACHE_MAX_ENTRIES) tapeCache.delete(tapeCache.keys().next().value);
-      }
+      const { body, state } = await cachedTape(api, tapeRoute.param);
       if (body === null) return send(res, 404, { error: 'no tape for that match: it has not settled, or it is not a match' });
-      cors(res);
-      res.writeHead(200, { 'content-type': 'application/json', 'x-cache': state });
-      res.end(JSON.stringify(body));
+      if (tapeRoute.kind === 'list' || tapeRoute.kind === 'json') {
+        cors(res);
+        res.writeHead(200, { 'content-type': 'application/json', 'x-cache': state });
+        res.end(JSON.stringify(body));
+        return;
+      }
+      // The tape's own base58 from here on, not the path as typed.
+      const match = body.tape.match;
+      if (tapeRoute.kind === 'png') {
+        let png = cardCache.get(match);
+        if (!png) {
+          png = api.renderTapeCard(body.tape, api.CLUSTER_LABEL);
+          cardCache.set(match, png);
+          while (cardCache.size > CARD_CACHE_MAX) cardCache.delete(cardCache.keys().next().value);
+        }
+        cors(res);
+        res.writeHead(200, {
+          'content-type': 'image/png',
+          'content-length': String(png.length),
+          'cache-control': 'public, max-age=86400',
+          'cross-origin-resource-policy': 'cross-origin',
+        });
+        res.end(png);
+        return;
+      }
+      const origin = publicOrigin(req);
+      const html = api.sharePageHtml(body.tape, {
+        page: `${origin}/t/${match}`,
+        image: `${origin}/og/tape/${match}.png`,
+        app: `${APP_ORIGIN}/tape/${match}`,
+      });
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=300' });
+      res.end(html);
       return;
     } catch (e) {
       if (e instanceof api.BadMatch) return send(res, 400, { error: e.message });
@@ -469,7 +491,7 @@ const server = createServer(async (req, res) => {
 
   const entry = Object.entries(ROUTES).find(([prefix]) => url.pathname.startsWith(prefix));
   if (!entry) {
-    return send(res, 403, { error: 'not a market route', allowed: [...Object.keys(ROUTES), '/img', '/api/tapes'] });
+    return send(res, 403, { error: 'not a market route', allowed: [...Object.keys(ROUTES), '/img', '/api/tapes', '/og/tape', '/t'] });
   }
   const [prefix, origin] = entry;
 
@@ -561,6 +583,44 @@ const loadTapesApi = () => (tapesApi ??= import('./tapes.bundle.mjs').catch((e) 
 }));
 const tapeCache = new Map();
 const TAPE_LIST_TTL_MS = 15_000;
+
+/** A tape answer from cache or chain. `param` null is the list; otherwise a match address. */
+async function cachedTape(api, param) {
+  const key = param === null ? 'list' : `tape:${param}`;
+  const hit = tapeCache.get(key);
+  if (hit && (hit.forever || Date.now() - hit.at < TAPE_LIST_TTL_MS)) return { body: hit.body, state: 'HIT' };
+  let job = inflight.get(key);
+  if (!job) {
+    job = (param === null ? api.listTapes() : api.getTape(param)).finally(() => inflight.delete(key));
+    inflight.set(key, job);
+  }
+  const body = await job;
+  // A settled tape never changes, so a found one is kept; the list, and a
+  // match with no tape yet, are asked again after the TTL.
+  tapeCache.set(key, { body, at: Date.now(), forever: param !== null && body !== null });
+  while (tapeCache.size > CACHE_MAX_ENTRIES) tapeCache.delete(tapeCache.keys().next().value);
+  return { body, state: 'MISS' };
+}
+
+/** Rendered share cards by match: tens of KB each, and a tape's card never changes. */
+const cardCache = new Map();
+const CARD_CACHE_MAX = 200;
+
+/** Where a shared link sends a person: the tape in the hosted app. */
+const APP_ORIGIN = (process.env.APP_ORIGIN ?? 'https://masked-eight.vercel.app').replace(/\/$/, '');
+
+/**
+ * This server's public origin, for the absolute image URL a link crawler needs.
+ * PUBLIC_ORIGIN when set; otherwise what the platform's edge forwarded, with a
+ * host that is not a plain hostname refused rather than pasted into the page.
+ */
+function publicOrigin(req) {
+  if (process.env.PUBLIC_ORIGIN) return process.env.PUBLIC_ORIGIN.replace(/\/$/, '');
+  const first = (v) => String(v ?? '').split(',')[0].trim();
+  const proto = first(req.headers['x-forwarded-proto']) === 'https' ? 'https' : 'http';
+  const host = first(req.headers['x-forwarded-host'] ?? req.headers.host);
+  return `${proto}://${/^[A-Za-z0-9.-]+(:\d+)?$/.test(host) ? host : `127.0.0.1:${PORT}`}`;
+}
 
 function ttlFor(pathname) {
   for (const [re, ms] of CACHE_TTL_MS) if (re.test(pathname)) return ms;
