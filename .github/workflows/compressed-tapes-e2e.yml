@@ -112,7 +112,10 @@ jobs:
         env:
           KEYS_URL: https://d1wbn9ra8wjh7t.cloudfront.net
         run: |
-          curl -sf "$KEYS_URL/CHECKSUM" | grep -q 'v1_non-inclusion_26_1' || { echo "key host has no v1_non-inclusion_26_1 checksum"; exit 1; }
+          # Saved to a file first: `curl | grep -q` under pipefail fails when grep exits early (curl gets SIGPIPE).
+          code=$(curl -s -o checksum.txt -w '%{http_code}' "$KEYS_URL/CHECKSUM")
+          echo "CHECKSUM from $KEYS_URL: HTTP $code, $(wc -l < checksum.txt) entries"
+          grep 'v1_non-inclusion_26_1' checksum.txt || { echo "key host has no v1_non-inclusion_26_1 checksum"; head -c 300 checksum.txt; exit 1; }
           PROVER="$HOME/.config/light/bin/prover-linux-amd64"
           pkill -f prover-linux-amd64 || true
           for i in $(seq 1 20); do nc -z 127.0.0.1 3001 || break; sleep 1; done
