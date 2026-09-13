@@ -103,6 +103,24 @@ jobs:
           if up; then echo "stack up (solana-test-validator)"; tail -20 light-cli.log; exit 0; fi
           cat light-cli.log; exit 1
 
+      # Light's CLI 0.28.4 starts prover v2.0.7 without --download-url, so it fetches proving keys from
+      # its old default, a Google Cloud bucket that is gone (CHECKSUM: HTTP 404). Light's current CLI
+      # passes its CDN instead (cli/src/utils/processProverServer.ts on main); restart the prover on the
+      # same port with that URL so Photon's proof requests reach a prover that can load its keys.
+      - name: Restart the prover with Light's current key host
+        working-directory: chain/light-e2e
+        env:
+          KEYS_URL: https://d1wbn9ra8wjh7t.cloudfront.net
+        run: |
+          curl -sf "$KEYS_URL/CHECKSUM" | grep -q 'v1_non-inclusion_26_1' || { echo "key host has no v1_non-inclusion_26_1 checksum"; exit 1; }
+          PROVER="$HOME/.config/light/bin/prover-linux-amd64"
+          pkill -f prover-linux-amd64 || true
+          for i in $(seq 1 20); do nc -z 127.0.0.1 3001 || break; sleep 1; done
+          nohup "$PROVER" start --keys-dir "$HOME/.config/light/proving-keys/" --prover-address 0.0.0.0:3001 \
+            --auto-download true --download-url "$KEYS_URL" > prover-restart.log 2>&1 &
+          for i in $(seq 1 60); do nc -z 127.0.0.1 3001 && { echo "prover back on :3001 with $KEYS_URL"; exit 0; }; sleep 2; done
+          cat prover-restart.log; exit 1
+
       - name: Archive a settled tape and read it back through Photon
         working-directory: chain/light-e2e
         run: |
@@ -113,7 +131,7 @@ jobs:
         if: always()
         working-directory: chain/light-e2e
         run: |
-          for f in light-cli.log test-ledger/*.log; do
+          for f in light-cli.log prover-restart.log test-ledger/*.log; do
             [ -f "$f" ] || continue
             echo "===== $f (last 80 lines)"; tail -80 "$f"
           done
