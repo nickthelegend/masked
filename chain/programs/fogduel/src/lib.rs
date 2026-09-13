@@ -52,6 +52,23 @@ use state::*;
 
 declare_id!("3K3v1bp6uUGVdzRfZmkwZGK82BHgCJxAroXJ3ZRs1Rj1");
 
+use light_sdk::{
+    account::LightAccount,
+    address::v1::derive_address,
+    cpi::{
+        v1::{CpiAccounts, LightSystemProgramCpi},
+        InvokeLightSystemProgram, LightCpiInstruction,
+    },
+    derive_light_cpi_signer,
+    instruction::PackedAddressTreeInfo,
+    CpiSigner,
+};
+use light_sdk::instruction::ValidityProof;
+use light_sdk::PackedAddressTreeInfoExt;
+
+/// The signer this program's CPIs into Light's system program present.
+pub const LIGHT_CPI_SIGNER: CpiSigner = derive_light_cpi_signer!("3K3v1bp6uUGVdzRfZmkwZGK82BHgCJxAroXJ3ZRs1Rj1");
+
 /// Extra lamports parked on each `Position` PDA at creation.
 ///
 /// The PER docs are explicit that a delegated account must carry enough
@@ -235,7 +252,7 @@ pub mod fogduel {
         // Escrow the creator's entry.
         system_program::transfer(
             CpiContext::new(
-                ctx.accounts.system_program.to_account_info(),
+                ctx.accounts.system_program.key(),
                 system_program::Transfer {
                     from: ctx.accounts.creator.to_account_info(),
                     to: vault.to_account_info(),
@@ -286,7 +303,7 @@ pub mod fogduel {
 
         system_program::transfer(
             CpiContext::new(
-                ctx.accounts.system_program.to_account_info(),
+                ctx.accounts.system_program.key(),
                 system_program::Transfer {
                     from: ctx.accounts.joiner.to_account_info(),
                     to: ctx.accounts.vault.to_account_info(),
@@ -352,7 +369,7 @@ pub mod fogduel {
         for target in [pa.to_account_info(), pb.to_account_info()] {
             system_program::transfer(
                 CpiContext::new(
-                    ctx.accounts.system_program.to_account_info(),
+                    ctx.accounts.system_program.key(),
                     system_program::Transfer {
                         from: ctx.accounts.joiner.to_account_info(),
                         to: target,
@@ -506,6 +523,57 @@ pub mod fogduel {
         // pair, which is what the replay check above compares against.
         feed.updated_ts = oldest;
         feed.authority = pyth::PYTH_RECEIVER_ID;
+        Ok(())
+    }
+
+    /// Archive a settled tape's result as a compressed account (Light Protocol).
+    ///
+    /// Its address is derived from the match, so an indexer (Photon) can serve
+    /// it by match without the rent a PDA holds. What is archived is the
+    /// result — markets, players, winner, both PnLs, pot, rake, fill counts —
+    /// read here from the Tape PDA, not taken from the caller. The fills stay on
+    /// the PDA: 32 of them beside a validity proof would not fit in one
+    /// 1,232-byte transaction.
+    pub fn archive_tape<'info>(
+        ctx: Context<'info, ArchiveTape<'info>>,
+        proof: ValidityProof,
+        address_tree_info: PackedAddressTreeInfo,
+        output_tree_index: u8,
+    ) -> Result<()> {
+        let t = &ctx.accounts.tape;
+        let light_cpi_accounts = CpiAccounts::new(
+            ctx.accounts.payer.as_ref(),
+            ctx.remaining_accounts,
+            crate::LIGHT_CPI_SIGNER,
+        );
+        let (address, address_seed) = derive_address(
+            &[b"tape", t.match_key.as_ref()],
+            &address_tree_info.get_tree_pubkey(&light_cpi_accounts)?,
+            &crate::ID,
+        );
+        let new_address_params = address_tree_info.into_new_address_params_packed(address_seed);
+
+        let mut archived = LightAccount::<CompressedTape>::new_init(&crate::ID, Some(address), output_tree_index);
+        archived.match_key = t.match_key;
+        archived.mint_a = t.leg_a.mint;
+        archived.mint_b = t.leg_b.mint;
+        archived.player_a = t.player_a;
+        archived.player_b = t.player_b;
+        archived.winner = t.winner;
+        archived.pnl_a_bps = t.pnl_a_bps;
+        archived.pnl_b_bps = t.pnl_b_bps;
+        archived.pot_paid = t.pot_paid;
+        archived.rake = t.rake;
+        archived.settled_ts = t.settled_ts;
+        archived.fill_count_a = t.fill_count_a;
+        archived.fill_count_b = t.fill_count_b;
+        archived.liquidated_a = t.liquidated_a;
+        archived.liquidated_b = t.liquidated_b;
+
+        LightSystemProgramCpi::new_cpi(crate::LIGHT_CPI_SIGNER, proof)
+            .with_light_account(archived)?
+            .with_new_addresses(&[new_address_params])
+            .invoke(light_cpi_accounts)?;
         Ok(())
     }
 
@@ -1463,6 +1531,17 @@ pub struct PushPricePyth<'info> {
     /// discriminator, queue, feed hash, freshness and agreement with Pyth's
     /// SOL/USD are checked in `sb::read_checked`.
     pub switchboard_sol_usd: UncheckedAccount<'info>,
+}
+
+#[derive(Accounts)]
+pub struct ArchiveTape<'info> {
+    /// Pays the Light system program's fees. Anyone: the archive holds only
+    /// what the public tape already says.
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    #[account(seeds = [b"tape", tape.match_key.as_ref()], bump = tape.bump)]
+    pub tape: Account<'info, Tape>,
 }
 
 #[derive(Accounts, Session)]

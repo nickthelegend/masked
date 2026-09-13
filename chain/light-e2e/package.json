@@ -1,0 +1,15 @@
+{
+  "name": "fogduel-light-e2e",
+  "private": true,
+  "type": "module",
+  "description": "PLAN 7.18 #82: archive a settled tape as a Light compressed account on Light's local validator and read it back through Photon.",
+  "scripts": { "e2e": "tsx archive-tape-e2e.mts" },
+  "dependencies": {
+    "@coral-xyz/anchor": "0.32.1",
+    "@lightprotocol/stateless.js": "0.23.3",
+    "@lightprotocol/zk-compression-cli": "0.28.4",
+    "@solana/web3.js": "1.98.4",
+    "bn.js": "5.2.5",
+    "tsx": "4.23.13"
+  }
+}

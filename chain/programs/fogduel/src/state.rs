@@ -692,3 +692,25 @@ impl PlayerStats {
         self.last_played_ts = ts;
     }
 }
+
+use light_sdk::LightDiscriminator;
+
+/// A settled tape's result, archived as a compressed account by `archive_tape`.
+#[derive(Clone, Debug, Default, AnchorSerialize, AnchorDeserialize, LightDiscriminator)]
+pub struct CompressedTape {
+    pub match_key: Pubkey,
+    pub mint_a: Pubkey,
+    pub mint_b: Pubkey,
+    pub player_a: Pubkey,
+    pub player_b: Pubkey,
+    pub winner: Pubkey,
+    pub pnl_a_bps: i64,
+    pub pnl_b_bps: i64,
+    pub pot_paid: u64,
+    pub rake: u64,
+    pub settled_ts: i64,
+    pub fill_count_a: u16,
+    pub fill_count_b: u16,
+    pub liquidated_a: bool,
+    pub liquidated_b: bool,
+}
