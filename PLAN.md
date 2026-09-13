@@ -23,7 +23,7 @@
 > `.localnet/ledger-pre-window-20260913T014342Z` (deleted 2026-09-13 20:06 UTC in a disk cleanup, with the owner's OK) (reset for the tape window
 > snapshot, see 8.1); after 01:49 UTC → the running validators.
 >
-> **Tally at 20:46 UTC, counted from the rows:** 59 DONE, 0 PARTIAL, 4 BLOCKED (4.1–4.4, which need the entrant's own login and Submit), 0 IN PROGRESS, 0 NOT STARTED.
+> **Tally at 20:55 UTC, counted from the rows:** 60 DONE, 0 PARTIAL, 3 BLOCKED (4.1, 4.2, 4.4 — the entrant's login, Submit and share click), 0 IN PROGRESS, 0 NOT STARTED.
 >
 > **Status tags:** `DONE` · `IN PROGRESS` · `NOT STARTED` · `PARTIAL` (a grouped row whose items split: each item's own status is spelled out) · `BLOCKED` (blocker
 > named). Times are UTC unless marked *local*; this machine runs at UTC+05:30.
@@ -231,9 +231,9 @@ contradict the product in every place listed below (G-16…G-23).
 
 | # | Task | Status |
 |---|---|---|
-| 4.1 | **Branch A (already submitted):** record the confirmation and timestamp in `SUBMISSION.md`. If the form allows edits, update the repo and video fields to match Phases 1–2. | **BLOCKED** — by 0.1 |
-| 4.2 | **Branch B, form still open:** paste the fields from `SUBMISSION.md` and submit; record the confirmation. **Submitting publishes under the entrant's name — the entrant presses Submit.** | **BLOCKED** — by 0.1 and 1.4 |
-| 4.3 | **Branch B, form closed:** find the next eligible MagicBlock round or showcase, retarget `SUBMISSION.md` to it, and keep the §13 runbook current so the entry can be shown on demand. | **BLOCKED** — by 0.1 |
+| 4.1 | **Branch A (already submitted):** record the confirmation and timestamp in `SUBMISSION.md`. If the form allows edits, update the repo and video fields to match Phases 1–2. | **BLOCKED** — by 0.1. Whether an entry went in before the 2026-09-13 12:30 UTC close is visible only from the entrant's login (build.magicblock.app now lists Blitz v8 as past). If it did, the entrant records the confirmation here. |
+| 4.2 | **Branch B, form still open:** paste the fields from `SUBMISSION.md` and submit; record the confirmation. **Submitting publishes under the entrant's name — the entrant presses Submit.** | **BLOCKED** — cannot run as written: the Blitz v8 form closed 2026-09-13 12:30 UTC. 1.4 is DONE (the repo is public), and submitting is still the entrant's own login and Submit; the live path is 4.3. |
+| 4.3 | **Branch B, form closed:** find the next eligible MagicBlock round or showcase, retarget `SUBMISSION.md` to it, and keep the §13 runbook current so the entry can be shown on demand. | **DONE** — 2026-09-13 20:55 UTC. The Blitz v8 form closed at 12:30 UTC. build.magicblock.app lists V8 as past, and its Submit panel now targets **Forge · Epoch 02 · Mainnet** (countdown to 2026-10-31). `SUBMISSION.md` is retargeted (*Next eligible round*): what Forge is and where to apply (https://build.magicblock.app/?event=3&stage=forge), that the prepared Proof of Work fields carry over, and that Epoch 02's mainnet requirements are unpublished — a mainnet deploy would spend real SOL and is the owner's call, not done. The Bangkok Hacker House (Sep 21–30) is noted. The §13 runbook is current: `npm run check` at 22 steps, 38 passing, `npm run serve`, plus new devnet, hosted-build and CI sections, every command checked against `package.json` and the script headers on `main`. |
 | 4.4 | **Share the evidence page.** It is private until shared from its share menu (`SUBMISSION.md:188–192`); a judge who follows the link otherwise sees nothing. Owner action. | **BLOCKED** — owner action. Sharing makes the private evidence page reachable by anyone with the link, which is the owner's decision and click, not an agent's; until then a judge following the URL in `SUBMISSION.md` sees nothing |
 
 ---
@@ -501,13 +501,33 @@ for k in .keys/player-*.json; do solana airdrop 20 "$(solana-keygen pubkey "$k")
 
 # 4. export — always --clear when any EXPO_PUBLIC_* value changes — then check the bundle
 npx expo export --platform web --output-dir dist --clear && npm run check:build
-npm run serve     # task 0.4 adds this; until then nothing in the repo serves dist/.
+npm run serve     # server/serve-dist.mjs serves dist/
                   # :4173 and :8081 belong to other projects on this machine.
 
 # 5. verify
-npm run check                                     # 21 steps
-(cd chain && anchor test --skip-local-validator)  # 27 passing, 2 pending
+npm run check                                     # 22 steps
+(cd chain && anchor test --skip-local-validator)  # 38 passing, 2 pending (last recorded)
 npm run crank                                     # settle anything abandoned
+
+# 6. devnet — program 3K3v1bp6… is deployed there; the rollup is the TEE devnet-tee.magicblock.app
+EXPO_PUBLIC_CLUSTER=devnet npm run verify:client   # a full match through the app's own client
+EXPO_PUBLIC_CLUSTER=devnet npm run prove:privacy   # opponent REFUSED mid-round, owner served
+EXPO_PUBLIC_CLUSTER=devnet npm run check:vrf       # a VRF draw fulfilled by the oracle
+npx tsx scripts/check-tee.mts                      # the TEE's Intel TDX quote, verified
+EXPO_PUBLIC_CLUSTER=devnet EXPO_PUBLIC_L1_URL=https://rpc.magicblock.app/devnet \
+  npx tsx scripts/check-pyth.mts                   # Pyth + Switchboard marks and refusals (17)
+scripts/check-oracles-disagree.sh                  # after anchor build: OraclesDisagree on an isolated validator
+# devnet SOL: airdrop through https://rpc.magicblock.app/devnet (public faucets refused this wallet).
+# program upgrades on devnet: solana program deploy … --use-rpc (without it, 177 write transactions failed).
+
+# 7. hosted build (masked-eight.vercel.app) and the Railway proxy
+EXPO_PUBLIC_CLUSTER=devnet EXPO_PUBLIC_L1_URL=https://rpc.magicblock.app/devnet \
+EXPO_PUBLIC_MARKET_PROXY=https://market-proxy-production.up.railway.app \
+  npm run export:host -- --out .localnet/vercel/masked   # export from a real node_modules, never a symlink
+npm run build:server && npm run build:keeper           # the proxy's tapes API and Switchboard keeper bundles
+
+# 8. CI on GitHub Actions
+gh workflow run compressed-tapes-e2e.yml --ref compressed-tapes   # Light validator + Photon + prover: COMPRESSED-TAPE OK
 ```
 
 **Two-wallet browser testing** (anything touching matchmaking, sealing or

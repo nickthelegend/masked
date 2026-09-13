@@ -3,13 +3,20 @@
 Everything the submission form asks for, prepared and ready to paste.
 **Status, checked 2026-09-12 20:34 UTC:** no submission is recorded in this
 repository, and whether one exists can only be seen from the entrant's login.
-**The form is still open — Blitz v8 submissions close 2026-09-13 12:30 UTC.**
+**Blitz v8 submissions closed 2026-09-13 12:30 UTC.** Checked 20:55 UTC: build.magicblock.app lists V8 (Sep 4–11) as past, and its Submit panel now reads "SUBMITTING FOR Forge · Epoch 02 · Mainnet", counting down to Oct 31, 2026. Whether an entry went in before the close can only be seen from the entrant's login. See **Next eligible round** below.
 The form's own tooltip reads "Submissions close Sep 13, 6:00 PM" (shown in
 UTC+05:30), matching its 15 h 56 m countdown at the time of checking. Fields
 marked ⚠ need the owner. The program is deployed to devnet (2026-09-13, see
 **Program ID**).
 
 ---
+
+## Next eligible round (retargeted 2026-09-13 20:55 UTC)
+
+- **Forge · Epoch 02 · Mainnet** is what build.magicblock.app's Submit panel now submits to (countdown to **2026-10-31**). Forge is MagicBlock's "VIP builder program": weekly 1:1 engineering mentorship, go-to-market support, "your first 100+ users via Quests" and "a fast track to our IRL Hacker House" (MagicBlock's July 2026 recap, https://www.magicblock.xyz/blog/july2026-recap). Apply at https://build.magicblock.app/?event=3&stage=forge.
+- **The same form, four steps:** Purpose, About you, Proof of Work, Boost. The Proof of Work values below (name, description, categories, website, repo, demo, explorer link, program address) carry over unchanged. Purpose, About you and Boost are the entrant's own answers.
+- **What "Mainnet" asks is not published** on the build page or in the recap. Masked runs on devnet today (program `3K3v1bp6uUGVdzRfZmkwZGK82BHgCJxAroXJ3ZRs1Rj1`, TEE `devnet-tee.magicblock.app`). A mainnet deployment would spend real SOL on rent and fees and depends on MagicBlock's mainnet rollup and TEE endpoints, so it is the owner's decision and has not been done. Before submitting, check the Epoch 02 rules from the entrant's login.
+- **Also on the timeline:** the Bangkok Hacker House, Sep 21–30, 2026 (IRL; "prepare for go-to-market and fundraising"). Events are announced at https://luma.com/magicblock-events.
 
 ## Form fields
 
