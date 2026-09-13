@@ -13,6 +13,16 @@ marked ⚠ need the owner. The program is deployed to devnet (2026-09-13, see
 
 ## Form fields
 
+**The build.magicblock.app form, field by field (links checked 2026-09-13 10:20 UTC):**
+- **Project name:** Masked
+- **Categories (up to 3):** Games, Privacy, DeFi
+- **Project website:** https://masked-eight.vercel.app (a devnet build: HTTP 200)
+- **GitHub repo:** https://github.com/nickthelegend/masked (public: anonymous GET 200)
+- **Pitch & Demo:** https://github.com/nickthelegend/masked/blob/main/docs/masked-demo.mp4 (HTTP 200, 1.0 MB). An unlisted YouTube or Loom upload of the same file plays better. The evidence page is private until shared.
+- **Explorer link (integration proof):** https://explorer.solana.com/tx/2rm8pUTVsQGbAs1XMM879v56qcbWootqzQs1RWjFyTCVUVKx5tdgBvS3W9CisBB6DDBUrJnfsEgzJTGMJzMgVSo3?cluster=devnet — a successful devnet `DelegatePositionToEr` from a real duel at 06:50:00 UTC. Its logs show fogduel invoking MagicBlock's Delegation Program `DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh`. The same duel's commit-back (`ProcessUndelegation` `rz671Y7j…`, 06:50:56) and `SettleMatch` (`3vpzRYFe…`, 06:50:59) are also on devnet.
+- **Program addresses:** `3K3v1bp6uUGVdzRfZmkwZGK82BHgCJxAroXJ3ZRs1Rj1` (the only program; MagicBlock's own programs are not listed)
+- **Description:** the short description below, trimmed to what the game is and the four MagicBlock pieces it uses.
+
 **Project name:** MASKED
 
 **One line:** Hidden-position 1v1 trading on Private Ephemeral Rollups — any
@@ -80,7 +90,7 @@ local stack and on **devnet** (deployed 2026-09-13 02:46 UTC, signature
 
 **Public tapes API:** https://market-proxy-production.up.railway.app/api/tapes and `/api/tapes/<match>` — every settled duel read from chain, decoded by the app's own modules. Each tape has a share card at `/og/tape/<match>.png` and a share page at `/t/<match>` (preview tags, then the tape in the app); the tape screen's SHARE ON X posts that link.
 
-**Oracles:** on devnet, `push_price_pyth` sets a major's mark from Pyth (`PriceUpdateV2`, Full verification, fixed feed per mint, freshness and confidence bounds) and requires Switchboard On-Demand's SOL/USD (Coinbase + Kraken jobs, pinned by queue and feed hash) to agree within 100 bps; after that, the manual crank cannot move the feed. `check:pyth` on devnet: 17/17 (branch `pyth-majors`, program slot 497,557,294). Not yet wired into the app's crank.
+**Oracles:** on devnet, `push_price_pyth` sets a major's mark from Pyth (`PriceUpdateV2`, Full verification, fixed feed per mint, freshness and confidence bounds) and requires Switchboard On-Demand's SOL/USD (Coinbase + Kraken jobs, pinned by queue and feed hash) to agree within 100 bps; after that, the manual crank cannot move the feed. `check:pyth` on devnet: 17/17 (branch `pyth-majors`, program slot 497,557,294). The app's mark crank uses it on branch `pyth-majors`, and masked-eight.vercel.app has served that branch's build since 06:44 UTC. Three two-wallet devnet duels (06:07–06:51 UTC, the last match `Ez3eWqLs…`) settled with Pyth-owned feeds. Not yet merged into `main`.
 
 **Demo video:** `docs/masked-demo.mp4` (43 s, unedited, captured
 against the running stack) and the evidence page
@@ -156,13 +166,7 @@ and attestation as two separate rows for that reason.
 
 **What is still open:**
 
-- **One devnet bug in the app's seal path, fix pending.** On a TEE cluster
-  `src/screens/useDuel.ts` also calls `initPositionPrivacy`, which creates an
-  *ephemeral* permission at the address the app's seal has already filled with
-  the delegated L1 permission, so devnet-tee refuses it and a devnet round would
-  error right after sealing. The call is redundant: the delegated L1 ACL alone
-  gates reads on the TEE (`prove:privacy` passed without it). The fix is to
-  remove it; the local stack is unaffected.
+- **The devnet seal-path bug is fixed** (86bf397, 04:16 UTC). `useDuel.ts` no longer calls `initPositionPrivacy` on a TEE cluster, and devnet rounds since have sealed, delegated, filled on the TEE, committed back and settled (for example `DelegatePositionToEr` `2rm8pUTV…` at 06:50:00 UTC).
 - **No UI is built on a VRF draw yet.** Draws resolve on devnet but not on the
   local stack, so BLIND DRAFT stays a `SOON` tile.
 
@@ -201,8 +205,8 @@ while the owner reads their own, and the TEE's TDX quote verifies against
 Intel's collateral: the two claims, enforcement and attestation, each have
 their own evidence.
 
-What is not done is said plainly: the hosted devnet build has not had a full
-two-wallet duel played on it yet, and VRF resolves on
+What is not done is said plainly: the three two-wallet devnet duels were played on a devnet web build of the
+same branch served locally with in-page burner keys, not through the hosted URL with a browser wallet, and VRF resolves on
 devnet but drives no UI. A judge finding any of that themselves would be
 worse than being told.
 
