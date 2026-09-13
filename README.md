@@ -1,6 +1,6 @@
 # MASKED
 
-Source: https://github.com/nickthelegend/masked
+Source: https://github.com/nickthelegend/masked · Live (devnet): https://masked-eight.vercel.app
 
 **Hidden-position 1v1 trading on Solana, built on MagicBlock Ephemeral Rollups.**
 
@@ -393,15 +393,16 @@ Read this before judging — none of it is hidden in the code.
 4. **Web only.** `@solana/wallet-adapter` is browser-only, and metro resolves
    `@solana-mobile/*` to a stub. A native build needs Mobile Wallet Adapter or
    Solflare deeplinks.
-5. **Deployed to devnet; no devnet build is hosted.** The program is on devnet
+5. **Deployed to devnet, and hosted.** The program is on devnet
    at the same id, `3K3v1bp6uUGVdzRfZmkwZGK82BHgCJxAroXJ3ZRs1Rj1` (deploy
    `F6tajCiL…`, slot 497,500,594, 2026-09-13 02:46 UTC). The public faucets
    refused airdrops throughout the build; MagicBlock's devnet RPC
    (`rpc.magicblock.app/devnet`) granted them. `EXPO_PUBLIC_CLUSTER=devnet
    npm run verify:client` plays a full match against it and the devnet TEE:
    sealed, delegated, filled on the TEE, committed back, settled, and the
-   client's PnL agreeing with the chain (CLIENT OK, 02:51 UTC). What is not
-   done is a hosted devnet build of the app for a judge to open.
+   client's PnL agreeing with the chain (CLIENT OK, 02:51 UTC). A devnet build
+   is hosted at https://masked-eight.vercel.app (frontend on Vercel, market proxy on
+   Railway; `npm run export:host` builds it).
 6. **An open match goes stale after five minutes.** Both books are seeded from
    the market mid snapshotted when the match is *created*, so a duel joined long
    afterwards would start at a price the market has left behind — and the

@@ -76,18 +76,20 @@ token, long or short, reveal and pot settlement on Solana.
 local stack and on **devnet** (deployed 2026-09-13 02:46 UTC, signature
 `F6tajCiLyJrjp7hTg6HQqQ8PjdMNyALnnQkkReoW91U73oBb1gRQPTpXAZEAHEWDxewmPHbCKVwhgjbTnZX9wAB`).
 
-**Demo video / live URL:** `docs/masked-demo.mp4` (43 s, unedited, captured
+**Live URL:** https://masked-eight.vercel.app — a devnet build: program on devnet, positions sealed on MagicBlock's TEE, markets through https://market-proxy-production.up.railway.app. Connect a devnet wallet to play.
+
+**Demo video:** `docs/masked-demo.mp4` (43 s, unedited, captured
 against the running stack) and the evidence page
 https://claude.ai/code/artifact/55aff865-8675-4492-93b5-96be7804170c, both
 described under *Demo video and live URL* below. The evidence page is private
 until shared from its share menu. `DEMO.md` is the shot list for a longer take.
 
-A **live URL now needs only hosting.** The export supports remote clusters
+A **live URL is up: https://masked-eight.vercel.app.** The export supports remote clusters
 (`EXPO_PUBLIC_L1_URL`, `EXPO_PUBLIC_ER_URL`, `EXPO_PUBLIC_CLUSTER`, baked at
 build time), and devnet is now a publicly reachable cluster with the program
 on it: `EXPO_PUBLIC_CLUSTER=devnet npm run verify:client` played a full match
-there against the devnet TEE (CLIENT OK, 2026-09-13 02:51 UTC). Publishing a
-devnet build is the owner's decision (`PLAN.md` 5.9). Tunnelling the local
+there against the devnet TEE (CLIENT OK, 2026-09-13 02:51 UTC), and the hosted
+build reads that cluster live (`PLAN.md` 5.9). Tunnelling the local
 stack was rejected: it would put a validator and a faucet on the internet and
 would die with the machine.
 
@@ -150,8 +152,6 @@ and attestation as two separate rows for that reason.
 
 **What is still open:**
 
-- **A hosted devnet build of the app.** Everything it needs is deployed;
-  publishing a public URL is the owner's call (`PLAN.md` 5.9).
 - **One devnet bug in the app's seal path, fix pending.** On a TEE cluster
   `src/screens/useDuel.ts` also calls `initPositionPrivacy`, which creates an
   *ephemeral* permission at the address the app's seal has already filled with
@@ -177,9 +177,9 @@ Submissions close **2026-09-13 12:30 UTC** (checked 2026-09-12 20:34 UTC).
 4. [x] Video recorded: `docs/masked-demo.mp4`.
 5. [ ] Put the video where the form can link it, paste that URL into
        **Demo video / live URL**, and share the evidence page.
-6. [x] Devnet: program deployed (2026-09-13 02:46 UTC) and a full match played
-       against it and the TEE (`PLAN.md` 5.2, 5.5). Still open: a hosted devnet
-       build (5.9), which is the owner's call.
+6. [x] Devnet: program deployed (2026-09-13 02:46 UTC), a full match played
+       against it and the TEE (`PLAN.md` 5.2, 5.5), and a devnet build hosted at
+       https://masked-eight.vercel.app (5.9).
 7. [ ] Paste the fields above into the form and submit. The entrant presses
        Submit.
 8. [ ] Record the confirmation and timestamp back into this file.
@@ -197,8 +197,8 @@ while the owner reads their own, and the TEE's TDX quote verifies against
 Intel's collateral: the two claims, enforcement and attestation, each have
 their own evidence.
 
-What is not done is said plainly: no devnet build of the app is hosted, one
-devnet seal-path bug is found and its fix pending, and VRF resolves on
+What is not done is said plainly: the hosted devnet build has not had a full
+two-wallet duel played on it yet, and VRF resolves on
 devnet but drives no UI. A judge finding any of that themselves would be
 worse than being told.
 

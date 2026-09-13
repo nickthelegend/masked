@@ -49,7 +49,8 @@
     "check:build": "tsx scripts/check-build.mts",
     "soak": "tsx scripts/soak.mts",
     "check:palette": "node --no-warnings=MODULE_TYPELESS_PACKAGE_JSON scripts/check-palette.mjs",
-    "icons": "tsx scripts/make-icons.mjs"
+    "icons": "tsx scripts/make-icons.mjs",
+    "export:host": "node scripts/export-web-host.mjs"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",
