@@ -2136,8 +2136,9 @@ export const FOGDUEL_IDL = {
         "public, a step at a time, while their opponent watches and trades.",
         "",
         "This is a stand-in for an oracle, and it is the one place where the",
-        "round trusts something off-chain. For a major, the replacement is a",
-        "Pyth price update, which is signed and needs no rate limit."
+        "round trusts something off-chain. For a major Pyth publishes, the",
+        "replacement is `push_price_pyth`; a feed that has taken a Pyth price is",
+        "refused here for the rest of the round."
       ],
       "discriminator": [
         113,
@@ -2216,6 +2217,125 @@ export const FOGDUEL_IDL = {
           "name": "px",
           "type": "u64"
         },
+        {
+          "name": "owner",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "push_price_pyth",
+      "docs": [
+        "Post a major's mark from Pyth, and hand that feed to Pyth for the rest",
+        "of the round.",
+        "",
+        "The price is token/USD over SOL/USD, both read from `PriceUpdateV2`",
+        "accounts Pyth's receiver owns — fully verified, fresh, inside the",
+        "confidence band (see `pyth.rs`). It is signed by Pyth's publishers, so",
+        "unlike `push_price` it takes no step limit. Which feed prices which",
+        "mint is fixed in `pyth::MAJOR_FEEDS`, so a caller cannot hand in another",
+        "token's update.",
+        "",
+        "Permissionless like `push_price`, for the same reason. Once a feed has",
+        "taken a Pyth price its `authority` is the receiver and `push_price`",
+        "refuses it. Each later Pyth push must not be older than the pair before",
+        "it, and at least one of its two updates must be newer, so a stale signed",
+        "update cannot be replayed to drag the mark back.",
+        "",
+        "Pyth's SOL/USD divides every mark, so it is not taken on Pyth's word",
+        "alone: a Switchboard On-Demand SOL/USD feed (Coinbase and Kraken spot,",
+        "pinned by queue and feed hash in `sb.rs`), refreshed within",
+        "`sb::MAX_SB_AGE`, has to agree with it to `sb::MAX_ORACLE_DIVERGENCE_BPS`."
+      ],
+      "discriminator": [
+        153,
+        209,
+        116,
+        55,
+        0,
+        10,
+        1,
+        52
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "Anyone, as for `push_price`. Signing is only so somebody pays the fee."
+          ],
+          "signer": true
+        },
+        {
+          "name": "match_account",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  116,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "match_account.creator",
+                "account": "Match"
+              },
+              {
+                "kind": "account",
+                "path": "match_account.match_id",
+                "account": "Match"
+              }
+            ]
+          }
+        },
+        {
+          "name": "price_feed",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "match_account"
+              },
+              {
+                "kind": "arg",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_price_update",
+          "docs": [
+            "verification level, feed id, freshness and confidence are checked in",
+            "`pyth::read_checked`."
+          ]
+        },
+        {
+          "name": "sol_price_update"
+        },
+        {
+          "name": "switchboard_sol_usd",
+          "docs": [
+            "discriminator, queue, feed hash, freshness and agreement with Pyth's",
+            "SOL/USD are checked in `sb::read_checked`."
+          ]
+        }
+      ],
+      "args": [
         {
           "name": "owner",
           "type": "pubkey"
@@ -3098,6 +3218,71 @@ export const FOGDUEL_IDL = {
       "code": 6021,
       "name": "NotTheDrawOpener",
       "msg": "Not the wallet that opened this draw"
+    },
+    {
+      "code": 6022,
+      "name": "NotAMajor",
+      "msg": "Only a major market takes an oracle price"
+    },
+    {
+      "code": 6023,
+      "name": "NoOracleForMint",
+      "msg": "The program has no Pyth feed for this mint"
+    },
+    {
+      "code": 6024,
+      "name": "OracleAccountInvalid",
+      "msg": "Not a Pyth price update owned by the receiver program"
+    },
+    {
+      "code": 6025,
+      "name": "OracleNotFullyVerified",
+      "msg": "Pyth price update is not fully verified"
+    },
+    {
+      "code": 6026,
+      "name": "OracleWrongFeed",
+      "msg": "Pyth price update is for a different feed"
+    },
+    {
+      "code": 6027,
+      "name": "OracleStale",
+      "msg": "Pyth price update is too old, or dated in the future"
+    },
+    {
+      "code": 6028,
+      "name": "OracleConfidence",
+      "msg": "Pyth confidence interval is too wide"
+    },
+    {
+      "code": 6029,
+      "name": "OracleUpdateNotNewer",
+      "msg": "Pyth price update is not newer than the mark it would replace"
+    },
+    {
+      "code": 6030,
+      "name": "OracleOwnsFeed",
+      "msg": "This feed takes its price from Pyth for the rest of the round"
+    },
+    {
+      "code": 6031,
+      "name": "SecondOracleInvalid",
+      "msg": "Not a Switchboard SOL/USD pull feed on the expected queue"
+    },
+    {
+      "code": 6032,
+      "name": "SecondOracleWrongFeed",
+      "msg": "Switchboard feed runs different jobs from the pinned SOL/USD feed"
+    },
+    {
+      "code": 6033,
+      "name": "SecondOracleStale",
+      "msg": "Switchboard result is too old"
+    },
+    {
+      "code": 6034,
+      "name": "OraclesDisagree",
+      "msg": "Pyth and Switchboard disagree on SOL/USD"
     }
   ],
   "types": [

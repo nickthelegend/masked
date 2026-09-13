@@ -13,9 +13,10 @@
  * extension can otherwise only ever see the lobby, which leaves most of the
  * app untestable end to end.
  *
- * Refuses to construct against anything but the local cluster. That check is
- * the only thing standing between this and a key generated in a stranger's
- * browser holding real funds, so it throws rather than degrading.
+ * Refuses to construct anywhere but the local cluster, or devnet in a build
+ * that opts in (see `burnerWalletAllowed`). That check is the only thing
+ * standing between this and a key generated in a stranger's browser holding
+ * real funds, so it throws rather than degrading.
  */
 import { Keypair, Transaction, VersionedTransaction, type PublicKey } from '@solana/web3.js';
 import {
@@ -28,6 +29,16 @@ import nacl from 'tweetnacl';
 import { ACTIVE_CLUSTER } from './config';
 
 export const LocalKeyWalletName = 'Local Key (dev)' as WalletName<'Local Key (dev)'>;
+
+/**
+ * Where an in-page key may exist: the local validator always, and devnet only
+ * when the build sets EXPO_PUBLIC_BURNER_WALLET=1. Devnet SOL is as worthless
+ * as local SOL, and without this a devnet build cannot be played end to end
+ * except through a browser extension. No other cluster, flag or not.
+ */
+export const burnerWalletAllowed = (): boolean =>
+  ACTIVE_CLUSTER.name === 'local' ||
+  (ACTIVE_CLUSTER.name === 'devnet' && process.env.EXPO_PUBLIC_BURNER_WALLET === '1');
 
 const STORAGE_KEY = 'masked.localKeypair.v1';
 
@@ -76,8 +87,8 @@ export class LocalKeyWalletAdapter extends BaseMessageSignerWalletAdapter {
 
   constructor() {
     super();
-    if (ACTIVE_CLUSTER.name !== 'local') {
-      throw new Error('LocalKeyWalletAdapter is local-cluster only');
+    if (!burnerWalletAllowed()) {
+      throw new Error('LocalKeyWalletAdapter is local-cluster only, or devnet with EXPO_PUBLIC_BURNER_WALLET=1');
     }
   }
 

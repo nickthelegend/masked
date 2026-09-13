@@ -16,7 +16,7 @@ import { ConnectionProvider, WalletProvider as AdapterProvider } from '@solana/w
 import { SolflareWalletAdapter } from '@solana/wallet-adapter-solflare';
 import type { Adapter } from '@solana/wallet-adapter-base';
 import { ACTIVE_CLUSTER } from './config';
-import { LocalKeyWalletAdapter, LocalKeyWalletName } from './LocalKeyWallet';
+import { LocalKeyWalletAdapter, LocalKeyWalletName, burnerWalletAllowed } from './LocalKeyWallet';
 
 export interface MaskedWalletProviderProps {
   children: ReactNode;
@@ -30,11 +30,11 @@ export default function MaskedWalletProvider({ children }: MaskedWalletProviderP
   const wallets = useMemo<Adapter[]>(() => {
     if (Platform.OS !== 'web') return [];
     const list: Adapter[] = [new SolflareWalletAdapter()];
-    // On a local validator, offer an in-page key as well. It signs real
-    // transactions with a real keypair — see LocalKeyWallet — and it is the
-    // only way to exercise the app end to end without an unlocked extension.
-    // The adapter itself refuses to exist on any other cluster.
-    if (ACTIVE_CLUSTER.name === 'local') list.push(new LocalKeyWalletAdapter());
+    // On a local validator, or a devnet build that opts in, offer an in-page
+    // key as well. It signs real transactions with a real keypair — see
+    // LocalKeyWallet — and it is the only way to exercise the app end to end
+    // without an unlocked extension. The adapter refuses to exist elsewhere.
+    if (burnerWalletAllowed()) list.push(new LocalKeyWalletAdapter());
     return list;
   }, []);
 

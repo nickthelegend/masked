@@ -51,7 +51,8 @@
     "check:palette": "node --no-warnings=MODULE_TYPELESS_PACKAGE_JSON scripts/check-palette.mjs",
     "icons": "tsx scripts/make-icons.mjs",
     "export:host": "node scripts/export-web-host.mjs",
-    "build:server": "esbuild server/src/tapes.ts --bundle --platform=node --format=esm --target=node22 --minify --legal-comments=none --outfile=server/tapes.bundle.mjs \"--banner:js=import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);\""
+    "build:server": "esbuild server/src/tapes.ts --bundle --platform=node --format=esm --target=node22 --minify --legal-comments=none --outfile=server/tapes.bundle.mjs \"--banner:js=import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);\"",
+    "build:keeper": "esbuild server/src/keeper.ts --bundle --platform=node --format=esm --target=node22 --minify --legal-comments=none --outfile=server/keeper.bundle.mjs \"--banner:js=import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url); import { fileURLToPath as __fu } from 'node:url'; import { dirname as __dnm } from 'node:path'; const __filename = __fu(import.meta.url); const __dirname = __dnm(__filename);\""
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",
@@ -83,6 +84,7 @@
     "react-native-web": "~0.19.13"
   },
   "devDependencies": {
+    "@switchboard-xyz/on-demand": "^3.10.6",
     "@types/react": "~18.3.12",
     "eslint": "^8.57.1",
     "eslint-config-expo": "^8.0.1",

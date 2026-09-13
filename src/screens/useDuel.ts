@@ -34,6 +34,16 @@ import { ACTIVE_CLUSTER } from '../chain/config';
 import { DEMO_MINT, marketLabel } from '../chain/market';
 import { OPPONENT_PENDING, RAKE, ROUND_SECONDS } from './data';
 import { readPrefs, writePrefs } from '../chain/prefs';
+import {
+  PYTH_MAJORS,
+  SOL_USD_FEED_ID,
+  SOL_USD_PRICE_UPDATE,
+  hasPythFeed,
+  readFeedOracleState,
+  readPriceUpdate,
+  refusal,
+} from '../chain/pyth';
+import { MAX_ORACLE_DIVERGENCE_BPS, readSwitchboard, sbSecondsLeft } from '../chain/switchboardFeed';
 
 export type DuelPhase = 'lobby' | 'searching' | 'live' | 'reveal';
 
@@ -188,7 +198,7 @@ export interface Duel {
   /** The market's logo, when its feed publishes one. */
   marketImageUri: string | null;
   /** Which feed prices this round. */
-  marketSource: 'pump.fun' | 'jupiter';
+  marketSource: 'pump.fun' | 'jupiter' | 'pyth';
   /** The mark, formatted. */
   priceLabel: string;
   /** What the book charged for the most recent fill, or null. */
@@ -480,6 +490,15 @@ export function useDuel(): Duel {
   const matchKey = match ? match.address.toBase58() : null;
 
   const [price, setPrice] = useState(0);
+  /**
+   * Whether my feed's mark comes from Pyth, checked by Switchboard, rather than
+   * the market API — read off the feed account on every price poll (its
+   * authority is the Pyth receiver once `push_price_pyth` has priced it,
+   * whichever client sent the push). It used to follow this client's own crank
+   * decision, so a background tab that had not ticked showed JUPITER beside a
+   * mark the chain said was Pyth's: a label that was not true.
+   */
+  const [markFromPyth, setMarkFromPyth] = useState(false);
   const [series, setSeries] = useState<number[]>([]);
   const [equity, setEquity] = useState<number[]>([0]);
   const [secondsLeft, setSecondsLeft] = useState(ROUND_SECONDS);
@@ -648,17 +667,21 @@ export function useDuel(): Duel {
     const me = walletRef.current.publicKey;
     if (!client || !address || phase !== 'live' || !me) return undefined;
 
+    setMarkFromPyth(false);
     let alive = true;
     const id = setInterval(async () => {
       try {
         // My own feed. The opponent has their own token and their own mark,
         // and neither is any of my business until the reveal.
-        const [m, pxRaw, mine] = await Promise.all([
+        const [m, pxRaw, mine, feed] = await Promise.all([
           client.fetchMatch(address),
           client.fetchPrice(address, me, true),
           client.fetchPosition(address, me, true),
+          readFeedOracleState(client.l1, address, me).catch(() => null),
         ]);
         if (!alive) return;
+        // An unreadable feed leaves the badge as it was rather than claiming a source.
+        if (feed) setMarkFromPyth(feed.pythOwned);
 
         // Displayed and charted, so a double is ample — the exactness that
         // matters is on chain and in what gets sent there.
@@ -727,6 +750,42 @@ export function useDuel(): Duel {
     const opponent = m0.creator.equals(me) ? m0.joiner : m0.creator;
     const theirs = legFor(m0, opponent);
 
+    // Which oracle sets a feed's mark this tick.
+    //
+    // A major Pyth publishes (pyth.ts: SOL, USDC) is priced by `push_price_pyth`
+    // once the program would take it: Pyth fresh and verified, Switchboard's
+    // SOL/USD refreshed within its window (the keeper does that) and agreeing
+    // with Pyth, and, for a feed Pyth already owns, a newer Pyth update than the
+    // mark. After the first Pyth mark the program refuses the crank on that
+    // feed, so a Pyth-owned feed with nothing newer holds its mark rather than
+    // sending a push the program would reject. Every other market is cranked
+    // from the market API as before.
+    const oracleFor = async (legMint: string, owner: PublicKey): Promise<'pyth' | 'hold' | 'crank'> => {
+      if (!hasPythFeed(legMint)) return 'crank';
+      const feed = await readFeedOracleState(client.l1, address, owner);
+      if (!feed) return 'crank';
+      try {
+        const now = Math.floor(Date.now() / 1000);
+        const [sbv, tok, sol] = await Promise.all([
+          readSwitchboard(client.l1),
+          readPriceUpdate(client.l1, PYTH_MAJORS[legMint].priceUpdate),
+          readPriceUpdate(client.l1, SOL_USD_PRICE_UPDATE),
+        ]);
+        const fallback = feed.pythOwned ? 'hold' : 'crank';
+        if (sbv.samples === 0 || sbSecondsLeft(sbv, now) <= 5) return fallback;
+        if (refusal(tok, PYTH_MAJORS[legMint].feedId, now) || refusal(sol, SOL_USD_FEED_ID, now)) return fallback;
+        const pythSol = sol.price * 10n ** BigInt(18 + sol.exponent);
+        const gap = sbv.usd1e18 > pythSol ? sbv.usd1e18 - pythSol : pythSol - sbv.usd1e18;
+        if (gap * 10_000n > pythSol * BigInt(MAX_ORACLE_DIVERGENCE_BPS)) return fallback;
+        if (!feed.pythOwned) return 'pyth';
+        const oldest = Math.min(tok.publishTime, sol.publishTime);
+        const newest = Math.max(tok.publishTime, sol.publishTime);
+        return oldest >= feed.updatedTs && newest > feed.updatedTs ? 'pyth' : 'hold';
+      } catch {
+        return feed.pythOwned ? 'hold' : 'crank';
+      }
+    };
+
     // Stops at the buzzer, not at settlement: the program refuses a mark once
     // the clock has run out, so cranking through the commit-and-settle window
     // just posts failing transactions to the rollup ledger.
@@ -747,13 +806,20 @@ export function useDuel(): Duel {
     const tick = async () => {
       if (expired()) return;
       try {
-        const px = await livePxFor({ kind, mint }, ac.signal);
+        const oracle = kind === 'major' ? await oracleFor(mint, me) : 'crank';
         if (!alive) return;
-        // Posted on L1, not the rollup. The price feed is never delegated —
-        // only the positions are — so the rollup rejects a write to it with
-        // InvalidWritableAccount, and every mark was silently failing. The
-        // rollup clones the feed for reads, so fills there see the new mark.
-        await client.crankPrice(address, me, px, me, false);
+        // 'hold' posts nothing. The badge is read from the feed in the price poll.
+        if (oracle === 'pyth') {
+          await client.pushPricePyth(address, me, me, mint);
+        } else if (oracle === 'crank') {
+          const px = await livePxFor({ kind, mint }, ac.signal);
+          if (!alive) return;
+          // Posted on L1, not the rollup. The price feed is never delegated —
+          // only the positions are — so the rollup rejects a write to it with
+          // InvalidWritableAccount, and every mark was silently failing. The
+          // rollup clones the feed for reads, so fills there see the new mark.
+          await client.crankPrice(address, me, px, me, false);
+        }
       } catch {
         // The market API or the rate limit said no. The next tick tries again;
         // a failed crank must never interrupt a round in progress.
@@ -772,8 +838,14 @@ export function useDuel(): Duel {
         try {
           const feed = await client.fetchPriceFeed(address, opponent, false);
           if (alive && feed && Math.floor(Date.now() / 1000) - feed.updatedTs > STALE_MARK_SECS) {
-            const theirPx = await livePxFor({ kind: theirs.marketType, mint: theirs.mint.toBase58() }, ac.signal);
-            if (alive) await client.crankPrice(address, me, theirPx, opponent, false);
+            const theirMint = theirs.mint.toBase58();
+            const oracle = theirs.marketType === 'major' ? await oracleFor(theirMint, opponent) : 'crank';
+            if (alive && oracle === 'pyth') {
+              await client.pushPricePyth(address, me, opponent, theirMint);
+            } else if (alive && oracle === 'crank') {
+              const theirPx = await livePxFor({ kind: theirs.marketType, mint: theirMint }, ac.signal);
+              if (alive) await client.crankPrice(address, me, theirPx, opponent, false);
+            }
           }
         } catch {
           // Same rule as above: a failed backstop never interrupts the round.
@@ -2047,7 +2119,7 @@ export function useDuel(): Duel {
     marketImageUri: selectedMarket && myLeg && selectedMarket.mint === myLeg.mint.toBase58()
       ? selectedMarket.imageUri
       : null,
-    marketSource: myLeg?.marketType === 'major' ? 'jupiter' : 'pump.fun',
+    marketSource: myLeg?.marketType === 'major' ? (markFromPyth ? 'pyth' : 'jupiter') : 'pump.fun',
     opponentAddress: opponentKey ? opponentKey.toBase58() : null,
     opponentMarket: opponentLeg?.symbol || (opponentLeg ? marketLabel(opponentLeg.mint) : ''),
     opponentMarketMint: opponentLeg?.mint.toBase58() ?? '',

@@ -46,4 +46,30 @@ pub enum FogError {
     DrawAlreadyUsed,
     #[msg("Not the wallet that opened this draw")]
     NotTheDrawOpener,
+    #[msg("Only a major market takes an oracle price")]
+    NotAMajor,
+    #[msg("The program has no Pyth feed for this mint")]
+    NoOracleForMint,
+    #[msg("Not a Pyth price update owned by the receiver program")]
+    OracleAccountInvalid,
+    #[msg("Pyth price update is not fully verified")]
+    OracleNotFullyVerified,
+    #[msg("Pyth price update is for a different feed")]
+    OracleWrongFeed,
+    #[msg("Pyth price update is too old, or dated in the future")]
+    OracleStale,
+    #[msg("Pyth confidence interval is too wide")]
+    OracleConfidence,
+    #[msg("Pyth price update is not newer than the mark it would replace")]
+    OracleUpdateNotNewer,
+    #[msg("This feed takes its price from Pyth for the rest of the round")]
+    OracleOwnsFeed,
+    #[msg("Not a Switchboard SOL/USD pull feed on the expected queue")]
+    SecondOracleInvalid,
+    #[msg("Switchboard feed runs different jobs from the pinned SOL/USD feed")]
+    SecondOracleWrongFeed,
+    #[msg("Switchboard result is too old")]
+    SecondOracleStale,
+    #[msg("Pyth and Switchboard disagree on SOL/USD")]
+    OraclesDisagree,
 }
