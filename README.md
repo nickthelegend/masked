@@ -2,6 +2,8 @@
 
 Source: https://github.com/nickthelegend/masked · Live (devnet): https://masked-eight.vercel.app · Tapes API: https://market-proxy-production.up.railway.app/api/tapes · Share card: https://market-proxy-production.up.railway.app/og/tape/<match>.png
 
+Oracles (devnet): the deployed program also has `push_price_pyth`, which prices a SOL or USDC leg from Pyth's signed price updates, but only when a Switchboard On-Demand SOL/USD feed agrees with Pyth to within 1%. Once a feed takes a Pyth price, the rate-limited crank is locked out. Verified by `check:pyth` on devnet (17/17). It lives on branch `pyth-majors` until the app's majors crank is wired to it.
+
 **Hidden-position 1v1 trading on Solana, built on MagicBlock Ephemeral Rollups.**
 
 Two traders stake an equal entry into an escrowed pot and trade for five

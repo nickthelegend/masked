@@ -80,6 +80,8 @@ local stack and on **devnet** (deployed 2026-09-13 02:46 UTC, signature
 
 **Public tapes API:** https://market-proxy-production.up.railway.app/api/tapes and `/api/tapes/<match>` — every settled duel read from chain, decoded by the app's own modules. Each tape has a share card at `/og/tape/<match>.png` and a share page at `/t/<match>` (preview tags, then the tape in the app); the tape screen's SHARE ON X posts that link.
 
+**Oracles:** on devnet, `push_price_pyth` sets a major's mark from Pyth (`PriceUpdateV2`, Full verification, fixed feed per mint, freshness and confidence bounds) and requires Switchboard On-Demand's SOL/USD (Coinbase + Kraken jobs, pinned by queue and feed hash) to agree within 100 bps; after that, the manual crank cannot move the feed. `check:pyth` on devnet: 17/17 (branch `pyth-majors`, program slot 497,557,294). Not yet wired into the app's crank.
+
 **Demo video:** `docs/masked-demo.mp4` (43 s, unedited, captured
 against the running stack) and the evidence page
 https://claude.ai/code/artifact/55aff865-8675-4492-93b5-96be7804170c, both
