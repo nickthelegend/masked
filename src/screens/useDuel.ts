@@ -491,10 +491,12 @@ export function useDuel(): Duel {
 
   const [price, setPrice] = useState(0);
   /**
-   * Whether my feed's mark now comes from Pyth, checked by Switchboard, rather
-   * than the market API. The badge on the mark said JUPITER for a USDC leg the
-   * program had been pricing from Pyth, which was true of the list the market
-   * came from and false of the number beside it.
+   * Whether my feed's mark comes from Pyth, checked by Switchboard, rather than
+   * the market API — read off the feed account on every price poll (its
+   * authority is the Pyth receiver once `push_price_pyth` has priced it,
+   * whichever client sent the push). It used to follow this client's own crank
+   * decision, so a background tab that had not ticked showed JUPITER beside a
+   * mark the chain said was Pyth's: a label that was not true.
    */
   const [markFromPyth, setMarkFromPyth] = useState(false);
   const [series, setSeries] = useState<number[]>([]);
@@ -665,17 +667,21 @@ export function useDuel(): Duel {
     const me = walletRef.current.publicKey;
     if (!client || !address || phase !== 'live' || !me) return undefined;
 
+    setMarkFromPyth(false);
     let alive = true;
     const id = setInterval(async () => {
       try {
         // My own feed. The opponent has their own token and their own mark,
         // and neither is any of my business until the reveal.
-        const [m, pxRaw, mine] = await Promise.all([
+        const [m, pxRaw, mine, feed] = await Promise.all([
           client.fetchMatch(address),
           client.fetchPrice(address, me, true),
           client.fetchPosition(address, me, true),
+          readFeedOracleState(client.l1, address, me).catch(() => null),
         ]);
         if (!alive) return;
+        // An unreadable feed leaves the badge as it was rather than claiming a source.
+        if (feed) setMarkFromPyth(feed.pythOwned);
 
         // Displayed and charted, so a double is ample — the exactness that
         // matters is on chain and in what gets sent there.
@@ -741,7 +747,6 @@ export function useDuel(): Duel {
     let alive = true;
     const ac = new AbortController();
 
-    setMarkFromPyth(false);
     const opponent = m0.creator.equals(me) ? m0.joiner : m0.creator;
     const theirs = legFor(m0, opponent);
 
@@ -803,12 +808,9 @@ export function useDuel(): Duel {
       try {
         const oracle = kind === 'major' ? await oracleFor(mint, me) : 'crank';
         if (!alive) return;
+        // 'hold' posts nothing. The badge is read from the feed in the price poll.
         if (oracle === 'pyth') {
           await client.pushPricePyth(address, me, me, mint);
-          if (alive) setMarkFromPyth(true);
-        } else if (oracle === 'hold') {
-          // Only a feed Pyth already owns is held.
-          setMarkFromPyth(true);
         } else if (oracle === 'crank') {
           const px = await livePxFor({ kind, mint }, ac.signal);
           if (!alive) return;
