@@ -47,6 +47,29 @@ export const MAX_CONF_BPS = 200n;
 const DISCRIMINATOR = Buffer.from([0x22, 0xf1, 0x23, 0x63, 0x9d, 0x7e, 0xf4, 0xcd]);
 
 export const hasPythFeed = (mint: string): boolean => mint in PYTH_MAJORS;
+export const SOL_USD_FEED_ID = PYTH_MAJORS[WSOL_MINT].feedId;
+
+/**
+ * What a `PriceFeed` account says about oracles: whether Pyth owns it (its
+ * authority is the receiver) and when its mark was last set. Read from the
+ * bytes — state.rs: discriminator 8, match_key 32, owner 32, px 8,
+ * updated_ts 8, authority 32 — so a caller can tell before sending whether
+ * `push_price_pyth` would take a price or `push_price` would be refused.
+ */
+export async function readFeedOracleState(
+  connection: Connection,
+  match: PublicKey,
+  owner: PublicKey
+): Promise<{ px: bigint; updatedTs: number; pythOwned: boolean } | null> {
+  const info = await connection.getAccountInfo(feedPda(match, owner), 'confirmed');
+  if (!info || info.data.length < 120) return null;
+  const b = Buffer.from(info.data);
+  return {
+    px: b.readBigUInt64LE(72),
+    updatedTs: Number(b.readBigInt64LE(80)),
+    pythOwned: new PublicKey(b.subarray(88, 120)).equals(PYTH_RECEIVER_ID),
+  };
+}
 
 export interface PythPrice {
   feedId: string;

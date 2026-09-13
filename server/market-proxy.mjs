@@ -369,7 +369,15 @@ const server = createServer(async (req, res) => {
       upstreams: Object.keys(ROUTES),
       imageRelay: '/img?url=',
       tapes: ['/api/tapes', '/api/tapes/<match>', '/og/tape/<match>.png', '/t/<match>'],
+      keeper: '/keeper/sb',
     });
+  }
+
+  // What the Switchboard keeper last did (server/src/keeper.ts), when this
+  // server runs one.
+  if (url.pathname === '/keeper/sb') {
+    if (!keeper) return send(res, 404, { error: 'no Switchboard keeper runs on this server (SB_KEEPER_SECRET unset)' });
+    return send(res, 200, keeper.keeperStatus());
   }
 
   // Settled duels, read from chain: the JSON API, each tape's share card, and
@@ -503,7 +511,7 @@ const server = createServer(async (req, res) => {
 
   const entry = Object.entries(ROUTES).find(([prefix]) => url.pathname.startsWith(prefix));
   if (!entry) {
-    return send(res, 403, { error: 'not a market route', allowed: [...Object.keys(ROUTES), '/img', '/api/tapes', '/og/tape', '/t'] });
+    return send(res, 403, { error: 'not a market route', allowed: [...Object.keys(ROUTES), '/img', '/api/tapes', '/og/tape', '/t', '/keeper/sb'] });
   }
   const [prefix, origin] = entry;
 
@@ -701,6 +709,22 @@ server.on('error', (e) => {
   }
   throw e;
 });
+
+/**
+ * The Switchboard keeper, when SB_KEEPER_SECRET holds a devnet keypair. It keeps
+ * the SOL/USD result `push_price_pyth` checks Pyth against fresh; see
+ * server/src/keeper.ts. Without the variable nothing is loaded.
+ */
+let keeper = null;
+if (process.env.SB_KEEPER_SECRET) {
+  import('./keeper.bundle.mjs')
+    .then((k) => {
+      keeper = k;
+      const s = k.startKeeper(process.env.SB_KEEPER_SECRET);
+      console.log(`switchboard keeper paying from ${s.payer} on ${s.cluster}`);
+    })
+    .catch((e) => console.error(`switchboard keeper did not start (npm run build:keeper): ${e?.message ?? e}`));
+}
 
 server.listen(PORT, HOST, () => {
   console.log(`market proxy on http://${HOST}:${PORT}`);
