@@ -1,9 +1,8 @@
 # SUBMISSION — MagicBlock Solana Blitz v8
 
 Everything the submission form asks for, prepared and ready to paste.
-**Status, checked 2026-09-12 20:34 UTC:** no submission is recorded in this
-repository, and whether one exists can only be seen from the entrant's login.
-**Blitz v8 submissions closed 2026-09-13 12:30 UTC.** Checked 20:55 UTC: build.magicblock.app lists V8 (Sep 4–11) as past, and its Submit panel now reads "SUBMITTING FOR Forge · Epoch 02 · Mainnet", counting down to Oct 31, 2026. Whether an entry went in before the close can only be seen from the entrant's login. See **Next eligible round** below.
+**Status: SUBMITTED.** The owner confirmed in chat on 2026-09-13 (21:02 UTC) that Masked was entered in MagicBlock Solana Blitz v8 before its close. No confirmation id or exact submission time was given, so none is recorded here.
+**Blitz v8 submissions closed 2026-09-13 12:30 UTC.** Checked 20:55 UTC: build.magicblock.app lists V8 (Sep 4–11) as past, and its Submit panel now reads "SUBMITTING FOR Forge · Epoch 02 · Mainnet", counting down to Oct 31, 2026. The Blitz v8 entry is in (above). **Next eligible round** below is the next step, not a resubmission.
 The form's own tooltip reads "Submissions close Sep 13, 6:00 PM" (shown in
 UTC+05:30), matching its 15 h 56 m countdown at the time of checking. Fields
 marked ⚠ need the owner. The program is deployed to devnet (2026-09-13, see
@@ -183,7 +182,7 @@ and attestation as two separate rows for that reason.
 
 Submissions close **2026-09-13 12:30 UTC** (checked 2026-09-12 20:34 UTC).
 
-1. [ ] Sign in at `https://build.magicblock.app/?stage=blitz#submit` and check
+1. [x] Sign in at `https://build.magicblock.app/?stage=blitz#submit` and check
        whether an entry already exists. If one does, edit it instead of
        submitting twice, and record it here.
 2. [x] Name settled by the owner: **MASKED** (PLAN.md 2.1).
@@ -191,13 +190,14 @@ Submissions close **2026-09-13 12:30 UTC** (checked 2026-09-12 20:34 UTC).
        blobs first; PLAN.md 1.2, 1.4).
 4. [x] Video recorded: `docs/masked-demo.mp4`.
 5. [ ] Put the video where the form can link it, paste that URL into
-       **Demo video / live URL**, and share the evidence page.
+       **Demo video / live URL**, and share the evidence page. (The owner will share
+       the evidence page from its share menu; that can't be done or checked from here.)
 6. [x] Devnet: program deployed (2026-09-13 02:46 UTC), a full match played
        against it and the TEE (`PLAN.md` 5.2, 5.5), and a devnet build hosted at
        https://masked-eight.vercel.app (5.9).
-7. [ ] Paste the fields above into the form and submit. The entrant presses
+7. [x] Paste the fields above into the form and submit (done by the entrant, confirmed 2026-09-13). The entrant presses
        Submit.
-8. [ ] Record the confirmation and timestamp back into this file.
+8. [x] Record the confirmation and timestamp back into this file (recorded as owner-confirmed, 21:02 UTC; no confirmation id or exact time was given).
 
 ---
 
