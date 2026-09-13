@@ -1,0 +1,44 @@
+# Checks the merge of pyth-majors into main on a clean runner before it lands on main:
+# the app's typecheck, lint and server bundle, and the program's Rust unit tests (pyth.rs, sb.rs).
+name: merge-pyth-majors-check
+
+on:
+  push:
+    branches: [merge-pyth-majors]
+  workflow_dispatch:
+
+jobs:
+  app:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build:server
+
+  program-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -q && sudo apt-get install -yq pkg-config libssl-dev libudev-dev
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: chain
+      - name: Rust unit tests
+        working-directory: chain/programs/fogduel
+        run: |
+          cargo test --lib 2>&1 | tee "$RUNNER_TEMP/test.log"
+          grep -E '^test result: ok\. [1-9]' "$RUNNER_TEMP/test.log"
