@@ -7,7 +7,10 @@
  * (validator :8899, Photon :8784, prover :3001).
  */
 import { ComputeBudgetProgram, Connection, Keypair, LAMPORTS_PER_SOL, PublicKey, SystemProgram, Transaction, TransactionInstruction, sendAndConfirmTransaction } from '@solana/web3.js';
-import { AnchorProvider, BN, BorshAccountsCoder, Program, Wallet, type Idl } from '@coral-xyz/anchor';
+// anchor 0.32 is CommonJS to Node (`main` is dist/cjs); Node 22 cannot see its named exports from ESM,
+// so take them off the default export.
+import anchor, { type Idl } from '@coral-xyz/anchor';
+const { AnchorProvider, BN, Program, Wallet } = anchor;
 import { PackedAccounts, SystemAccountMetaConfig, TreeType, bn, createRpc, deriveAddressLegacy, deriveAddressSeedLegacy, defaultTestStateTreeAccounts, getLightSystemAccountMetasLegacy, selectStateTreeInfo } from '@lightprotocol/stateless.js';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
