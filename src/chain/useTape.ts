@@ -80,11 +80,18 @@ export function useTape(address: string | null) {
         if (!rawTape) {
           // A live or open match has no tape yet, and saying so is more use
           // than "not found" — there is somewhere else to send them.
-          setError(
-            rawMatch
-              ? 'That duel has not settled yet. Watch it at /spectate instead.'
-              : 'No settled duel at that address.'
-          );
+          if (rawMatch) {
+            setError('That duel has not settled yet. Watch it at /spectate instead.');
+          } else {
+            // Neither a tape nor a match. Anchor reads an account with no data
+            // — a wallet, the thing most often pasted here — as absent rather
+            // than as the wrong shape, so a wallet read "No settled duel at that
+            // address" while a program account said what it was. Ask whether
+            // anything lives there at all.
+            const held = await withDeadline(l1.getAccountInfo(key), 'the base layer');
+            if (!alive) return;
+            setError(held ? 'That address is a Solana account, but not a duel.' : 'No settled duel at that address.');
+          }
           setLoaded(true);
           return;
         }

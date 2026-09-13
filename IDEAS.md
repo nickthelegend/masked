@@ -325,15 +325,25 @@ settlement is worse than no test.
 
 `npm run check:fuzz`. `check:tape` proves the previewer against prices that
 really happened, which only covers sizes somebody traded; this covers the rest.
-**48,009 assertions over 4,000 seeded random books**, entries 0.05–1◎ and marks
+**65,764 assertions over 4,000 seeded random books**, entries 0.05–1◎ and marks
 from a memecoin at 3e-11 to an xStock at 755 ◎/token: impact monotone and
-bounded, buys never below the mark and sells never above it, `quoteToBuyBase`
-inverting to within its deliberate one-lamport round-up, `maxShortNotional`
-tight against the margin cap and never over it, and no NaN on degenerate input.
+bounded, buys never below the mark and sells never above it, a short's cover
+(`exactQuoteToCover`, held in bigint against the program's own `Book::buy`) the
+largest spend that stops at zero — exact from 0.001 ◎/token up, under a lamport
+short of it below — `maxShortNotional` tight against the margin cap and never
+over it, and no NaN on degenerate input.
 
 Its first draft failed too, and was also wrong: it demanded exact inversion
 from a function that rounds *up* on purpose, because rounding down re-creates
 the dust it was written to remove.
+
+The round-up was then caught in the browser overshooting instead — a MAX close
+of a 1,024,870 short bought 1,024,871 and sat on the tape as a FLIP — so the
+float inverse went, and the cover is the program's integer arithmetic, checked
+exactly rather than within a tolerance that had hidden both bugs. The fuzz's
+marks had also been scaled by `VALUE_DIV` rather than into `px`, so its "755 ◎"
+end was really 0.755; drawing the real range is what caught
+`maxShortNotional` losing a millionth to cancellation at a lamport of room.
 
 ### #43 / #44 / #21 — `/stats` · built, verified
 

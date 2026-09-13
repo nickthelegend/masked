@@ -19,12 +19,14 @@ import {
   buyExecPx,
   buyImpact,
   depthFor,
+  exactQuoteToCover,
+  isFlat,
   maxShortNotional,
-  quoteToBuyBase,
   sellExecPx,
   sellImpact,
 } from '../src/chain/book';
-import { VALUE_DIV } from '../src/chain/units';
+import { BOOK_DEPTH } from '../src/chain/tape';
+import { PRICE_SCALE, VALUE_DIV } from '../src/chain/units';
 
 /** mulberry32 — the same generator `series.ts` uses, so runs reproduce. */
 function rng(seed: number): () => number {
@@ -51,13 +53,31 @@ function ok(cond: boolean, what: string) {
 }
 const finite = (n: number) => Number.isFinite(n) && !Number.isNaN(n);
 
+/**
+ * `Book::seed` and then `Book::buy`, restated from state.rs in the program's
+ * own integers — deliberately not imported from book.ts, so the two have to
+ * agree rather than share a mistake.
+ */
+function programBuy(quoteIn: bigint, px: bigint, entry: bigint): bigint {
+  const Q = entry * BigInt(BOOK_DEPTH);
+  const B = (Q * BigInt(VALUE_DIV)) / px;
+  return B - (Q * B) / (Q + quoteIn);
+}
+
+/** A price in SOL per token as the program's `px`: lamports per token x PRICE_SCALE. */
+const pxOf = (solPerToken: number) => solPerToken * 1e9 * PRICE_SCALE;
+
 const ROUNDS = 4000;
 
 /* Entries the product actually offers, in lamports: 0.05 to 1 SOL. Marks span
-   a memecoin at ~3e-11 SOL/token through an xStock at ~755. */
+   a memecoin at ~3e-11 SOL/token through an xStock at ~755.
+
+   They used to be scaled by VALUE_DIV rather than into `px` — a thousand times
+   too small — so the "755 SOL" end was really 0.755, and no mark was ever drawn
+   where a major or an xStock actually trades. */
 for (let i = 0; i < ROUNDS; i += 1) {
   const entry = logUniform(0.05e9, 1e9);
-  const mark = logUniform(3e-11 * VALUE_DIV, 755 * VALUE_DIV);
+  const mark = logUniform(pxOf(3e-11), pxOf(755));
   const Q = depthFor(entry);
 
   /* ---- buys ---- */
@@ -75,22 +95,33 @@ for (let i = 0; i < ROUNDS; i += 1) {
   ok(buyImpact(more, entry) >= bi - 1e-12, 'buy impact must not fall as size grows');
   ok(buyBaseOut(more, mark, entry) >= baseOut - 1e-6, 'more quote must not buy less base');
 
-  // The inverse really inverts: asking for the base a spend would yield
-  // returns approximately that spend. This is the function that fixed closing
-  // a short, so it is worth pinning.
+  /* ---- buying back a short, in the program's own integers ---- */
+  // `exactQuoteToCover` is what a MAX close of a short spends, so it has to be
+  // the largest spend whose buy stops at or before zero: one lamport more and
+  // the close is a FLIP. What it leaves has to be worth under a lamport — flat
+  // by `isFlat`, and nothing to `Position::equity`, which truncates it. And
+  // from 0.001 SOL a token up, where a lamport buys at most one base unit, it
+  // has to leave nothing at all.
   //
-  //    The property is "inverts to within the rounding it must do", not
-  //    "inverts exactly". `quoteToBuyBase` rounds *up* on purpose: quote is
-  //    lamports and the program floors the base it hands back, so rounding
-  //    down re-creates the dust it was written to remove — a MAX close that
-  //    left 22,764 base open and still said POSITION CLOSED. So the bound is
-  //    one lamport of overshoot, never an undershoot.
-  const backQuote = quoteToBuyBase(baseOut, mark, entry);
-  const slop = 1 + 1e-9 * quoteIn;
+  //    Twice before this was a float inverse with a tolerance, and both times
+  //    the tolerance hid the bug: 22,764 base left open, then one unit past
+  //    zero. So these hold exactly, in bigint, against `programBuy`.
+  const px = BigInt(Math.round(mark));
+  const stake = BigInt(Math.round(entry));
+  const short = BigInt(Math.floor(logUniform(1, (entry * VALUE_DIV) / mark)));
+  const cover = exactQuoteToCover(short, px, stake);
+  const left = short - programBuy(cover, px, stake);
+  ok(left >= 0n, `cover passed zero: a ${short} short spent ${cover} and ended ${-left} long at px ${px}`);
   ok(
-    finite(backQuote) && backQuote >= quoteIn - slop && backQuote <= quoteIn + slop,
-    `quoteToBuyBase did not invert: ${quoteIn} -> ${baseOut} -> ${backQuote} (off by ${(backQuote - quoteIn).toExponential(2)})`
+    programBuy(cover + 1n, px, stake) > short,
+    `cover is not the largest spend that stops at zero: ${short} short, ${cover} lamports, px ${px}`
   );
+  ok(left * px < BigInt(VALUE_DIV), `cover left ${left} base, worth a lamport or more at px ${px}`);
+  ok(isFlat(Number(left), Number(px)), `isFlat calls the ${left} base a cover leaves at px ${px} a position`);
+  if (px >= BigInt(VALUE_DIV)) ok(left === 0n, `cover not exact at px ${px}: ${left} of ${short} left`);
+  // The boundary from the other side: a lamport's worth is a position.
+  const lamportsWorth = (BigInt(VALUE_DIV) + px - 1n) / px;
+  ok(!isFlat(Number(lamportsWorth), Number(px)), `isFlat calls ${lamportsWorth} base at px ${px} flat — that is a lamport`);
 
   /* ---- sells ---- */
   const baseIn = logUniform(1, (entry * VALUE_DIV) / mark);
@@ -134,6 +165,10 @@ const degenerate: Array<[string, number]> = [
   ['maxShortNotional(equity 0)', maxShortNotional(0, 0, 1e8)],
   ['maxShortNotional(held > equity)', maxShortNotional(2e8, 1e8, 1e8)],
   ['maxShortNotional(zero entry)', maxShortNotional(0, 1e8, 0)],
+  ['exactQuoteToCover(0 base)', Number(exactQuoteToCover(0n, 1_000_000n, 100_000_000n))],
+  ['exactQuoteToCover(zero mark)', Number(exactQuoteToCover(1_000n, 0n, 100_000_000n))],
+  ['exactQuoteToCover(zero entry)', Number(exactQuoteToCover(1_000n, 1_000_000n, 0n))],
+  ['exactQuoteToCover(more than the curve holds)', Number(exactQuoteToCover(10n ** 30n, 1_000_000n, 100_000_000n))],
 ];
 for (const [what, value] of degenerate) {
   ok(finite(value) && value >= 0, `${what} must be a finite non-negative number, got ${value}`);
@@ -148,5 +183,6 @@ if (failures.length > 0) {
 console.log(
   `fuzz ok — ${checks} assertions over ${ROUNDS} randomised books (entries 0.05–1◎, marks 3e-11–755 ◎/token): ` +
   `impact monotone and bounded, buys never below the mark and sells never above it, ` +
-  `quoteToBuyBase inverts to within its one-lamport round-up, the short cap tight and never exceeded, and no NaN on degenerate input`
+  `a short's cover the largest spend that stops at zero — exact from 0.001 ◎/token up, under a lamport left below it — ` +
+  `the short cap tight and never exceeded, and no NaN on degenerate input`
 );

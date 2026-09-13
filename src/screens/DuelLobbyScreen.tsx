@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
-  Badge, Box, DurationPicker, MarketPicker, PixelButton, PixelText, Row, Stack, StakePicker,
-  TokenLogo, color, solExact, onInk, space, type MarketKindKey, type MarketSortKey, type PickableMarket,
+  Badge, DurationPicker, MarketPicker, PixelButton, PixelText, Row, Stack, StakePicker,
+  TokenLogo, color, solExact, space, type MarketKindKey, type MarketSortKey, type PickableMarket,
   paletteName, paletteSwitchable, setPalette,
 } from '../ui';
 import { useMarkets } from '../chain/useMarkets';
@@ -29,35 +29,6 @@ export interface DuelLobbyScreenProps {
    * quietly swap in another market and overwrite the remembered pick.
    */
   autoSelectTop?: boolean;
-}
-
-/** Side rails are decorative slots for perks that are not wired up yet. */
-const LEFT_RAIL: Array<[string, string, string]> = [
-  ['DOUBLE\nPOT', color.sand, color.ink],
-  ['FREE\nENTRY', color.blue, color.white],
-  ['SWAP', color.purple, onInk.purple],
-];
-
-const RIGHT_RAIL: Array<[string, string, string]> = [
-  ['DAILY\nQUEST', color.green, color.white],
-  ['SOCIAL\nBONUS', color.greenDeep, color.white],
-  ['RANK\nB1', color.panelLight, color.white],
-];
-
-const RAIL_WIDTH = 72;
-
-function Rail({ items }: { items: Array<[string, string, string]> }) {
-  return (
-    <Stack width={RAIL_WIDTH} gap={space.sm}>
-      {items.map(([label, bg, fg]) => (
-        <Box key={label} bg={bg} bevel={space.sm} padY={space.sm} padX={space.xs} align="center">
-          <PixelText variant="tabLabel" color={fg} align="center" lineHeight={13}>
-            {label}
-          </PixelText>
-        </Box>
-      ))}
-    </Stack>
-  );
 }
 
 /** Pick a market and a stake, then find a match. */
@@ -111,9 +82,9 @@ export default function DuelLobbyScreen({
 
   return (
     <Stack pad={space.lg} gap={space.md}>
+      {/* The market card stands alone. Rails of perk tiles used to flank it —
+          DOUBLE POT, FREE ENTRY, DAILY QUEST — none of which existed. */}
       <Row gap={space.md} align="stretch">
-        <Rail items={LEFT_RAIL} />
-
         <Stack flex={1} align="center" justify="center" gap={space.sm} bg={color.chartBg} outline={color.ink} padY={space.md} padX={space.sm}>
           <PixelText variant="label" size={8} color={color.textDim}>
             {selected ? 'YOUR MARKET' : 'PICK A MARKET'}
@@ -137,8 +108,6 @@ export default function DuelLobbyScreen({
           {/* Derived from the actual round length, not a fixed string. */}
           <Badge label={`HIDDEN FILLS · ${roundBadge()}`} tone="quiet" variant="bodySmall" />
         </Stack>
-
-        <Rail items={RIGHT_RAIL} />
       </Row>
 
       <MarketPicker

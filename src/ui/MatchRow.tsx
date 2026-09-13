@@ -81,7 +81,17 @@ export default function MatchRow({
       </PixelText>
 
       {mine ? (
-        <PixelButton label="CANCEL" tone="quiet" size={8} padY={space.sm} loading={busy} onPress={onCancel} />
+        <Row gap={space.sm} align="center">
+          {/* Nobody can join a stale match (see below) and its escrow waits
+              until it is cancelled, so its owner is told rather than left
+              waiting on a match that can no longer fill. */}
+          {stale ? (
+            <PixelText variant="tabLabel" size={7} color={color.textFaint}>
+              STALE
+            </PixelText>
+          ) : null}
+          <PixelButton label="CANCEL" tone="quiet" size={8} padY={space.sm} loading={busy} onPress={onCancel} />
+        </Row>
       ) : stale ? (
         // Both books are seeded from the price snapshotted when the match was
         // opened, so joining a stale one means starting at a number the market

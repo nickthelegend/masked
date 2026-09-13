@@ -60,31 +60,48 @@ export function buyBaseOut(quoteIn: number, mark: number, entry: number): number
 }
 
 /**
- * Quote needed to buy back exactly `baseOut`, given the posted mark.
+ * The most quote that buys back `baseOut` without buying one unit past it.
  *
- * The inverse of `buyBaseOut`, and the client's mirror of `Book::buy_base`.
  * Closing a short buys a known quantity of base, but `apply_fill`'s buy side
  * consumes *quote* — so the amount has to be inverted through the curve rather
  * than estimated at the mark.
  *
- * Estimating it left dust. Multiplying the size by the mark ignores the impact
- * of the buy itself, so the quote sent bought slightly less base than was
- * sold: a MAX close of a 2,934,955 short bought back 2,912,191 and reported
- * POSITION CLOSED with 22,764 still open.
+ * Twice this was nearly right, and nearly is a different position:
+ * - Multiplying the size by the mark ignored the buy's own impact, and a MAX
+ *   close of a 2,934,955 short bought back 2,912,191 — POSITION CLOSED with
+ *   22,764 still open.
+ * - Inverting the curve in floating point and rounding up then overshot: a MAX
+ *   close of a 1,024,870 short bought 1,024,871 and left the player one unit
+ *   long, on the tape as a FLIP.
  *
- * From `Q * B = k` with `Q = entry * DEPTH` and `B = Q * VALUE_DIV / mark`:
+ * So this is the program's own integer arithmetic, in bigint. `apply_fill`
+ * re-pegs the book (`Book::seed`: `Q = entry * DEPTH`, `B = ⌊Q * VALUE_DIV / px⌋`)
+ * and `Book::buy(q)` hands back `B - ⌊Q·B / (Q + q)⌋`. The largest `q` that
+ * hands back at most `baseOut` is `⌊Q·B / (B - baseOut)⌋ - Q`, which is what
+ * this returns.
  *
- *   quote_in = k / (B - baseOut) - Q  =  Q * baseOut / (B - baseOut)
+ * Exact is not always on offer. The spend is whole lamports, and below 0.001
+ * SOL a token (`px < VALUE_DIV`) one lamport buys more than one base unit — for
+ * a fresh pump.fun coin at 2.8e-8 SOL, about 36,000 — so no spend lands on the
+ * short exactly. What this leaves is then less than the next lamport would buy,
+ * so it is worth under a lamport at this mark: `Position::equity` truncates it
+ * to zero, and `settle_match` closes it at the buzzer. See `isFlat`. From 0.001
+ * SOL a token up a lamport buys at most one unit, and the cover is exact.
+ * `scripts/check-fuzz.mts` holds all of this against the program's arithmetic.
  */
-export function quoteToBuyBase(baseOut: number, mark: number, entry: number): number {
-  const Q = depthFor(entry);
-  if (Q <= 0 || mark <= 0 || baseOut <= 0) return 0;
-  const B = (Q * VALUE_DIV) / mark;
-  if (baseOut >= B) return 0; // more base than the curve holds
-  // Rounded up: the program floors the base it hands back, so a fraction short
-  // would leave exactly the dust this exists to avoid.
-  return Math.ceil((Q * baseOut) / (B - baseOut));
+export function exactQuoteToCover(baseOut: bigint, px: bigint, entry: bigint): bigint {
+  if (baseOut <= 0n || px <= 0n || entry <= 0n) return 0n;
+  const Q = entry * BigInt(BOOK_DEPTH);
+  const B = (Q * BigInt(VALUE_DIV)) / px;
+  if (baseOut >= B) return 0n; // more base than the curve holds
+  const q = (Q * B) / (B - baseOut) - Q;
+  return q > 0n ? q : 0n;
 }
+
+// The other half of a close. It lives with the unit arithmetic, where the tape
+// can reach it too — the tape importing the book would be a cycle, since the
+// book takes BOOK_DEPTH from the tape.
+export { isFlat } from './units';
 
 /**
  * The largest short that still clears the program's margin cap.
@@ -114,7 +131,13 @@ export function maxShortNotional(heldNotional: number, equity: number, entry: nu
   const room = equity - heldNotional;
   if (Q <= 0 || room <= 0) return 0;
   const b = heldNotional + Q - equity;
-  return (-b + Math.sqrt(b * b + 8 * Q * room)) / 4;
+  const root = Math.sqrt(b * b + 8 * Q * room);
+  // The same root, taken without cancellation. `b` carries the whole depth, so
+  // it nearly always dwarfs the room left, and `-b + root` then subtracts two
+  // almost equal numbers: with a lamport of room that alone was a millionth
+  // off, enough for the fuzz to catch the cap exceeded. Multiplying through by
+  // the conjugate leaves nothing to cancel.
+  return b > 0 ? (2 * Q * room) / (b + root) : (-b + root) / 4;
 }
 
 /** The same edge, expressed as base units at `mark`. */

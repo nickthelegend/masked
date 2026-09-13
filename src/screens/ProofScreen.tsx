@@ -305,7 +305,9 @@ export default function ProofScreen() {
           accounts.length
             ? accounts.map((a) => ({
                 label: a.label,
-                value: a.owner ? `${shortKey(a.address)} · ${a.bytes}B` : 'NOT FOUND',
+                value: a.owner
+                  ? `${shortKey(a.address)} · ${a.bytes === null ? 'size unknown' : `${a.bytes.toLocaleString('en-US')} bytes`}`
+                  : 'NOT FOUND',
                 tone: (a.owner ? 'good' : 'bad') as 'good' | 'bad',
                 mono: true,
               }))

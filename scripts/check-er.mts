@@ -53,20 +53,13 @@ const l1 = new Connection(CLUSTERS.local.l1, 'confirmed');
 // reader — that is the point of it. Reading the ledger needs a signed token
 // exactly as a player's client needs one.
 const erToken = await authenticate(CLUSTERS.local.er, walletFor(a) as any);
-const erWs = (() => {
-  const u = new URL(CLUSTERS.local.er);
-  u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
-  if (u.port) u.port = String(Number(u.port) + 1);
-  u.searchParams.set('token', erToken);
-  return u.toString();
-})();
+// HTTP only: the token rides the Authorization header. This check reads the
+// rollup's ledger (getTransaction) and never subscribes, and the clients below
+// confirm by polling — so there is no socket and no `?token=` URL, the same as
+// the app itself.
 const er = new Connection(CLUSTERS.local.er, {
   commitment: 'confirmed',
   httpHeaders: { Authorization: `Bearer ${erToken}` },
-  // The socket cannot carry a header, so the gate takes the token as a query
-  // param instead. Without it, sending works and confirming hangs — which
-  // looks exactly like a slow rollup.
-  wsEndpoint: erWs,
 });
 
 let checks = 0;

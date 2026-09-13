@@ -29,6 +29,14 @@ const cases: Array<[unknown, string]> = [
   [new Error('transaction verification error: This account may not be used to pay transaction fees'), 'FEE PAYER NOT DELEGATED'],
   [new Error('Transaction loads a writable account that cannot be written'), 'ACCOUNT NOT DELEGATED'],
   [new Error('failed to fetch'), 'CANNOT REACH THE CLUSTER'],
+  // A browser's refused fetch carries no URL, so which service died has to be
+  // named by the connection that made the call (`serviceFetch`). These are the
+  // messages web3.js and erAuth actually produce with that name attached —
+  // without it, killing the read gate mid-round read CANNOT REACH THE CLUSTER.
+  [new TypeError('rollup unreachable: Failed to fetch'), 'CANNOT REACH THE ROLLUP'],
+  [new Error('failed to get recent blockhash: TypeError: rollup unreachable: Failed to fetch'), 'CANNOT REACH THE ROLLUP'],
+  [new Error('failed to get recent blockhash: TypeError: base layer unreachable: Failed to fetch'), 'CANNOT REACH THE BASE LAYER'],
+  [new Error('rollup login unreachable: Failed to fetch'), 'CANNOT REACH THE ROLLUP'],
   [new Error('Blockhash not found'), 'TRANSACTION EXPIRED'],
   [new Error('something nobody has ever seen'), 'TRANSACTION FAILED'],
 ];

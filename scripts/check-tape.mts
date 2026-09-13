@@ -18,7 +18,8 @@ import { FOGDUEL_IDL } from '../src/chain/idl';
 import { ACTIVE_CLUSTER } from '../src/chain/config';
 import { toTapeState, replayEquity, markFromFill, MAX_FILLS, type TapeFill } from '../src/chain/tape';
 import { buyImpact, sellImpact, buyExecPx, sellExecPx } from '../src/chain/book';
-import { VALUE_DIV } from '../src/chain/units';
+import { feedPda } from '../src/chain/pdas';
+import { isFlat, VALUE_DIV } from '../src/chain/units';
 
 let checks = 0;
 const fail = (msg: string): never => {
@@ -127,6 +128,25 @@ async function main() {
       // mark, must be the impact the chain actually charged — otherwise the
       // number shown before a fill is not the number the fill produces.
       for (const f of fills as TapeFill[]) {
+        if (f.px === 0) {
+          // A fill with no price. The one the program writes is the buzzer
+          // closing a remainder worth under a lamport — what a MAX close leaves
+          // on a coin too cheap to buy back exactly — which costs nothing and
+          // so prices at zero. It is held to that, not waved through: it must
+          // be a settle, and at the side's final mark it must really be worth
+          // under a lamport. `push_price` refuses once the buzzer has gone, so
+          // the feed still holds exactly the mark `settle_match` used.
+          ok(f.side === 'settle', `${id}: a ${f.side} fill recorded no price`);
+          const owner = who === 'A' ? matchAcc.creator : matchAcc.joiner;
+          const feed = await program.account.priceFeed.fetch(feedPda(tape.match, owner));
+          const finalMark = Number(feed.px.toString());
+          ok(
+            isFlat(f.qty, finalMark),
+            `${id}: the buzzer closed ${f.qty} base for nothing, but at the final mark ${finalMark} that is a lamport or more`
+          );
+          console.log(`   ${id}: buzzer closed ${f.qty} base for 0 — worth ${((f.qty * finalMark) / VALUE_DIV).toExponential(2)} lamports at the final mark`);
+          continue;
+        }
         const mark = markFromFill(f, entry);
         ok(mark > 0 && Number.isFinite(mark), `${who}: recovered a non-price mark ${mark}`);
 

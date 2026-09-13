@@ -16,8 +16,20 @@ export interface PreflightResult {
 
 export const OK: PreflightResult = { ok: true };
 
-/** Rent + fees headroom beyond the stake itself. */
-export const HEADROOM_LAMPORTS = 0.02 * 1e9;
+/**
+ * Rent and fees a duel costs beyond the stake itself, in either seat.
+ *
+ * Measured on chain. A joiner pays the most: 21,301,080 lamports to join (both
+ * positions' rent and the fee) and 26,002,760 across the seven seal
+ * transactions. A creator pays 7,380,640 to open, plus that same seal when a
+ * stalled joiner leaves it to them. The rest covers a long round's price pushes
+ * and the settlement. It was 0.02◎, which let a wallet cover the entry but not
+ * the seal: the join landed, the seal ran out of rent half way, and the entry
+ * went into a round that player's screen never showed. The session key's 0.01◎
+ * is left out on purpose — that mint is best-effort, and the round signs with
+ * the wallet without it.
+ */
+export const HEADROOM_LAMPORTS = 0.05 * 1e9;
 
 export function checkWallet(publicKey: PublicKey | null): PreflightResult {
   if (!publicKey) {
@@ -36,12 +48,16 @@ export function checkBalance(lamports: number, stakeLamports: number): Preflight
     const affordable = affordableStake(lamports);
     const advice = affordable
       ? ` The largest you can open right now is ${affordable.toFixed(2)}◎.`
-      : ' Fund this wallet to open a duel.';
+      : ' Fund this wallet first.';
     return {
       ok: false,
       title: 'NOT ENOUGH SOL',
+      // The balance is floored, not rounded. Rounded, a wallet a few thousand
+      // lamports short read "Need ~0.15 SOL, wallet holds 0.15" — a refusal
+      // that contradicts itself.
       detail:
-        `Need ~${(needed / 1e9).toFixed(2)} SOL, wallet holds ${(lamports / 1e9).toFixed(2)}.` + advice,
+        `Need ~${(needed / 1e9).toFixed(2)} SOL, wallet holds ${(Math.floor(lamports / 1e7) / 100).toFixed(2)}.` +
+        advice,
     };
   }
   return OK;

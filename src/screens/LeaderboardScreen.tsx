@@ -1,4 +1,4 @@
-import { Badge, LeaderRow, PixelText, Podium, Row, Stack, TierBadge, color, space, tierFor } from '../ui';
+import { Badge, LeaderRow, PixelText, Podium, Row, Stack, TierBadge, color, solExact, space, tierFor } from '../ui';
 import { short } from '../chain/useTapes';
 import { usePlayerStats } from '../chain/usePlayerStats';
 import type { Place } from '../ui';
@@ -44,7 +44,7 @@ export default function LeaderboardScreen() {
               <LeaderRow
                 rank={i + 4}
                 name={short(row.owner)}
-                won={`+${(row.taken / 1e9).toFixed(2)}◎`}
+                won={`+${solExact(row.taken / 1e9)}`}
                 wins={`${row.wins}W`}
               />
             </Stack>

@@ -56,6 +56,25 @@ const readOnlyWallet = {
   signAllTransactions: async <T,>(t: T[]) => t,
 };
 
+/** Every mounted book's reader, so an action can have them re-read the chain now. */
+const readers = new Set<() => Promise<void>>();
+
+/**
+ * Re-read the open book everywhere it is on screen; resolves once every read
+ * has answered.
+ *
+ * The book only polled, and nothing told it when this client opened or
+ * cancelled a match. So MATCH OPEN was toasted over a book with no row for the
+ * match, no invite link and OPEN A MATCH still pressable — for 4.4 s, measured —
+ * and MATCH CANCELLED over a row still offering CANCEL. An action awaits this
+ * before its toast, which keeps its button busy until the book agrees with it.
+ * It never rejects: each read settles its own failure, and the next poll tries
+ * again.
+ */
+export async function refreshOpenMatches(): Promise<void> {
+  await Promise.all([...readers].map((read) => read()));
+}
+
 export function useOpenMatches(pollMs = 4000) {
   const [matches, setMatches] = useState<OpenMatch[]>([]);
   // Live matches come from the same read. /proof probes one to show the read
@@ -66,15 +85,22 @@ export function useOpenMatches(pollMs = 4000) {
 
   useEffect(() => {
     let alive = true;
+    // A refresh can land while a poll is still out. Only a read that started
+    // after the last one applied may replace the book, so a poll sent before a
+    // cancel and answered after the refresh cannot put the cancelled match back.
+    let started = 0;
+    let applied = 0;
 
     const read = async () => {
+      const mine = ++started;
       try {
         const connection = new Connection(ACTIVE_CLUSTER.l1, 'confirmed');
         const provider = new AnchorProvider(connection, readOnlyWallet as never, { commitment: 'confirmed' });
         /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
         const program = new Program(FOGDUEL_IDL as Idl, provider) as any;
         const all = (await withDeadline(program.account.match.all(), 'the base layer')) as any[];
-        if (!alive) return;
+        if (!alive || mine < applied) return;
+        applied = mine;
 
         const now = Math.floor(Date.now() / 1000);
         /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
@@ -119,10 +145,12 @@ export function useOpenMatches(pollMs = 4000) {
       }
     };
 
+    readers.add(read);
     read();
     const id = setInterval(read, pollMs);
     return () => {
       alive = false;
+      readers.delete(read);
       clearInterval(id);
     };
   }, [pollMs]);

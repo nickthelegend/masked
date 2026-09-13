@@ -14,7 +14,13 @@ assert.equal(checkWallet(PublicKey.default).ok, true); n++;
 const stake = 0.1 * 1e9;
 assert.equal(checkBalance(stake + HEADROOM_LAMPORTS, stake).ok, true, 'exactly enough passes'); n++;
 assert.equal(checkBalance(stake, stake).ok, false, 'stake without headroom fails'); n++;
-assert.match(checkBalance(0, stake).detail!, /Need ~0\.12 SOL/); n++;
+assert.match(checkBalance(0, stake).detail!, /Need ~0\.15 SOL/); n++;
+// Seat-neutral: the same check guards JOIN, where "open a duel" was wrong.
+assert.match(checkBalance(0, stake).detail!, /Fund this wallet first\.$/); n++;
+// One lamport short must not read as "holds" what it "needs".
+assert.match(checkBalance(stake + HEADROOM_LAMPORTS - 1, stake).detail!, /Need ~0\.15 SOL, wallet holds 0\.14\./); n++;
+// The headroom covers a joiner's measured join (21,301,080) + seal (26,002,760).
+assert.ok(HEADROOM_LAMPORTS >= 21_301_080 + 26_002_760, 'headroom covers a joiner'); n++;
 
 // A live cluster passes; a dead one fails with the right message.
 const live = await checkCluster(CLUSTERS.local);

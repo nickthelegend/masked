@@ -26,7 +26,16 @@ import { assertFogIntact } from '../chain/fog';
 import { FogduelClient, pnlBps, type MatchLeg, type MatchState, type PositionState } from '../chain/client';
 import { formatSolPrice, MAX_OPEN_AGE_SECS, VALUE_DIV } from '../chain/units';
 import type { TapeState } from '../chain/tape';
-import { buyBaseOut, buyExecPx, buyImpact, maxShortBase, quoteToBuyBase, sellExecPx, sellImpact } from '../chain/book';
+import {
+  buyBaseOut,
+  buyExecPx,
+  buyImpact,
+  exactQuoteToCover,
+  isFlat,
+  maxShortBase,
+  sellExecPx,
+  sellImpact,
+} from '../chain/book';
 import { useHeadToHead, describeRecord } from '../chain/useHeadToHead';
 import { fetchMemeMarkets, livePxFor, searchMarkets, type TradableMarket } from '../chain/markets';
 import { mintSession, type ActiveSession } from '../chain/session';
@@ -44,6 +53,7 @@ import {
   refusal,
 } from '../chain/pyth';
 import { MAX_ORACLE_DIVERGENCE_BPS, readSwitchboard, sbSecondsLeft } from '../chain/switchboardFeed';
+import { refreshOpenMatches } from '../chain/useOpenMatches';
 
 export type DuelPhase = 'lobby' | 'searching' | 'live' | 'reveal';
 
@@ -114,6 +124,8 @@ const SETTLE_RETRY_MS = 4000;
  */
 const SEAL_STALL_MS = 20_000;
 const SEAL_WAIT_CEILING_MS = 90_000;
+/** How often matchmaking also asks for any live round of this wallet's, not only the watched match. */
+const WIDE_WATCH_MS = 10_000;
 /**
  * The same for settlement, from the joiner's side. Longer, because the first
  * visible sign of the creator's settlement is a position landing back on Solana,
@@ -517,9 +529,13 @@ export function useDuel(): Duel {
    * runs a cleanup, which is exactly the session whose choices were worth
    * keeping.
    */
+  const chosenMint = selectedMarket?.mint;
   useEffect(() => {
-    writePrefs({ stake, duration: openDuration, marketMint: selectedMarket?.mint });
-  }, [stake, openDuration, selectedMarket?.mint]);
+    // A market only when one is chosen. With nothing selected — a deep link
+    // that could not be priced, a feed that is down — the remembered pick is
+    // kept for the next visit instead of being erased.
+    writePrefs({ stake, duration: openDuration, ...(chosenMint ? { marketMint: chosenMint } : {}) });
+  }, [stake, openDuration, chosenMint]);
 
   const settledRef = useRef(false);
   /** Whether this round was handed to the rollup's crank — see `scheduleRoundCranks`. */
@@ -637,18 +653,29 @@ export function useDuel(): Duel {
   const pot = potGross * (1 - RAKE);
 
   /* ------------------------------- balance ------------------------------- */
+  // The poll's reader, so an action that just moved this wallet's SOL can have
+  // the header re-read it before its toast instead of on the next poll.
+  const refreshBalance = useRef<() => Promise<void>>(async () => {});
   useEffect(() => {
     const me = walletRef.current.publicKey;
     if (!client || !me) return;
     let alive = true;
+    // As in the book: a poll sent before an action and answered after the
+    // refresh must not put the old balance back.
+    let started = 0;
+    let applied = 0;
     const read = async () => {
+      const mine = ++started;
       try {
         const lamports = await client.balance(me);
-        if (alive) setBalance(lamports / 1e9);
+        if (!alive || mine < applied) return;
+        applied = mine;
+        setBalance(lamports / 1e9);
       } catch {
         /* RPC hiccup; the next poll will pick it up */
       }
     };
+    refreshBalance.current = read;
     read();
     const id = setInterval(read, BALANCE_POLL_MS);
     return () => {
@@ -1487,7 +1514,34 @@ export function useDuel(): Duel {
    * wait. This is the real matchmaking path — no fabricated opponent.
    */
   const openOrJoin = useCallback((createOnly: boolean) => {
+    // What this press has already put on chain. `guard` retries the whole
+    // action on a transient failure, and one that struck after the create or
+    // the join had landed — the read that follows it, a seal step — sent the
+    // write again: a second match opened, or the program refused the repeated
+    // join as MATCH NOT OPEN and told a player who had joined that someone beat
+    // them to it. A retry now resumes after the write.
+    let landed: { target: PublicKey; creator: PublicKey } | null = null;
+    const afterLanding = async ({ target, creator }: NonNullable<typeof landed>) => {
+      const me = wallet.publicKey!;
+      if (creator.equals(me)) {
+        // An unjoined match cannot start. Stay in matchmaking until someone
+        // joins; the lobby polls for it.
+        setMatch(await client!.fetchMatch(target));
+        // And re-read the book and the balance before MATCH OPEN is toasted.
+        // Both only polled, so the toast landed over a book with no row for
+        // this match and OPEN A MATCH still pressable — a second press opened a
+        // second escrow — and over a balance the entry had not left yet.
+        await Promise.all([refreshOpenMatches(), refreshBalance.current()]);
+        return;
+      }
+      void refreshBalance.current();
+      const m = await client!.fetchMatch(target);
+      if (!m || !m.joiner) return;
+      await beginRound(m, creator, m.joiner, me);
+    };
+
     void guard(createOnly ? 'MATCH OPEN' : 'MATCH READY', async () => {
+      if (landed) return afterLanding(landed);
       const me = wallet.publicKey!;
 
       // Fail fast and legibly rather than sending a doomed transaction and
@@ -1578,16 +1632,12 @@ export function useDuel(): Duel {
         name: market.name,
       };
 
-      let target: PublicKey;
-      let creator: PublicKey;
-
       if (joinable) {
         await client!.joinMatch(joinable.address, me, joinable.creator, myLeg);
-        target = joinable.address;
-        creator = joinable.creator;
+        landed = { target: joinable.address, creator: joinable.creator };
       } else {
         const matchId = Math.floor(Date.now() / 1000);
-        target = await client!.createMatch({
+        const target = await client!.createMatch({
           creator: me,
           matchId,
           mint: myLeg.mint,
@@ -1598,16 +1648,9 @@ export function useDuel(): Duel {
           symbol: market.symbol,
           name: market.name,
         });
-        creator = me;
-        // An unjoined match cannot start. Stay in matchmaking until someone
-        // joins; the lobby polls for it.
-        setMatch(await client!.fetchMatch(target));
-        return;
+        landed = { target, creator: me };
       }
-
-      const m = await client!.fetchMatch(target);
-      if (!m || !m.joiner) return;
-      await beginRound(m, creator, m.joiner, me);
+      return afterLanding(landed);
     });
     // `openDuration` belongs here. Without it this callback captures whatever
     // the round length was on first render and opens every match at that,
@@ -1651,11 +1694,22 @@ export function useDuel(): Duel {
     // the watch for good and left the player sitting on MATCHING with no idea
     // why, because the error was swallowed as "transient".
     let starting = false;
+    // When this wallet last asked for any live round of its own.
+    let lastWide = 0;
 
     const id = setInterval(async () => {
       if (starting) return;
       try {
-        const m = await client.fetchMatch(address);
+        let m = await client.fetchMatch(address);
+        // The watch followed only the newest match this wallet opened, so a
+        // creator whose older open match was taken sat in matchmaking while
+        // that round ran without them. Every WIDE_WATCH_MS, look for any live
+        // round of theirs. Timed rather than counted: a hidden tab runs this
+        // interval about once a minute, and "every fifth tick" would be five.
+        if ((!m?.joiner || m.status !== 'live') && Date.now() - lastWide >= WIDE_WATCH_MS) {
+          lastWide = Date.now();
+          m = await client.fetchMyLiveMatch(me);
+        }
         if (!alive || !m?.joiner || m.status !== 'live') return;
         starting = true;
         await beginRound(m, m.creator, m.joiner, me, 'waiter');
@@ -1832,17 +1886,29 @@ export function useDuel(): Duel {
       const open = Math.abs(myPosition.baseQty);
       const qty = whole ? open : Math.max(1, Math.floor(open * fillSize));
       const markBefore = await client!.fetchPrice(match.address, wallet.publicKey!, true);
+      // Under a lamport left over is flat as well: it is what a MAX close
+      // leaves on a coin too cheap to buy back exactly. See `isFlat`.
+      if (isFlat(myPosition.baseQty, Number(markBefore))) {
+        toast.info('NOTHING TO CLOSE', 'You are flat — what is left is worth under a lamport, and the buzzer closes it.');
+        return 'noop';
+      }
 
       if (myPosition.baseQty > 0) {
         await fill('sell', qty, markBefore);
       } else {
         // Buying back: `apply_fill`'s buy side consumes quote, so the size has
-        // to be inverted through the curve rather than valued at the mark.
-        // Multiplying by the mark ignores the impact of the buy itself, and
-        // bought back less than was sold — a MAX close reported POSITION
-        // CLOSED with 0.8% of the short still open.
-        const mark = Number(markBefore);
-        const quoteIn = quoteToBuyBase(qty, mark, match.entry);
+        // to be inverted through the curve — in the program's own integer
+        // arithmetic, so a MAX close stops at zero rather than a unit past it,
+        // or, on a coin under 0.001 SOL, less than a lamport short of it. See
+        // `exactQuoteToCover`.
+        const quoteIn = Number(exactQuoteToCover(BigInt(qty), BigInt(markBefore), BigInt(match.entry)));
+        if (quoteIn <= 0) {
+          // Only a partial size lands here: a slice worth under a lamport, which
+          // any whole-lamport spend would carry past zero. A whole remainder
+          // that small is flat, and was answered above.
+          toast.info('TOO SMALL TO FILL', 'That slice is worth under a lamport, and the book only fills whole lamports.');
+          return 'noop';
+        }
         const spend = Math.min(quoteIn, myPosition.quoteBalance);
         if (spend <= 0) {
           toast.error('NOT ENOUGH TO COVER', 'There is no quote left to buy the short back with.');
@@ -1860,10 +1926,38 @@ export function useDuel(): Duel {
   /** Take a specific match off the book, on whatever market I have picked. */
   const joinMatchByAddress = useCallback(
     (address: string, creator: string) => {
+      // Set once the join lands, so a retry of this press resumes after it
+      // rather than joining again — see `openOrJoin`.
+      let joined = false;
       void guard('MATCH JOINED', async () => {
         const me = wallet.publicKey!;
         const target = new PublicKey(address);
         const creatorKey = new PublicKey(creator);
+        const afterJoin = async () => {
+          void refreshBalance.current();
+          const m = await client!.fetchMatch(target);
+          if (!m || !m.joiner) return;
+          // Taking someone else's match takes their size; show it.
+          setStake(m.entry / LAMPORTS_PER_SOL);
+
+          // `beginRound`, not a second copy of it. This block used to repeat the
+          // seal-and-start sequence inline, and the two drifted: the session key
+          // added to `beginRound` was never minted for a joiner, so one side of
+          // every duel silently signed each fill with its wallet.
+          await beginRound(m, creatorKey, m.joiner, me);
+        };
+        if (joined) return afterJoin();
+
+        // A joiner pays more than the creator — rent for both positions and the
+        // whole seal — and this path used to check no balance at all. Nothing is
+        // sent for a match this wallet cannot see through (HEADROOM_LAMPORTS).
+        const open = await client!.fetchMatch(target);
+        const pre = checkBalance(await client!.balance(me), open?.entry ?? 0);
+        if (!pre.ok) {
+          toast.error(pre.title!, pre.detail);
+          setError(pre.detail ? `${pre.title}. ${pre.detail}` : pre.title!);
+          return 'noop';
+        }
 
         // I bring my own token. Joining says nothing about what the creator
         // chose — that is the point of the new matchmaking.
@@ -1888,16 +1982,8 @@ export function useDuel(): Duel {
           symbol: market.symbol,
           name: market.name,
         });
-        const m = await client!.fetchMatch(target);
-        if (!m || !m.joiner) return;
-        // Taking someone else's match takes their size; show it.
-        setStake(m.entry / LAMPORTS_PER_SOL);
-
-        // `beginRound`, not a second copy of it. This block used to repeat the
-        // seal-and-start sequence inline, and the two drifted: the session key
-        // added to `beginRound` was never minted for a joiner, so one side of
-        // every duel silently signed each fill with its wallet.
-        await beginRound(m, creatorKey, m.joiner, me);
+        joined = true;
+        return afterJoin();
       });
     },
     // `selectedMarket` belongs here: without it this callback closes over the
@@ -1911,7 +1997,13 @@ export function useDuel(): Duel {
     (address: string) => {
       void guard('MATCH CANCELLED', async () => {
         await client!.cancelMatch(new PublicKey(address), wallet.publicKey!);
-        setMatch(null);
+        // Only if it is the one being watched: cancelling an older open match
+        // must not stop the watch on the newer one.
+        setMatch((current) => (current && current.address.toBase58() === address ? null : current));
+        // Before the toast, so MATCH CANCELLED never lands over a book still
+        // offering CANCEL on the match it just took down, or over a balance the
+        // refund has not reached.
+        await Promise.all([refreshOpenMatches(), refreshBalance.current()]);
       });
     },
     [guard, client, wallet.publicKey]
@@ -1922,12 +2014,14 @@ export function useDuel(): Duel {
    *
    * This used to reset state and drop the player in matchmaking, which is
    * "play again" rather than "rematch" — the market and stake they had just
-   * been playing were both forgotten. It now carries both over and opens the
-   * match, so the button does what its label says.
+   * been playing were both forgotten. It now carries both over and lands in
+   * matchmaking on them, one press of OPEN A MATCH away. It does not open a
+   * match itself: FADE WINNER (`MaskedApp.tsx`) is the action that opens one,
+   * and it calls this first, then opens once the restored state has rendered.
    *
-   * The price is not carried over: `startMatch` re-reads it, because a mark
-   * from the round that just ended is exactly the sort of stale number that
-   * should never open a new one.
+   * The price is not carried over: opening re-reads it, because a mark from
+   * the round that just ended is exactly the sort of stale number that should
+   * never open a new one.
    */
   const rematch = useCallback(() => {
     const previous = match;
@@ -2005,7 +2099,7 @@ export function useDuel(): Duel {
 
   const sizeNote = useMemo(() => {
     if (!match) return undefined;
-    const holding = (myPosition?.baseQty ?? 0) > 0;
+    const holding = !!myPosition && myPosition.baseQty > 0 && !isFlat(myPosition.baseQty, price);
     if (holding && price > 0) {
       const qty =
         fillSize >= 1 ? myPosition!.baseQty : Math.floor(myPosition!.baseQty * fillSize);
@@ -2071,6 +2165,11 @@ export function useDuel(): Duel {
       .reverse();
   }, [myPosition, match]);
 
+  // What is actually held. Under a lamport of it is flat — what a MAX close
+  // leaves on a coin too cheap to buy back exactly — so it must not read as a
+  // position on any of the three readouts below. See `isFlat`.
+  const openQty = myPosition && !isFlat(myPosition.baseQty, price) ? myPosition.baseQty : 0;
+
   return {
     phase,
     stake,
@@ -2079,20 +2178,16 @@ export function useDuel(): Duel {
     series,
     equity,
     price,
-    position: myPosition && myPosition.baseQty !== 0 ? { px: myPosition.avgPx } : null,
+    position: myPosition && openQty !== 0 ? { px: myPosition.avgPx } : null,
     myPnl,
     // Both directions. This tested `baseQty > 0`, so every short — the whole
     // half of the product added in v2 — reported itself as FLAT while it was
     // open, on the one readout whose job is to say what you are holding.
     positionLabel:
-      myPosition && myPosition.baseQty !== 0
-        ? `${myPosition.baseQty > 0 ? 'LONG' : 'SHORT'} FROM ${formatSolPrice(myPosition.avgPx)}`
+      myPosition && openQty !== 0
+        ? `${openQty > 0 ? 'LONG' : 'SHORT'} FROM ${formatSolPrice(myPosition.avgPx)}`
         : 'FLAT',
-    mySide: ((myPosition?.baseQty ?? 0) > 0
-      ? 'long'
-      : (myPosition?.baseQty ?? 0) < 0
-        ? 'short'
-        : 'flat') as 'long' | 'short' | 'flat',
+    mySide: (openQty > 0 ? 'long' : openQty < 0 ? 'short' : 'flat') as 'long' | 'short' | 'flat',
     fills,
     // Whichever side of the match is not you. It used to name the joiner and
     // nobody else, so a player who had *joined* someone's match spent the whole

@@ -194,7 +194,12 @@ export function useProtocolStats(pollMs = 20_000): ProtocolStats {
           // them. The pot is the whole pot on both, because both markets are
           // what it was fought over — this is "how much has ridden on this
           // market", not a split of the money.
-          for (const leg of [a.legA, a.legB]) {
+          //
+          // But once per market. When both players pick the same coin the two
+          // legs are one market, and counting each leg read 43 WOFI duels over
+          // 5.70◎ where the chain holds 23 duels and 3.10◎ of pots on that mint.
+          const legs = a.legB.mint.equals(a.legA.mint) ? [a.legA] : [a.legA, a.legB];
+          for (const leg of legs) {
             const mint = leg.mint.toBase58();
             const prev = byMint.get(mint);
             if (prev) {

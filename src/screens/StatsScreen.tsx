@@ -200,8 +200,9 @@ export default function StatsScreen() {
                 <Badge label={`${s.markets.length}`} tone="quiet" variant="tabLabel" />
               </Row>
               <PixelText variant="bodySmall" size={10} color={color.textDim}>
-                Each duel counts for both of its legs — the two players pick separately, so a
-                round is a round for each market it was fought on.
+                Each duel counts once for every market it was fought on — the two players pick
+                separately, so a round on two markets counts for both, and a round both players
+                fought on the same market counts for it once.
               </PixelText>
               {s.markets.length === 0 ? (
                 <PixelText variant="bodySmall" align="center" color={color.textFaint}>

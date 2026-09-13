@@ -109,7 +109,11 @@ export async function authorizedUsers(erUrl: string, pubkey: string): Promise<st
   const res = await fetch(
     `${erUrl.replace(/\/$/, '')}/permission?pubkey=${encodeURIComponent(pubkey)}`,
     { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(TIMEOUT_MS) }
-  );
+  ).catch((e) => {
+    // Named like the two calls above, so a dead gate reads as the rollup and
+    // never as a bare "Failed to fetch".
+    throw new ErAuthError(`rollup permission lookup unreachable: ${e instanceof Error ? e.message : e}`);
+  });
   if (!res.ok) return null;
   const body = (await res.json()) as { authorizedUsers?: string[] | null };
   return body.authorizedUsers ?? null;

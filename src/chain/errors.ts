@@ -25,7 +25,10 @@ export interface FriendlyError {
  * Names are stable; the codes are read from the IDL below.
  */
 const BY_NAME: Record<string, Omit<FriendlyError, 'retryable'> & { retryable: boolean }> = {
-  MatchNotOpen: { title: 'MATCH NOT OPEN', detail: 'Someone joined first.', retryable: false },
+  // Both `join_match` and `cancel_if_unjoined` raise this, so "someone joined
+  // first" alone was wrong half the time: pressing CANCEL on a match that had
+  // just been cancelled told its owner a stranger had taken it.
+  MatchNotOpen: { title: 'MATCH NOT OPEN', detail: 'Someone joined it or it was cancelled first.', retryable: false },
   MatchNotLive: { title: 'MATCH NOT LIVE', retryable: false },
   MatchNotSettling: { title: 'MATCH NOT SETTLING', retryable: false },
   SelfJoin: { title: 'CANNOT JOIN YOUR OWN MATCH', retryable: false },
@@ -39,7 +42,13 @@ const BY_NAME: Record<string, Omit<FriendlyError, 'retryable'> & { retryable: bo
   NotAParticipant: { title: 'NOT A PARTICIPANT', retryable: false },
   InsufficientQuote: { title: 'NOT ENOUGH QUOTE', detail: 'Reduce the size.', retryable: false },
   InsufficientBase: { title: 'NOT ENOUGH BASE', detail: 'You are flat.', retryable: false },
-  ZeroQuantity: { title: 'SIZE MUST BE ABOVE ZERO', retryable: false },
+  // Only `apply_fill` raises this: for a size of zero, which the app never
+  // sends, and for a fill that rounds to nothing on the book, which it can.
+  ZeroQuantity: {
+    title: 'TOO SMALL TO FILL',
+    detail: 'At this price that size rounds to nothing: under a lamport, or under a millionth of a token. Pick a bigger size.',
+    retryable: false,
+  },
   StalePrice: { title: 'PRICE FEED STALE', retryable: true },
   InvalidDuration: { title: 'BAD DURATION', retryable: false },
   InvalidEntry: { title: 'ENTRY MUST BE ABOVE ZERO', retryable: false },
@@ -82,13 +91,23 @@ const PATTERNS: Array<[RegExp, FriendlyError]> = [
     { title: 'ACCOUNT NOT DELEGATED', detail: 'That write is only legal on the base layer.', retryable: false }],
   [/already in use/i,
     { title: 'ALREADY EXISTS', detail: 'That account has been created before.', retryable: false }],
-  // Named by endpoint where the error carries one, and deliberately vague
-  // where it does not. This app talks to two independent services — the base
-  // layer and the rollup's read gate — and "Is the validator running?" sent
-  // people to check the one that was fine. The gate was killed mid-round to
-  // test exactly this, and the app reported a healthy validator as the
-  // suspect. `/health` is the page that distinguishes them, so that is where
-  // the generic case points.
+  // Named by service wherever the failure can say which one it was, and
+  // deliberately vague where it cannot. This app talks to two independent
+  // services — the base layer and the rollup's read gate — and "Is the
+  // validator running?" sent people to check the one that was fine. The gate
+  // was killed mid-round to test exactly this, and the app reported a healthy
+  // validator as the suspect. `/health` is the page that distinguishes them,
+  // so that is where the generic case points.
+  //
+  // The names come from `serviceFetch`, which every client connection is built
+  // with, and from erAuth's own wrappers. The port patterns after them were
+  // the first attempt and only match a message carrying a URL — which a
+  // browser's refused fetch never does, so killing the gate in a real round
+  // still read CANNOT REACH THE CLUSTER, and devnet has no port to match.
+  [/rollup (front door |login |permission lookup )?unreachable/i,
+    { title: 'CANNOT REACH THE ROLLUP', detail: 'The ephemeral rollup is not answering. See /health.', retryable: true }],
+  [/base layer unreachable/i,
+    { title: 'CANNOT REACH THE BASE LAYER', detail: 'The base layer is not answering. See /health.', retryable: true }],
   [/(6699|6700)/i,
     { title: 'CANNOT REACH THE ROLLUP', detail: 'The ephemeral rollup is not answering. See /health.', retryable: true }],
   [/8999/i,
