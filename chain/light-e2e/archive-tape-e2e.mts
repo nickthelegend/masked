@@ -8,7 +8,7 @@
  */
 import { ComputeBudgetProgram, Connection, Keypair, LAMPORTS_PER_SOL, PublicKey, SystemProgram, Transaction, TransactionInstruction, sendAndConfirmTransaction } from '@solana/web3.js';
 import { AnchorProvider, BN, BorshAccountsCoder, Program, Wallet, type Idl } from '@coral-xyz/anchor';
-import { PackedAccounts, SystemAccountMetaConfig, bn, createRpc, deriveAddress, deriveAddressSeed, defaultTestStateTreeAccounts, selectStateTreeInfo } from '@lightprotocol/stateless.js';
+import { PackedAccounts, SystemAccountMetaConfig, TreeType, bn, createRpc, deriveAddressLegacy, deriveAddressSeedLegacy, defaultTestStateTreeAccounts, getLightSystemAccountMetasLegacy, selectStateTreeInfo } from '@lightprotocol/stateless.js';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
@@ -59,22 +59,28 @@ async function main() {
   console.log(`round ${match.toBase58()} live; waiting for the buzzer`);
   await new Promise((r) => setTimeout(r, 13_000));
   await pa.methods.requestSettle().accountsPartial({ cranker: a.publicKey, matchAccount: match }).rpc();
-  await pa.methods.settleMatch().accountsPartial({ matchAccount: match, vault, priceFeed: feedA, priceFeedB: feedB, roundStatus: status, positionA: posA, positionB: posB, treasury, tape, statsCreator: pda(enc('stats'), a.publicKey.toBuffer()), statsJoiner: pda(enc('stats'), b.publicKey.toBuffer()), systemProgram: SystemProgram.programId }).rpc();
+  // cranker, creator and joiner carry no PDA seeds in the IDL, so the resolver cannot fill them.
+  await pa.methods.settleMatch().accountsPartial({ cranker: a.publicKey, creator: a.publicKey, joiner: b.publicKey, matchAccount: match, vault, priceFeed: feedA, priceFeedB: feedB, roundStatus: status, positionA: posA, positionB: posB, treasury, tape, statsCreator: pda(enc('stats'), a.publicKey.toBuffer()), statsJoiner: pda(enc('stats'), b.publicKey.toBuffer()), systemProgram: SystemProgram.programId }).rpc();
   const tapeState = await pa.account.tape.fetch(tape);
   console.log(`settled; Tape PDA ${tape.toBase58()} winner ${tapeState.winner.toBase58().slice(0, 8)} pot ${tapeState.potPaid.toString()}`);
 
-  // The compressed tape's address: v1 derivation over ["tape", match], as archive_tape derives it.
+  // The compressed tape's address: v1 derivation over ["tape", match], as archive_tape derives it
+  // (light_sdk::address::v1::derive_address). stateless.js 0.23 is built in V2 mode, where the
+  // unsuffixed deriveAddressSeed/deriveAddress, PackedAccounts.newWithSystemAccounts and
+  // selectStateTreeInfo all pick the V2 variants; the program's CPI is v1, so name the v1 ones.
   const { addressTree, addressQueue } = defaultTestStateTreeAccounts();
-  const seed = deriveAddressSeed([enc('tape'), match.toBuffer()], PID);
-  const address = deriveAddress(seed, addressTree, PID);
+  const seed = deriveAddressSeedLegacy([enc('tape'), match.toBuffer()], PID);
+  const address = deriveAddressLegacy(seed, addressTree);
   const proof = await rpc.getValidityProofV0([], [{ address: bn(address.toBytes()), tree: addressTree, queue: addressQueue }]);
   if (!proof.compressedProof) fail('Photon/prover returned no proof for the new address');
-  const packed = PackedAccounts.newWithSystemAccounts(SystemAccountMetaConfig.new(PID));
+  // Remaining accounts, in light_sdk::cpi::v1::CpiAccounts order: the v1 system accounts, then the
+  // trees, which the instruction's indices count from.
+  const packed = new PackedAccounts();
   const treeIndex = packed.insertOrGet(addressTree);
   const queueIndex = packed.insertOrGet(addressQueue);
-  const outputTree = selectStateTreeInfo(await rpc.getStateTreeInfos());
+  const outputTree = selectStateTreeInfo(await rpc.getStateTreeInfos(), TreeType.StateV1);
   const outputIndex = packed.insertOrGet(outputTree.tree);
-  const { remainingAccounts } = packed.toAccountMetas();
+  const remainingAccounts = [...getLightSystemAccountMetasLegacy(SystemAccountMetaConfig.new(PID)), ...packed.toAccountMetas().remainingAccounts];
 
   const disc = createHash('sha256').update('global:archive_tape').digest().subarray(0, 8);
   const p = proof.compressedProof!;
