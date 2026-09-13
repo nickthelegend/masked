@@ -9,17 +9,18 @@
  * There are no secrets in this. It exists only because of the same-origin
  * policy, which is why it can be a twenty-line forwarder rather than a backend.
  *
- * It is deliberately not a general proxy. Only two upstream hosts are reachable
- * and only under fixed path prefixes, so pointing it at anything else — an
- * internal address, a metadata endpoint, someone's intranet — returns 403. An
- * open forwarder on a developer's laptop is a genuinely bad thing to leave
- * lying around.
+ * It is deliberately not a general proxy. The JSON routes reach two upstream
+ * hosts, only under fixed path prefixes, so pointing them at anything else
+ * returns 403. The logo relay reaches any public host but returns only images,
+ * and refuses anything that resolves to an internal address or a metadata
+ * endpoint. An open forwarder on a developer's laptop is a genuinely bad thing
+ * to leave lying around.
  *
- * Logos are deliberately NOT relayed. That was tried: pump.fun's image_uri
- * points at half a dozen CDNs, and Cloudflare Images — which serves most of
- * them — answers a browser and refuses a server, so proxying broke logos that
- * load fine today. They are loaded directly, and TokenLogo falls back for the
- * ones that are dead upstream.
+ * Logos go through `/img/check` (a yes-or-no verdict) and then `/img` (the
+ * bytes, with CORP set so a page can paint them). A logo the relay cannot
+ * fetch gets a "no", and TokenLogo shows its letter tile. Two kinds it used to
+ * refuse are recovered: an image served with no content type, and an IPFS
+ * logo whose pasted gateway blocks servers (see `fetchLogo`).
  *
  *   node server/market-proxy.mjs        # :8788
  *   MARKET_PROXY_PORT=9000 node …
@@ -32,7 +33,11 @@ import { lookup } from 'node:dns/promises';
 // picker correctly reported "pump.fun returned 401" for a service that was
 // never pump.fun. A less-travelled port plus the identity check below makes
 // that failure mode obvious instead of mysterious.
-const PORT = Number(process.env.MARKET_PROXY_PORT ?? 8791);
+// A hosting platform (Railway, and most others) assigns the port in PORT and
+// routes to it from outside, so under PORT the proxy listens on every
+// interface. Run locally, it stays on 127.0.0.1:8791 as before.
+const PORT = Number(process.env.MARKET_PROXY_PORT ?? process.env.PORT ?? 8791);
+const HOST = process.env.MARKET_PROXY_HOST ?? (process.env.PORT ? '0.0.0.0' : '127.0.0.1');
 const TIMEOUT_MS = 12_000;
 const SERVICE = 'masked-market-proxy';
 
@@ -57,10 +62,6 @@ const ROUTES = {
  * validator and a signing key, and `http://127.0.0.1:8999` must not be
  * reachable by asking the proxy nicely for a picture of it.
  */
-const BLOCKED_V4 = [
-  [0, 8], [10, 8], [127, 8], [169, 16], [172, 12], [192, 16], [198, 15], [224, 4], [240, 4],
-];
-
 function isPrivateAddress(ip, family) {
   if (family === 6) {
     const v = ip.toLowerCase();
@@ -133,6 +134,150 @@ const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const IMAGE_TYPES = /^image\//;
 
 /**
+ * No content type at all, or the generic byte-stream one.
+ *
+ * arweave.net serves the TRUMP, PENGU and YZY logos this way: real JPEG and
+ * PNG bytes under no `content-type`. Refusing them as "not an image" put a
+ * letter tile on three of the best-known tokens in the list. For these, and
+ * only these, the first bytes decide.
+ */
+const UNTYPED = /^(|application\/octet-stream|binary\/octet-stream)$/;
+
+/**
+ * A raster format recognised by its signature, or null.
+ *
+ * Raster only, on purpose: an SVG or HTML body sniffed as an image is exactly
+ * the document relay the IMAGE_TYPES check exists to refuse.
+ */
+function sniffImageType(b) {
+  const at = (i, bytes) => b.length >= i + bytes.length && bytes.every((x, k) => b[i + k] === x);
+  if (at(0, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return 'image/png';
+  if (at(0, [0xff, 0xd8, 0xff])) return 'image/jpeg';
+  if (at(0, [0x47, 0x49, 0x46, 0x38])) return 'image/gif';
+  if (at(0, [0x52, 0x49, 0x46, 0x46]) && at(8, [0x57, 0x45, 0x42, 0x50])) return 'image/webp';
+  if (at(4, [0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69])) return 'image/avif';
+  return null;
+}
+
+/**
+ * Public IPFS gateways to ask when the one in the URL will not answer.
+ *
+ * An IPFS logo is content-addressed, so any gateway serves the same bytes. The
+ * ones creators paste are the busy ones — ipfs.io, dweb.link, nftstorage.link —
+ * and those answer this relay 403 "blocked" or 429, which left PUMP, $WIF,
+ * cbBTC and Fartcoin as letter tiles. These two served every one of them.
+ */
+const IPFS_FALLBACKS = ['https://ipfs.filebase.io', 'https://gateway.pinata.cloud'];
+const CID = /^(Qm[1-9A-HJ-NP-Za-km-z]{44}|b[a-z2-7]{50,})$/;
+const SAFE_SUBPATH = /^(\/[A-Za-z0-9_.-]+)*$/;
+
+/** `/ipfs/<cid>[/path]` for a path-style or subdomain-style gateway URL, else null. */
+function ipfsPath(u) {
+  let cid;
+  let rest;
+  const m = u.pathname.match(/^\/ipfs\/([^/]+)(\/.*)?$/);
+  if (m) {
+    cid = m[1];
+    rest = m[2] ?? '';
+  } else {
+    const [first, second] = u.hostname.split('.');
+    if (second !== 'ipfs') return null;
+    cid = first;
+    rest = u.pathname === '/' ? '' : u.pathname;
+  }
+  if (!CID.test(cid) || !SAFE_SUBPATH.test(rest) || rest.split('/').includes('..')) return null;
+  return `/ipfs/${cid}${rest}`;
+}
+
+/** Up to `n` bytes from the start of a body; the rest of it is abandoned. */
+async function firstBytes(r, n) {
+  if (!r.body) return new Uint8Array(0);
+  const reader = r.body.getReader();
+  const chunks = [];
+  let size = 0;
+  try {
+    while (size < n) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      size += value.length;
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+  return Buffer.concat(chunks).subarray(0, n);
+}
+
+/**
+ * A logo, from its own URL or, for IPFS, from another gateway.
+ *
+ * `full` downloads the bytes, for `/img`; otherwise only enough of an untyped
+ * body is read to recognise it, for `/img/check`. Returns
+ * `{ ok: true, type, buf, host }`, or `{ ok: false, status, reason }` for the
+ * last candidate that failed. A policy refusal still throws `Refused`.
+ */
+async function fetchLogo(target, { full }) {
+  const path = ipfsPath(target);
+  const candidates = [
+    target,
+    ...(path ? IPFS_FALLBACKS.map((g) => new URL(path, g)).filter((u) => u.hostname !== target.hostname) : []),
+  ];
+  let failure = { status: 502, reason: `logo ${target.hostname} failed` };
+  for (const candidate of candidates) {
+    let r;
+    let current;
+    try {
+      ({ r, current } = await resolveImage(candidate));
+    } catch (e) {
+      if (e instanceof Refused) throw e;
+      failure = { status: 502, reason: `logo ${candidate.hostname} failed: ${e?.message ?? e}` };
+      continue;
+    }
+    const declared = (r.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
+    const untyped = UNTYPED.test(declared);
+    if (!r.ok || (!IMAGE_TYPES.test(declared) && !untyped)) {
+      await r.body?.cancel().catch(() => {});
+      failure = r.ok
+        ? { status: 415, reason: `not an image: ${declared}` }
+        : { status: r.status, reason: `upstream ${current.hostname} ${r.status}` };
+      continue;
+    }
+    if (Number(r.headers.get('content-length') ?? 0) > MAX_IMAGE_BYTES) {
+      await r.body?.cancel().catch(() => {});
+      failure = { status: 413, reason: 'image too large' };
+      continue;
+    }
+    let buf = null;
+    let type = untyped ? null : declared;
+    try {
+      if (full) {
+        buf = Buffer.from(await r.arrayBuffer());
+        if (untyped) type = sniffImageType(buf);
+      } else if (untyped) {
+        type = sniffImageType(await firstBytes(r, 16));
+      } else {
+        await r.body?.cancel().catch(() => {});
+      }
+    } catch (e) {
+      failure = { status: 502, reason: `logo ${current.hostname} failed: ${e?.message ?? e}` };
+      continue;
+    }
+    if (!type) {
+      failure = { status: 415, reason: `not an image: ${declared}` };
+      continue;
+    }
+    if (buf && buf.length > MAX_IMAGE_BYTES) {
+      failure = { status: 413, reason: 'image too large' };
+      continue;
+    }
+    // The gateway asked, not wherever it redirected: arweave and irys bounce
+    // every logo to a sandbox subdomain of their own, which is not a fallback.
+    return { ok: true, type, buf, host: candidate.hostname };
+  }
+  return { ok: false, ...failure };
+}
+
+/**
  * pump.fun stalls requests that do not look like a browser, and in a browser
  * the engine sets this header itself — so it only matters here.
  */
@@ -154,6 +299,42 @@ const send = (res, status, body) => {
   res.end(JSON.stringify(body));
 };
 
+/**
+ * Follow a logo URL to its final response, refusing anything private.
+ *
+ * Shared by `/img`, which relays the bytes, and `/img/check`, which only says
+ * whether there are bytes worth relaying. Returns the final response and the
+ * URL it came from; throws `Refused` for a policy refusal.
+ */
+async function resolveImage(target) {
+  // Every hop is checked, not just the first: a public host is free to
+  // redirect at 169.254.169.254, and `fetch` would follow it happily.
+  let hops = 0;
+  let current = target;
+  let r;
+  for (;;) {
+    await assertPublicHost(current.hostname);
+    // Deliberately NOT the browser user-agent the JSON routes spoof.
+    // pump.fun's API stalls anything that does not look like a browser;
+    // ipfs.io does the opposite — it sits behind Cloudflare and answers a
+    // plain client with 200 and the spoofed Chrome string with 403,
+    // because a Chrome UA arriving without any of Chrome's other headers
+    // looks like exactly what it is. The two want opposite things, so the
+    // image relay asks as itself.
+    r = await fetch(current, {
+      headers: { accept: 'image/*', 'user-agent': `${SERVICE}/1.0` },
+      redirect: 'manual',
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (r.status < 300 || r.status >= 400) break;
+    const next = r.headers.get('location');
+    if (!next || (hops += 1) > 3) break;
+    current = new URL(next, current);
+    if (current.protocol !== 'https:') throw new Refused(403, 'redirected off https');
+  }
+  return { r, current };
+}
+
 const server = createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
     cors(res);
@@ -174,6 +355,37 @@ const server = createServer(async (req, res) => {
     return send(res, 200, { service: SERVICE, upstreams: Object.keys(ROUTES), imageRelay: '/img?url=' });
   }
 
+  // Whether `/img` would relay this logo, answered as a verdict.
+  //
+  // The app used to find out by requesting the image itself, so every logo it
+  // could not show arrived as an HTTP error: a dead CDN 404, a host that
+  // refuses servers 403, an arweave URL serving an HTML page 415. Each was
+  // handled — the row falls back to its letter tile — and each still landed in
+  // the browser's network log as a failed request, on every screen that lists
+  // markets. A yes-or-no question is not an error either way, so this answers
+  // 200 with the verdict in the body. It reads headers only — plus the first
+  // bytes of a body sent with no type; the old check downloaded every logo twice.
+  if (url.pathname === '/img/check') {
+    const raw = url.searchParams.get('url');
+    if (!raw) return send(res, 400, { error: 'missing url' });
+    let target;
+    try {
+      target = new URL(raw);
+    } catch {
+      return send(res, 200, { usable: false, reason: 'not a URL' });
+    }
+    if (target.protocol !== 'https:') return send(res, 200, { usable: false, reason: 'https only' });
+    try {
+      const logo = await fetchLogo(target, { full: false });
+      if (!logo.ok) return send(res, 200, { usable: false, reason: logo.reason });
+      // `via` names the gateway that answered, when it was not the one asked.
+      return send(res, 200, { usable: true, type: logo.type, ...(logo.host !== target.hostname ? { via: logo.host } : {}) });
+    } catch (e) {
+      const reason = e instanceof Refused ? e.message : `logo ${target.hostname} failed: ${e?.message ?? e}`;
+      return send(res, 200, { usable: false, reason });
+    }
+  }
+
   // Relay one logo, for a host that serves servers but refuses browsers.
   if (url.pathname === '/img') {
     const raw = url.searchParams.get('url');
@@ -186,40 +398,12 @@ const server = createServer(async (req, res) => {
     }
     if (target.protocol !== 'https:') return send(res, 403, { error: 'https only' });
     try {
-      // Every hop is checked, not just the first: a public host is free to
-      // redirect at 169.254.169.254, and `fetch` would follow it happily.
-      let hops = 0;
-      let current = target;
-      let r;
-      for (;;) {
-        await assertPublicHost(current.hostname);
-        // Deliberately NOT the browser user-agent the JSON routes spoof.
-        // pump.fun's API stalls anything that does not look like a browser;
-        // ipfs.io does the opposite — it sits behind Cloudflare and answers a
-        // plain client with 200 and the spoofed Chrome string with 403,
-        // because a Chrome UA arriving without any of Chrome's other headers
-        // looks like exactly what it is. The two want opposite things, so the
-        // image relay asks as itself.
-        r = await fetch(current, {
-          headers: { accept: 'image/*', 'user-agent': `${SERVICE}/1.0` },
-          redirect: 'manual',
-          signal: AbortSignal.timeout(TIMEOUT_MS),
-        });
-        if (r.status < 300 || r.status >= 400) break;
-        const next = r.headers.get('location');
-        if (!next || (hops += 1) > 3) break;
-        current = new URL(next, current);
-        if (current.protocol !== 'https:') {
-          return send(res, 403, { error: 'redirected off https' });
-        }
-      }
-      const type = r.headers.get('content-type') ?? '';
-      if (!r.ok) return send(res, r.status, { error: `upstream ${current.hostname} ${r.status}` });
-      // Refuse anything that is not an image, so this cannot be used to read
-      // arbitrary documents off a host that happens to be reachable.
-      if (!IMAGE_TYPES.test(type)) return send(res, 415, { error: `not an image: ${type}` });
-      const buf = Buffer.from(await r.arrayBuffer());
-      if (buf.length > MAX_IMAGE_BYTES) return send(res, 413, { error: 'image too large' });
+      // Anything that is not an image is refused inside `fetchLogo` — typed as
+      // one, or untyped with an image's first bytes — so this cannot be used to
+      // read arbitrary documents off a host that happens to be reachable.
+      const logo = await fetchLogo(target, { full: true });
+      if (!logo.ok) return send(res, logo.status, { error: logo.reason });
+      const { type, buf } = logo;
       cors(res);
       res.writeHead(200, {
         'content-type': type,
@@ -250,19 +434,121 @@ const server = createServer(async (req, res) => {
   if (upstream.origin !== origin) return send(res, 403, { error: 'path escaped its upstream' });
 
   try {
-    const r = await fetch(upstream, {
-      headers: UPSTREAM_HEADERS,
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-    const body = await r.text();
+    const key = upstream.href;
+    const ttl = ttlFor(url.pathname);
+    const hit = ttl > 0 ? cache.get(key) : undefined;
+    let out;
+    let state;
+    if (hit && Date.now() - hit.at < ttl) {
+      out = hit;
+      state = 'HIT';
+    } else {
+      let job = inflight.get(key);
+      if (!job) {
+        job = fetchUpstream(upstream).finally(() => inflight.delete(key));
+        inflight.set(key, job);
+      }
+      out = notFoundAsNull(url.pathname, await job);
+      state = 'MISS';
+      if (ttl > 0 && out.status === 200) remember(key, out);
+    }
     cors(res);
-    res.writeHead(r.status, { 'content-type': r.headers.get('content-type') ?? 'application/json' });
-    res.end(body);
+    res.writeHead(out.status, {
+      'content-type': out.type,
+      'x-cache': state,
+      ...(out.upstreamStatus ? { 'x-upstream-status': String(out.upstreamStatus) } : {}),
+      ...(state === 'HIT' ? { age: String(Math.floor((Date.now() - out.at) / 1000)) } : {}),
+    });
+    res.end(out.body);
   } catch (e) {
     // The upstream's own failure, named, so the UI can show something true.
     send(res, 502, { error: `upstream ${upstream.host} failed: ${e?.message ?? e}` });
   }
 });
+
+/**
+ * Upstream responses remembered briefly, and upstream throttling absorbed.
+ *
+ * Every tab of the app, the landing page and anything else pointed at this
+ * proxy share one outbound IP, and Jupiter answers a burst with 429. The app
+ * retried and recovered, but the 429 still reached the browser as a failed
+ * request. Two things stop that here:
+ *
+ * - An identical request inside its route's TTL is answered from the same
+ *   upstream response, and concurrent identical requests share one fetch.
+ * - A 429 or 503 from upstream is retried with backoff (honouring
+ *   `retry-after`, capped) before anything is sent back. If it is still
+ *   refused after that, the refusal is passed through — this absorbs a burst,
+ *   it does not hide an outage.
+ *
+ * Only successful responses are cached, and the TTLs are short and per route:
+ * a price is at most a few seconds old when served, which is inside the
+ * program's own one-push-a-second rate limit; token lists change over hours.
+ * `x-cache` and `age` say which it was.
+ */
+const CACHE_TTL_MS = [
+  [/^\/jup\/price\//, 3_000],
+  [/^\/jup\/tokens\/v2\/tag/, 60_000],
+  [/^\/jup\/tokens\/v2\/search/, 20_000],
+  [/^\/jup\//, 10_000],
+  [/^\/pump\/coins\/[^/]+$/, 5_000],
+  [/^\/pump\//, 10_000],
+];
+const CACHE_MAX_ENTRIES = 500;
+const RETRY_STATUSES = new Set([429, 503]);
+const RETRY_DELAYS_MS = [400, 1_000, 2_000];
+
+const cache = new Map();
+const inflight = new Map();
+
+function ttlFor(pathname) {
+  for (const [re, ms] of CACHE_TTL_MS) if (re.test(pathname)) return ms;
+  return 0;
+}
+
+/**
+ * A coin lookup for a mint pump.fun has no coin for, answered as `null`.
+ *
+ * Tapes and stats resolve a logo for every mint they show, and not every mint
+ * is a pump.fun coin — a Jupiter major, or a fixture the test suites wrote. The
+ * lookup's honest answer is "no such coin", and the client already reads a null
+ * as exactly that (`fetchMarket` → `toMarket(null)` → null). Passing the 404
+ * through put a failed request in the network panel for a question that had
+ * been answered. `x-upstream-status` keeps what pump.fun actually said visible;
+ * every other status, and every other route, passes through unchanged.
+ */
+const COIN_LOOKUP = /^\/pump\/coins\/[^/]+$/;
+function notFoundAsNull(pathname, out) {
+  if (out.status !== 404 || !COIN_LOOKUP.test(pathname)) return out;
+  return { status: 200, type: 'application/json', body: 'null', upstreamStatus: 404 };
+}
+
+function remember(key, out) {
+  cache.delete(key);
+  cache.set(key, { ...out, at: Date.now() });
+  // Oldest first: a Map iterates in insertion order.
+  while (cache.size > CACHE_MAX_ENTRIES) cache.delete(cache.keys().next().value);
+}
+
+async function fetchUpstream(upstream) {
+  let r;
+  for (let attempt = 0; ; attempt += 1) {
+    r = await fetch(upstream, {
+      headers: UPSTREAM_HEADERS,
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (!RETRY_STATUSES.has(r.status) || attempt >= RETRY_DELAYS_MS.length) break;
+    const after = Number(r.headers.get('retry-after'));
+    const wait = Number.isFinite(after) && after > 0 ? Math.min(after * 1000, 3_000) : RETRY_DELAYS_MS[attempt];
+    await r.body?.cancel().catch(() => {});
+    await new Promise((resolve) => setTimeout(resolve, wait));
+  }
+  return {
+    status: r.status,
+    type: r.headers.get('content-type') ?? 'application/json',
+    body: await r.text(),
+  };
+}
 
 server.on('error', (e) => {
   // Without this a second copy dies on an unhandled 'error' event and prints a
@@ -277,7 +563,7 @@ server.on('error', (e) => {
   throw e;
 });
 
-server.listen(PORT, '127.0.0.1', () => {
-  console.log(`market proxy on http://127.0.0.1:${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log(`market proxy on http://${HOST}:${PORT}`);
   for (const [p, o] of Object.entries(ROUTES)) console.log(`  ${p.padEnd(8)} -> ${o}`);
 });

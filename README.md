@@ -1,4 +1,4 @@
-# FOGDUEL
+# MASKED
 
 **Hidden-position 1v1 trading on Solana, built on MagicBlock Ephemeral Rollups.**
 
@@ -17,7 +17,7 @@ PnL is compared, the winner takes the pot less a 2% rake, and a public `Tape`
 is written recording both players' markets and every fill.
 
 Every other 1v1 trading product on Solana (VERSUS, SolDuel, TradeLeague) is
-**public during the fight**. Fogduel is **private during the fight, public
+**public during the fight**. MASKED is **private during the fight, public
 after**. That window is the product.
 
 ---
@@ -26,10 +26,10 @@ after**. That window is the product.
 
 | Primitive | Where | Status |
 |---|---|---|
-| **Ephemeral Rollups** — delegate / write / commit / undelegate | `delegate_position_to_er`, `commit_and_undelegate_position` | **Working, proved by test.** 26 on-chain tests, including the negative case: a fill that succeeds on the rollup is rejected on L1 while the account is delegated. |
-| **Private Ephemeral Rollups** — per-position ACL | `create_position_permission`, `delegate_position_permission`, `init_position_privacy` | **Enforced, not attested.** Every match started through the UI puts an ACL on chain naming only its owner, and the query-filtering-service refuses a sealed position while serving the same account shape without one — `npm run check:gate` proves it every run. What is missing is attestation; see Limitations §1. |
-| Magic Router / ER RPC | `src/chain/client.ts` | Working |
-| **VRF** | `request_market_draw`, `settle_market_draw` | **Requested on chain; cannot be fulfilled here.** The request is built with the official SDK and the VRF program accepts it (`npm run check:vrf`). No oracle answers: the queues this validator preloads were dumped from devnet and name oracle identities we do not hold keys for. Nothing simulates a draw, and no UI is built on one that cannot resolve. See Limitations §7. |
+| **Ephemeral Rollups** — delegate / write / commit / undelegate | `delegate_position_to_er`, `commit_and_undelegate_position` | **Working, proved by test.** 38 on-chain tests, including the negative case: a fill that succeeds on the rollup is rejected on L1 while the account is delegated. |
+| **Private Ephemeral Rollups** — per-position ACL | `create_position_permission`, `delegate_position_permission`, `init_position_privacy` | **Enforced locally; enforced and attested on devnet.** Every match started through the UI puts an ACL on chain naming only its owner. Locally the query-filtering-service refuses a sealed position while serving the same account shape without one (`npm run check:gate`). On devnet, behind MagicBlock's TEE, the opponent's position is refused mid-round while the owner reads their own (`EXPO_PUBLIC_CLUSTER=devnet npm run prove:privacy`, 2026-09-13), and the endpoint's Intel TDX quote verifies (`npx tsx scripts/check-tee.mts`). See Limitations §1. |
+| ER RPC, direct | `src/chain/client.ts` — a plain `Connection` to the rollup's gate | Working. The **Magic Router is not used**: nothing in `src/` or `scripts/` calls `ConnectionMagicRouter` or `getRoutes` |
+| **VRF** | `request_market_draw`, `settle_market_draw` | **Fulfilled on devnet; not on the local stack.** `request_market_draw` builds the request with the official SDK. On devnet an oracle serving `DEFAULT_QUEUE` (`Cuj97ggr…`) answered within a second, twice, and `settle_market_draw`, which `#[vrf_callback]` opens only to the VRF program, wrote the chosen market (`EXPO_PUBLIC_CLUSTER=devnet npm run check:vrf`, 2026-09-13 02:50 and 02:51 UTC). The local validator's preloaded test queue has no oracle, so a local draw never resolves. No UI is built on a draw yet. See Limitations §7. |
 | **Session keys** (Gum Session Protocol) | `session.ts`, `session_auth_or` on `apply_fill` | **Used.** At seal time the player signs once to mint a session token authorising a throwaway key to call `apply_fill` on their behalf — bounded to an hour and scoped to this program. A five-minute round costs one signature instead of one per fill. `apply_fill` carries `session_auth_or`, so without a token the signer must be the position's owner, and a token names exactly one owner. Proved by `npm run check:session` (15 assertions) and visible on chain: a real `ApplyFill` on the owner's position, signed and paid by the session key. |
 
 ---
@@ -44,7 +44,7 @@ MASKED runs on three layers, and the third one is the point.
 
 | Layer | Port | What it is |
 |---|---|---|
-| base | 8999 | `mb-test-validator` — a `solana-test-validator` preloaded with the MagicBlock delegation (`DELeGG…`) and permission (`ACLseo…`) programs. Escrow and settlement live here. A plain test validator will not work; the rollup exits on startup without those programs. |
+| base | 8999 | `mb-test-validator` — a `solana-test-validator` preloaded with the MagicBlock delegation (`DELeGG…`) and permission (`ACLseo…`) programs, plus the committor (`ComtrB2…`), which `localnet.sh` fetches from devnet and adds because `mb-test-validator` does not ship it. Without the committor, a position rewritten by more than about twenty fills never commits back and that round's pot is stranded. Escrow and settlement live here. A plain test validator will not work; the rollup exits on startup without those programs. |
 | rollup | 7799 | `ephemeral-validator` — holds the delegated Positions. This is the validator's own port and it answers anybody. |
 | public | 6699 | `query-filtering-service` — the front door. It reads `ACLseo…` to decide who may see what. **This is the only rollup endpoint the app ever talks to**, and it is what "a public RPC cannot read your position" means. |
 
@@ -83,14 +83,16 @@ npm run proxy      # :8791, and GET /whoami identifies it
 ### 4. Test
 
 ```bash
-# 27 passing, 2 pending across three suites: lifecycle (escrow, the private
+# 38 passing, 2 pending across four suites: lifecycle (escrow, the private
 # book, impact, the mark's rate limit, rake, settlement, tape, stats), the
-# rollup (delegation, ER writes, L1 rejection, commit-back, settle) and the
+# rollup (delegation, ER writes, L1 rejection, commit-back, settle), the
+# rollup's cranks (buzzer commit, liquidation, and a round with 24 fills a
+# side that still comes home and replays from its tape's own window) and the
 # permission ACL. The two pending are the ephemeral-permission TEE path.
 cd chain && anchor test --skip-local-validator
 
 cd ..
-npm run check          # typecheck + 17 assertion suites
+npm run check          # typecheck, lint + 20 assertion suites (22 steps)
 npm run verify:client  # a full match through the app's own client
 npm run check:gate     # what the front door enforces, against a control
 npm run check:guards   # every refusal the program makes, exercised for real
@@ -103,7 +105,7 @@ npm run prove:privacy  # the whole privacy claim, stage by stage
 
 | Suite | What it proves |
 |---|---|
-| `tape` | Replays every real settled tape's fills onto the chain's own `pnl_*_bps`, and the impact previewer against every recorded execution price. The count grows with the cluster — 1,124 assertions over 77 tapes at the time of writing |
+| `tape` | Replays every real settled tape's fills onto the chain's own `pnl_*_bps`, and the impact previewer against every recorded execution price. The count grows with the cluster — 523 assertions over 11 tapes on the reset stack (2026-09-13 01:58 UTC), two of them sides past 16 fills replayed from the tape's own window start |
 | `h2h` | The head-to-head query's byte offsets, derived from a real account, agreeing filtered-vs-scanned across every pairing |
 | `race` | Two independent clients sealing **and** settling one live match concurrently |
 | `er` | **Where the trade executed.** A fill on a rollup and a fill on a validator look identical from outside, so this drives a real fill and asks both clusters where it went: the position is owned by the delegation program, the signature is in the rollup's ledger, the same signature is **absent** from the base layer's, and the rollup's position carries the fill |
@@ -142,18 +144,28 @@ npm run web
 For a production build a judge can open without a dev server:
 
 ```bash
-npx expo export -p web && npx serve -s dist
+npx expo export --platform web --output-dir dist
+npm run serve          # dist/ on http://127.0.0.1:4180; every route falls back to index.html
 ```
+
+The production build is installable. It carries a web app manifest and a
+service worker (`public/sw.js`) that keeps the app's own files, so the shell
+opens offline and says the cluster is out of reach. It never caches a chain RPC,
+the market proxy or a logo, because a price or a balance from a cache would be
+an old number shown as a current one. The icons are drawn from the product's
+own mask: `npm run icons` regenerates `public/icons/`.
 
 | Route | What it is |
 |---|---|
 | `/` | Landing page |
-| `/play` | The duel |
+| `/play` | The duel. `?market=<mint>` opens the lobby on that token; `?match=<address>` is an invite that opens matchmaking with that match first, or says why it cannot be joined |
 | `/proof` | **Live on-chain evidence — start here if you are judging** |
 | `/tape/<match>` | A settled duel at a permanent URL: both players' every fill, no wallet |
 | `/spectate/<match>` | Watch a live duel, both positions fogged to you too, no wallet |
+| `/tape`, `/spectate` | Without a match address: explain how to reach one |
+| `/stats` | Protocol totals read from chain: duels settled, fills, paid to winners, the rake checked against the treasury |
 | `/health` | Dependency health |
-| `/gallery` | Every UI component in every state |
+| `/gallery` | Every UI component in every state, under a permanent **SAMPLE DATA — COMPONENT GALLERY** banner: its figures are examples, not chain state |
 
 ---
 
@@ -165,8 +177,8 @@ The exact click path, in the order that makes the argument.
    - CLUSTER panel: which endpoints, which validator, and two separate rows
      that are the whole honest claim —
      `read gate: YES — sealed position refused, control served` and
-     `gate attested: NO — not a TEE`. Enforcement is real here; attestation is
-     what needs the TEE.
+     `gate attested: NO — not a TEE` on the local stack. Enforcement is real
+     here; attestation is what the devnet TEE adds (`npx tsx scripts/check-tee.mts`).
    - MEASURED SPEED: real medians, not a slide.
    - ACCESS CONTROL LISTS: the permission accounts of the most recent duel,
      read from chain. Sealed and delegated, owned by `DELeGG…`.
@@ -185,9 +197,10 @@ npm run prove:privacy
 ```
 
    Walks a real match and prints, at each stage, exactly what each party can
-   read. Watch the MID-ROUND VISIBILITY block and the VERDICT under it. On a
-   TEE cluster the opponent read is refused; on local it says so plainly
-   rather than pretending.
+   read. Watch the MID-ROUND VISIBILITY block and the VERDICT under it. The
+   opponent read is refused on both clusters: locally by the query-filtering
+   gate, and on devnet by MagicBlock's TEE (`EXPO_PUBLIC_CLUSTER=devnet npm run
+   prove:privacy`, run 2026-09-13).
 
 **3. `/play` — play one (5 min, or 60s with the env override)**
    - OPEN BOOK shows real unjoined matches from other wallets. JOIN one.
@@ -201,9 +214,10 @@ npm run prove:privacy
    - LONG, or SHORT. The orb turns green, the PnL odometer rolls, the clock
      pulses under 10 seconds.
    - The opponent panel shows a fill count and nothing else, all round.
-   - Rounds are five minutes. For a recording, `EXPO_PUBLIC_ROUND_SECONDS=60`
-     shortens them — the program accepts anything from 10s to 3600s, so that
-     is a real 60-second round rather than a shortened display.
+   - Rounds are five minutes by default. For a recording, pick **1 MIN** in
+     the lobby's duration picker (1 / 5 / 15 MIN). The length is a real
+     `create_match` argument and the program accepts anything from 10s to
+     3600s, so that is a real 60-second round with no rebuild.
    - SIZE (1/4, 1/2, MAX) changes what a fill costs, and the line under it
      quotes the impact before you sign. It is exact, not an estimate — MAX
      quotes 1.56% and the chain charges 1.56%.
@@ -275,13 +289,13 @@ opponent's.
 ## Verification you can run
 
 ```bash
-npm run check          # typecheck + 17 assertion suites
+npm run check          # typecheck, lint + 20 assertion suites (22 steps)
 npm run check:gate     # what the front door enforces, tested against a control
 npm run check:guards   # every refusal the deployed program makes, exercised for real
 npm run check:race     # two independent clients sealing and settling one match at once
 npm run check:tape     # every settled tape replayed onto the chain's own PnL
 npm run check:h2h      # the head-to-head count, filtered vs a full scan
-npm run check:vrf      # the VRF request path, and exactly where it stops
+npm run check:vrf      # a VRF draw: resolves on devnet (EXPO_PUBLIC_CLUSTER=devnet), stops locally
 npm run check:sealed   # proves the UI's own path puts an ACL on chain for both players
 npm run check:markets  # the live market list: real mints, prices, logos, and a
                        # startPx the program will accept
@@ -291,7 +305,26 @@ npm run prove:privacy  # the privacy proof, stage by stage (~31s)
 npm run truth          # RPC ground truth, to check rendered numbers against
 npm run state          # where every unfinished match got to
 npm run crank          # settle anything abandoned past its buzzer
-cd chain && anchor test --skip-local-validator   # 27 passing, 2 pending
+npm run soak -- 3 60   # 3 concurrent duels, 60 s rounds, full lifecycle each;
+                       # fill latency p50/p90/p99 and who committed each round
+                       # (--no-cranks commits from the client, --fills N caps fills)
+npm run check:palette  # the colour-blind palette stays two colours for every
+                       # kind of colour-blindness (simulated), and readable
+cd chain && anchor test --skip-local-validator   # 38 passing, 2 pending
+```
+
+Two checks sit outside `npm run check` on purpose. `check:vrf` reports exactly
+where the VRF draw stops locally (no oracle serves the local test queue; on devnet the same check resolves a draw, see Limitations §7). `check:fog:wire`
+needs a recorded session: it reads which accounts the app actually asked the
+rollup for, which cannot be observed from inside the page, so the app is pointed
+at a recording pass-through in front of the gate and a real duel is played
+through it.
+
+```bash
+node server/rpc-recorder.mjs http://127.0.0.1:6699 7010 .localnet/rpc-er.log
+EXPO_PUBLIC_ER_URL=http://127.0.0.1:7010 npx expo start --web --clear
+# play one duel in the app, then name the match and both wallets:
+npm run check:fog:wire -- <match> <your wallet> <opponent wallet> .localnet/rpc-er.log
 ```
 
 ---
@@ -300,7 +333,7 @@ cd chain && anchor test --skip-local-validator   # 27 passing, 2 pending
 
 Read this before judging — none of it is hidden in the code.
 
-1. **Reads are gated. What is missing is attestation, not enforcement.**
+1. **Reads are gated locally, and gated and attested on devnet.**
    Every match started through the UI creates an access-control list for each
    position naming only its owner, delegates both ACLs to the rollup, then
    delegates the positions. The rollup sits behind a query-filtering-service
@@ -308,31 +341,41 @@ Read this before judging — none of it is hidden in the code.
 
    | | validator :7799 | public :6699 |
    |---|---|---|
-   | sealed position, anonymous | 543 bytes | **REFUSED** |
-   | same shape, no permission | 543 bytes | 543 bytes |
-   | owner, with a signed token | — | 543 bytes |
+   | sealed position, anonymous | 559 bytes | **REFUSED** |
+   | same shape, no permission | 559 bytes | 559 bytes |
+   | owner, with a signed token | — | 559 bytes |
    | opponent, with a signed token | — | **REFUSED** |
 
    The control row is the one that matters: a door shut for everybody is not
    access control. `npm run check:gate` runs this every time, and `/proof`
    probes it live from the browser.
 
-   What is missing is *attestation*. That gate is a process on this machine,
-   and a judge has only my word that it is the one I say it is. A TEE
-   validator (`devnet-tee.magicblock.app`) replaces that word with something
-   checkable. Reaching it needs devnet SOL, and airdrops were refused 40+
-   times across the public faucets — `faucet.solana.com` requires a captcha.
-   So `/proof` reports enforcement and attestation as two separate rows, and
-   only the second one says NO.
+   Locally that gate is a process on this machine, and a judge has only my
+   word that it is the one I say it is, so `/proof` reports enforcement and
+   attestation as two separate rows and, on this stack, only the second says
+   NO. **On devnet a TEE replaces that word with evidence.** With the program
+   deployed there and `devnet-tee.magicblock.app` as the rollup (2026-09-13):
+
+   - `EXPO_PUBLIC_CLUSTER=devnet npm run prove:privacy` refused the opponent's
+     position mid-round, with or without a signed token, while the owner read
+     their own; after settlement the position and the tape were public.
+   - A delegated match with nothing else done: the TEE served each owner only
+     their own position and refused both to an anonymous reader.
+   - `npx tsx scripts/check-tee.mts` verified the endpoint's Intel TDX quote
+     against Intel's collateral, report data matching a fresh challenge.
 
    An earlier version of this README said the read gate was unproved and that
    the local stack had none. That was wrong: the stack ships one, and it
    works.
 
 2. **The price feed is cranked, not an oracle.** One `PriceFeed` account per
-   match, pushed by the match authority. It is deliberately *not* a public DEX
-   swap — a public swap print mid-round would hand the opponent the fills the
-   fog exists to hide. A production build should read Pyth/Switchboard.
+   player's market, posted from the live market API by the players' own clients
+   and rate-limited on chain. It is deliberately *not* a public DEX swap — a
+   public swap print mid-round would hand the opponent the fills the fog exists
+   to hide. A player who hides or closes their tab cannot freeze the price their
+   PnL settles at: if either feed goes 15 s without a post, the other player's
+   client posts that market's live price too. A production build should read
+   Pyth/Switchboard.
 3. **Positions are virtual inventory, and fills do not route to a venue.**
    The entry becomes quote purchasing power inside the round; no SPL moves
    until settlement. Each fill executes against a constant-product book held
@@ -348,12 +391,15 @@ Read this before judging — none of it is hidden in the code.
 4. **Web only.** `@solana/wallet-adapter` is browser-only, and metro resolves
    `@solana-mobile/*` to a stub. A native build needs Mobile Wallet Adapter or
    Solflare deeplinks.
-5. **Not deployed to devnet** for the same faucet reason — the `.so` is
-   798,056 bytes, so rent plus the deploy buffer needs roughly 6–10 SOL, which
-   is several successful airdrops rather than one. Airdrops were refused 40+
-   times across the public faucets; `faucet.solana.com` requires a captcha. The
-   program ID below is the local deployment. See `SUBMISSION.md` for the exact
-   unblock steps.
+5. **Deployed to devnet; no devnet build is hosted.** The program is on devnet
+   at the same id, `3K3v1bp6uUGVdzRfZmkwZGK82BHgCJxAroXJ3ZRs1Rj1` (deploy
+   `F6tajCiL…`, slot 497,500,594, 2026-09-13 02:46 UTC). The public faucets
+   refused airdrops throughout the build; MagicBlock's devnet RPC
+   (`rpc.magicblock.app/devnet`) granted them. `EXPO_PUBLIC_CLUSTER=devnet
+   npm run verify:client` plays a full match against it and the devnet TEE:
+   sealed, delegated, filled on the TEE, committed back, settled, and the
+   client's PnL agreeing with the chain (CLIENT OK, 02:51 UTC). What is not
+   done is a hosted devnet build of the app for a judge to open.
 6. **An open match goes stale after five minutes.** Both books are seeded from
    the market mid snapshotted when the match is *created*, so a duel joined long
    afterwards would start at a price the market has left behind — and the
@@ -364,10 +410,16 @@ Read this before judging — none of it is hidden in the code.
    `state.rs`) with `MatchStale`, and the open book marks those rows STALE
    rather than offering a JOIN the program will refuse. The creator cancels and
    reopens at a fresh price, which costs one transaction.
-7. **VRF is requested but never fulfilled.** `request_market_draw` builds a real
-   request with the official SDK and the VRF program accepts it on chain
-   (`npm run check:vrf`). No oracle answers, and this was checked rather than
-   assumed:
+7. **VRF resolves on devnet, not on the local stack.** `request_market_draw`
+   builds a real request with the official SDK and the VRF program accepts it
+   on both clusters (`npm run check:vrf`). **On devnet it is fulfilled:** on
+   `DEFAULT_QUEUE` (`Cuj97ggr…`) the oracle answered within a second in both
+   runs (requests `5c2gsE7H…` and `2BSAMqwx…`, 2026-09-13 02:50–02:51 UTC),
+   and `settle_market_draw`, guarded by `#[vrf_callback]`, recorded the chosen
+   market and its randomness. A first devnet run on the SDK's test queue
+   (`GKE6d7iv…`) was never answered, which is why the script now picks
+   `DEFAULT_QUEUE` on devnet. **Locally no oracle answers**, checked rather
+   than assumed:
 
    - The queue this validator preloads (`GKE6d7iv…`) is a 9500-byte account
      owned by the VRF program, dumped from devnet.
@@ -379,11 +431,9 @@ Read this before judging — none of it is hidden in the code.
      neither the account layout nor the queue's admin authority is available
      to us.
 
-   So fulfilment needs an oracle identity that does not exist in this repo or
-   environment. `settle_market_draw` is guarded by `#[vrf_callback]`, so only
-   the VRF program could ever write a result. **Nothing simulates a draw**, and
-   the BLIND DRAFT mode that would consume one stays a `SOON` tile rather than
-   being faked.
+   **Nothing simulates a draw**, and the BLIND DRAFT mode that would consume
+   one stays a `SOON` tile: the stack a judge runs locally cannot resolve
+   one, and no devnet build is hosted.
 
 ---
 
@@ -391,7 +441,7 @@ Read this before judging — none of it is hidden in the code.
 
 ```
 chain/                  Anchor workspace
-  programs/fogduel/     the program (16 instructions)
+  programs/fogduel/     the program (22 instructions)
   tests/fogduel.ts      lifecycle: escrow, book, impact, rake, settlement, tape
   tests/er-privacy.ts   rollup delegation + commit tests (2 pending: the TEE path)
   tests/permission.ts   ACL creation, delegation, and what each endpoint serves
@@ -401,8 +451,8 @@ server/rpc-recorder.mjs records what the app asks the rollup for
 src/chain/              typed client, config, PDAs, units, wallet, chain hooks
 src/ui/                 pixel UI library + drawn SVG icons and token marks
 src/screens/            landing, duel, feed, board, modes, quests, proof, gallery
-app/                    expo-router:  /  /play  /proof  /tape/<m>  /spectate/<m>
-                        /health  /gallery
+app/                    expo-router:  /  /play  /proof  /stats  /tape  /tape/<m>
+                        /spectate  /spectate/<m>  /health  /gallery
 TEST-PLAN.md            every component and flow, with its verified result
 PLAN.md                 phase/task status and the full gap list
 DEMO.md                 the recording script: shot list, timings, and the
@@ -410,3 +460,5 @@ DEMO.md                 the recording script: shot list, timings, and the
 ```
 
 **Program ID (local):** `3K3v1bp6uUGVdzRfZmkwZGK82BHgCJxAroXJ3ZRs1Rj1`
+
+**Licence:** MIT, see [`LICENSE`](LICENSE).

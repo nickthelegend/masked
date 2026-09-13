@@ -14,6 +14,7 @@ import { PublicKey } from '@solana/web3.js';
 import { FogduelClient } from '../src/chain/client';
 import { fetchMajorMarkets, fetchMemeMarkets, type TradableMarket } from '../src/chain/markets';
 import { CLUSTERS } from '../src/chain/config';
+import { fund } from './fund';
 import nacl from 'tweetnacl';
 
 const COUNT = Number(process.argv[2] ?? 5);
@@ -53,8 +54,7 @@ async function main() {
   for (const p of players) {
     const bal = await houseClient.l1.getBalance(p.publicKey);
     if (bal < 2 * LAMPORTS_PER_SOL) {
-      const sig = await houseClient.l1.requestAirdrop(p.publicKey, 4 * LAMPORTS_PER_SOL);
-      await houseClient.l1.confirmTransaction(sig, 'confirmed');
+      await fund(houseClient.l1, house, p.publicKey, 4 * LAMPORTS_PER_SOL, cluster.name === 'devnet');
     }
   }
   console.log(`funded ${players.length} demo wallets`);
@@ -123,6 +123,12 @@ async function main() {
       house.publicKey
     );
     await new Promise((r) => setTimeout(r, 31_000));
+
+    // Each wallet releases its own ACL after the buzzer, the order the app
+    // settles in. Skipped, the seeded duel is the round /proof traces, and its
+    // ACL panel would read STILL ON THE ROLLUP for a round that is over.
+    await houseClient.releaseOwnAcl(match, house.publicKey);
+    await oppClient.releaseOwnAcl(match, opponent.publicKey);
 
     await houseClient.commitAndUndelegate(match, house.publicKey, house.publicKey, opponent.publicKey);
     await houseClient.waitForUndelegation(match, house.publicKey, opponent.publicKey);

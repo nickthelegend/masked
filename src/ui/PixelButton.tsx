@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useState } from 'react';
 import { Pressable, type PressableProps, type View, type ViewStyle } from 'react-native';
 import PixelText from './PixelText';
-import { HIT_SLOP_MIN, PRESS_TRAVEL, bevel as bevelToken, border, color, onInk, radius, space, type as typeTokens } from './theme';
+import { HIT_SLOP_MIN, PRESS_TRAVEL, bevel as bevelToken, border, color, focusRing, onInk, radius, space, type as typeTokens } from './theme';
 
 export type ButtonTone = 'primary' | 'short' | 'danger' | 'gold' | 'quiet' | 'info';
 
@@ -94,7 +94,11 @@ const PixelButton = forwardRef<View, PixelButtonProps>(function PixelButton({
       accessibilityLabel={label}
       // The bevel translate is the press feedback; a ripple would fight it.
       android_ripple={null}
-      style={({ pressed }) => [
+      // `focused` comes from React Native Web's Pressable; it is how a keyboard
+      // user sees which control Enter or Space will press.
+      style={(state) => {
+        const { pressed } = state;
+        return [
         {
           backgroundColor: disabled ? color.panelLight : (bg ?? t.bg),
           borderWidth: border.base,
@@ -112,8 +116,10 @@ const PixelButton = forwardRef<View, PixelButtonProps>(function PixelButton({
           opacity: disabled ? 0.6 : 1,
           flex,
         },
+        (state as { focused?: boolean }).focused ? focusRing : null,
         style,
-      ]}
+      ];
+      }}
       {...rest}
     >
       <PixelText variant="numeric" size={size} color={disabled ? color.textFaint : (fg ?? t.fg)}>

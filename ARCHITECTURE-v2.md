@@ -1,5 +1,14 @@
 # v2 — any token, both sides, five minutes
 
+> **Shipped.** Everything this document plans is built: one token per player,
+> long and short, with a round length chosen when the match is opened (1, 5 or
+> 15 minutes in the lobby; the program accepts 10–3600 s). Re-verified on the
+> local cluster on 2026-09-12 by `npm run check:legs` (11 assertions: both
+> markets public, both positions delegated behind the ACL) and
+> `npm run check:short` (21 assertions: a real negative position, the margin cap
+> refused, a real liquidation on the permanent record). "Today" below means
+> 2026-09-07, when this was written.
+
 Agreed in interview on 2026-09-07. Every decision below is the user's, and the
 reasoning that produced it is kept so a later reader can tell a choice from an
 accident.

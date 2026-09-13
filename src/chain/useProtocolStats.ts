@@ -10,9 +10,9 @@
  */
 import { useEffect, useState } from 'react';
 import { Connection } from '@solana/web3.js';
-import { AnchorProvider, Program, type Idl } from '@coral-xyz/anchor';
+import { AnchorProvider, Program, type Idl, utils } from '@coral-xyz/anchor';
 import { FOGDUEL_IDL } from './idl';
-import { ACTIVE_CLUSTER } from './config';
+import { ACTIVE_CLUSTER, FOGDUEL_PROGRAM_ID } from './config';
 import { treasuryPda } from './pdas';
 import { withDeadline } from './rpcTimeout';
 import { decodeFixed } from './tape';
@@ -102,13 +102,37 @@ const readOnlyWallet = {
   signAllTransactions: async <T,>(t: T[]) => t,
 };
 
+/** The fastest a burst of account changes can make this re-read everything. */
+const MIN_READ_GAP_MS = 5_000;
+/**
+ * The read that still happens with nothing changing, in case the socket died
+ * without saying so. Subscriptions are best effort on any cluster.
+ */
+const SAFETY_POLL_MS = 60_000;
+
+/**
+ * Read on change, not on a clock.
+ *
+ * Every read here is two full `getProgramAccounts` sweeps plus the treasury,
+ * and it used to run every `pollMs` whether or not anything had happened. Now a
+ * subscription wakes it: fogduel accounts filtered to the Match and Tape types
+ * (a match opens, is joined, settles or is cancelled; a tape is written) and
+ * the treasury account. The mark crank writes `PriceFeed` every few seconds,
+ * which is exactly why the filter is on the account type: an unfiltered program
+ * subscription would re-read on every price push. Bursts are coalesced to one
+ * read per MIN_READ_GAP_MS, and SAFETY_POLL_MS still re-reads if the socket
+ * silently stops.
+ */
 export function useProtocolStats(pollMs = 20_000): ProtocolStats {
   const [stats, setStats] = useState<ProtocolStats>(EMPTY);
 
   useEffect(() => {
     let alive = true;
+    let lastRead = 0;
+    let pending: ReturnType<typeof setTimeout> | null = null;
 
     const read = async () => {
+      lastRead = Date.now();
       try {
         const connection = new Connection(ACTIVE_CLUSTER.l1, 'confirmed');
         const provider = new AnchorProvider(connection, readOnlyWallet as never, {
@@ -158,7 +182,11 @@ export function useProtocolStats(pollMs = 20_000): ProtocolStats {
           paid += potPaid;
           rake += potRake;
           if (pot > biggest) biggest = pot;
-          fills += a.fillsA.length + a.fillsB.length;
+          // Every fill made, not the last MAX_FILLS a tape keeps per side.
+          // Tapes written before the count existed fall back to what is stored.
+          fills +=
+            Math.max(typeof a.fillCountA === 'number' ? a.fillCountA : 0, a.fillsA.length) +
+            Math.max(typeof a.fillCountB === 'number' ? a.fillCountB : 0, a.fillsB.length);
           players.add(a.playerA.toBase58());
           players.add(a.playerB.toBase58());
 
@@ -209,11 +237,47 @@ export function useProtocolStats(pollMs = 20_000): ProtocolStats {
       }
     };
 
+    const schedule = () => {
+      if (pending || !alive) return;
+      const wait = Math.max(0, lastRead + MIN_READ_GAP_MS - Date.now());
+      pending = setTimeout(() => {
+        pending = null;
+        void read();
+      }, wait);
+    };
+
+    const socket = new Connection(ACTIVE_CLUSTER.l1, 'confirmed');
+    const programSubs: number[] = [];
+    const accountSubs: number[] = [];
+    let subscribed = false;
+    try {
+      /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+      const idlAccounts = (FOGDUEL_IDL as any).accounts as { name: string; discriminator: number[] }[];
+      for (const name of ['Match', 'Tape']) {
+        const discriminator = idlAccounts.find((a) => a.name === name)?.discriminator;
+        if (!discriminator) continue;
+        programSubs.push(
+          socket.onProgramAccountChange(FOGDUEL_PROGRAM_ID, schedule, 'confirmed', [
+            { memcmp: { offset: 0, bytes: utils.bytes.bs58.encode(Buffer.from(discriminator)) } },
+          ])
+        );
+      }
+      accountSubs.push(socket.onAccountChange(treasuryPda(), schedule, 'confirmed'));
+      subscribed = programSubs.length === 2;
+    } catch {
+      subscribed = false;
+    }
+
     void read();
-    const id = setInterval(read, pollMs);
+    // Subscribed, the clock is only a safety net; without subscriptions it is
+    // the only way to hear about anything, so it keeps the caller's pace.
+    const id = setInterval(read, subscribed ? Math.max(pollMs, SAFETY_POLL_MS) : pollMs);
     return () => {
       alive = false;
       clearInterval(id);
+      if (pending) clearTimeout(pending);
+      programSubs.forEach((sub) => void socket.removeProgramAccountChangeListener(sub));
+      accountSubs.forEach((sub) => void socket.removeAccountChangeListener(sub));
     };
   }, [pollMs]);
 

@@ -60,3 +60,6 @@ export default function NotFound() {
     </ScrollView>
   );
 }
+
+// A render error here stays on this screen — see RouteErrorBoundary.
+export { default as ErrorBoundary } from '../src/ui/RouteErrorBoundary';

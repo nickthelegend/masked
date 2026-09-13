@@ -50,12 +50,28 @@ const all = await program.account.match.all();
 const joined = all.filter((m: any) => m.account.joiner);
 assert.ok(joined.length > 0, 'need at least one joined match on chain to check');
 
-// Prefer one that is still running — that is the state the claim is about.
+// Prefer one that is still running — that is the state the claim is about —
+// and that was actually sealed. check:guards joins a 300 s round and leaves it
+// unsealed on purpose, to prove what the program refuses before a seal; a round
+// nobody sealed says nothing about what sealing hides. Whether sealing
+// delegates at all is check:sealed's claim, not this one's.
 const now = Math.floor(Date.now() / 1000);
-const live = joined.filter(
+const inRound = joined.filter(
   (m: any) => Object.keys(m.account.status)[0] === 'live' &&
-    now < m.account.startTs.toNumber() + m.account.duration
+    now < m.account.startTs.toNumber() + Number(m.account.duration)
 );
+const live: any[] = [];
+for (const candidate of inRound) {
+  const owners = await Promise.all(
+    [candidate.account.creator, candidate.account.joiner].map(
+      async (who: PublicKey) => (await l1.getAccountInfo(positionPda(candidate.publicKey, who)))?.owner
+    )
+  );
+  if (owners.every((o) => o && o.equals(DELEGATION_PROGRAM_ID))) live.push(candidate);
+}
+if (inRound.length > live.length) {
+  console.log(`  (skipped ${inRound.length - live.length} in-round match(es) that were never sealed)`);
+}
 const subject = live[0] ?? joined.sort(
   (a: any, b: any) => b.account.createdTs.toNumber() - a.account.createdTs.toNumber()
 )[0];

@@ -50,6 +50,41 @@ export const color = {
   sandAlt: '#bd7f54',
 } as const;
 
+/**
+ * Win and loss for colour-blind players: blue for up, vermillion for down.
+ *
+ * The one addition to `ui/tokens.js`, and not a new look: the same three roles
+ * with a pair that survives colour-blindness. Standard green `#2fbf5c` against
+ * red `#ff4d5e` sits 3.4 ΔE apart under simulated deuteranopia (Machado 2009,
+ * severity 1), which is one colour. This pair stays at 107 ΔE or more for
+ * protan, deutan and tritan vision, and both clear 4.5:1 on `chartBg`.
+ */
+export const colorSafe = { green: '#2f8fff', greenDeep: '#1e64c8', red: '#e8601c' } as const;
+
+export type PaletteName = 'standard' | 'safe';
+export const PALETTE_KEY = 'masked.palette';
+
+/**
+ * The stored palette, applied here and only here.
+ *
+ * Several components copy `color.green` into a lookup table when their module
+ * loads (Badge, FillTape, PixelButton, Toast), so the swap has to happen before
+ * any of them can read the value, and every one of them imports this file
+ * first. Node has no stored choice, so scripts and `check:tokens` see the
+ * standard values and the token diff is unaffected. See palette.ts.
+ */
+export const activePaletteName: PaletteName = (() => {
+  try {
+    if (typeof localStorage === 'undefined' || localStorage.getItem(PALETTE_KEY) !== 'safe') return 'standard';
+  } catch {
+    return 'standard';
+  }
+  Object.assign(color, colorSafe);
+  // The landing page is plain CSS and reads its win/loss from this attribute.
+  if (typeof document !== 'undefined') document.documentElement.dataset.palette = 'safe';
+  return 'safe';
+})();
+
 export const font = {
   display: 'PressStart2P_400Regular',
   body: 'Silkscreen_400Regular',

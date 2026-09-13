@@ -16,6 +16,12 @@ export interface StakePickerProps {
   /** Line under the row, e.g. "WINNER TAKES $9.80 · 2% RAKE". */
   note?: string;
   disabled?: boolean;
+  /**
+   * The largest stake the wallet can cover (`affordableStake`). Presets above
+   * it are disabled rather than offered and then refused at preflight.
+   * `undefined`: no balance known yet, nothing limited. `null`: it covers none.
+   */
+  maxStake?: number | null;
   style?: ViewStyle | ViewStyle[];
 }
 
@@ -33,8 +39,11 @@ export default function StakePicker({
   label = 'POT DEPOSIT',
   note,
   disabled = false,
+  maxStake,
   style,
 }: StakePickerProps) {
+  const covered = (v: number) => maxStake === undefined || (maxStake !== null && v <= maxStake);
+  const limited = maxStake !== undefined && options.some((v) => !covered(v));
   return (
     <PixelPanel style={style}>
       <Stack gap={space.sm}>
@@ -46,7 +55,7 @@ export default function StakePicker({
               flex={1}
               label={sol(v, v < 1 ? 2 : 0)}
               size={10}
-              disabled={disabled}
+              disabled={disabled || !covered(v)}
               bg={v === value ? color.orange : color.panelLight}
               // Dark ink on the bright plate: white on orange is ~1.9:1.
               fg={v === value ? onInk.orange : color.white}
@@ -54,6 +63,13 @@ export default function StakePicker({
             />
           ))}
         </Row>
+        {limited ? (
+          <PixelText variant="bodySmall" color={color.yellow}>
+            {maxStake === null
+              ? 'THIS WALLET CANNOT COVER A STAKE YET. FUND IT FIRST.'
+              : `BALANCE COVERS UP TO ${sol(maxStake, maxStake < 1 ? 2 : 0)}`}
+          </PixelText>
+        ) : null}
         {note ? (
           <PixelText variant="bodySmall" color={color.textDim}>
             {note}

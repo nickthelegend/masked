@@ -21,7 +21,7 @@
 import { Keypair, LAMPORTS_PER_SOL, PublicKey, type Transaction } from '@solana/web3.js';
 import nacl from 'tweetnacl';
 import { FogduelClient } from '../src/chain/client';
-import { CLUSTERS, DELEGATION_PROGRAM_ID } from '../src/chain/config';
+import { CLUSTERS, DELEGATION_PROGRAM_ID, PERMISSION_PROGRAM_ID } from '../src/chain/config';
 import { positionPda } from '../src/chain/pdas';
 import { permissionPdaFromAccount } from '@magicblock-labs/ephemeral-rollups-sdk';
 import { fetchMemeMarkets } from '../src/chain/markets';
@@ -180,8 +180,28 @@ async function main() {
     ok(tape!.fillsA.length > 0 && tape!.fillsB.length > 0, `client ${label}: a tape with no fills`);
   }
 
+  console.log('10. each player releases their own ACL, and both come home');
+  // Only the wallet an ACL names can release it (see `releaseOwnAcl`), so a
+  // script playing both sides has to do what each player's client does. Left
+  // alone, both permission accounts stay on the rollup for good, and /proof's
+  // ACL panel shows this round's as stranded whenever it was the last settled.
+  await Promise.all([
+    clientA.releaseOwnAcl(address, a.publicKey),
+    clientB.releaseOwnAcl(address, b.publicKey),
+  ]);
+  for (const owner of [a.publicKey, b.publicKey]) {
+    const permission = permissionPdaFromAccount(positionPda(address, owner));
+    let home = false;
+    for (let i = 0; i < 60 && !home; i++) {
+      home = !!(await clientA.l1.getAccountInfo(permission))?.owner.equals(PERMISSION_PROGRAM_ID);
+      if (!home) await new Promise((r) => setTimeout(r, 1000));
+    }
+    ok(home, `${owner.toBase58().slice(0, 6)}: ACL still delegated a minute after its release`);
+  }
+
   console.log(
-    `\nrace ok — ${checks} assertions, two real clients sealed and settled one match concurrently`
+    `\nrace ok — ${checks} assertions, two real clients sealed and settled one match concurrently, ` +
+      `and each released its own ACL`
   );
 }
 

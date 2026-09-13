@@ -2,7 +2,7 @@
  * MASKED — the running app. Composes the screens inside the pocket shell and
  * owns nothing but navigation; the duel itself lives in `useDuel`.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { SafeAreaView, ScrollView, StatusBar, View } from 'react-native';
 import { BeachBackdrop, MatchFound, PocketShell, TabBar, Ticker, color, solExact, useToast } from '../ui';
 import AppHeader from './AppHeader';
@@ -20,6 +20,7 @@ import { searchMarkets } from '../chain/markets';
 import { useRouter } from 'expo-router';
 import { formatSolPrice } from '../chain/units';
 import { useDuel } from './useDuel';
+import { useMatchInvite } from '../chain/useMatchInvite';
 import { TROPHIES_PER_WIN } from './data';
 
 const SCREEN_HEIGHT = 700;
@@ -27,9 +28,11 @@ const SCREEN_HEIGHT = 700;
 export interface MaskedAppProps {
   /** Mint from `?market=<mint>`, selected once on mount. */
   initialMarketMint?: string;
+  /** Match from `?match=<address>`, an invite: matchmaking opens with it first. */
+  initialMatch?: string;
 }
 
-export default function MaskedApp({ initialMarketMint }: MaskedAppProps = {}) {
+export default function MaskedApp({ initialMarketMint, initialMatch }: MaskedAppProps = {}) {
   const [tab, setTab] = useState('duel');
   const duel = useDuel();
   const toast = useToast();
@@ -67,9 +70,40 @@ export default function MaskedApp({ initialMarketMint }: MaskedAppProps = {}) {
 
   // Hand the deep link's mint to the duel once. `openMarketByMint` resolves it
   // through the picker's own search and selects it if it is still priceable.
+  // Taken off `duel` first: depending on `duel` itself would re-run this on
+  // every render, since the hook returns a new object each time.
+  const { openMarketByMint } = duel;
   useEffect(() => {
-    if (initialMarketMint) duel.openMarketByMint(initialMarketMint);
-  }, [initialMarketMint, duel.openMarketByMint]);
+    if (initialMarketMint) openMarketByMint(initialMarketMint);
+  }, [initialMarketMint, openMarketByMint]);
+
+  // An invite lands on matchmaking once, and only from the lobby: a link opened
+  // mid-round must not pull the player out of the round they are in.
+  //
+  // It also waits for an answer about this wallet. Landing on the first render
+  // moved the phase off 'lobby' before the local key had reconnected, and
+  // useDuel resumes a player's own round only from there, so a creator who
+  // reloaded onto their own link was stranded on matchmaking while the round
+  // ran without them. Their own match, open or live, is left to that resume.
+  const { findMatch, phase, connected, myAddress } = duel;
+  const invite = useMatchInvite(initialMatch, myAddress);
+  const inviteLanded = useRef(false);
+  const [walletWaitOver, setWalletWaitOver] = useState(false);
+  useEffect(() => {
+    if (connected) return undefined;
+    // With no wallet at all there is nothing to resume; do not wait forever.
+    const id = setTimeout(() => setWalletWaitOver(true), 3000);
+    return () => clearTimeout(id);
+  }, [connected]);
+  useEffect(() => {
+    if (!initialMatch || inviteLanded.current || phase !== 'lobby') return;
+    if (!connected && !walletWaitOver) return;
+    if (invite.kind === 'none' || invite.kind === 'reading' || invite.viewer !== myAddress) return;
+    inviteLanded.current = true;
+    if (invite.kind === 'refused' && invite.mine) return;
+    setTab('duel');
+    findMatch();
+  }, [initialMatch, phase, connected, walletWaitOver, invite, myAddress, findMatch]);
 
   /**
    * Open a duel on the token a settled tape was fought over.
@@ -103,6 +137,33 @@ export default function MaskedApp({ initialMarketMint }: MaskedAppProps = {}) {
   };
 
   /**
+   * Put a link on the clipboard, and say what actually happened.
+   *
+   * The clipboard can be refused (permissions, an insecure origin), so the
+   * label never claims success it did not get, and a refusal shows the link in
+   * a toast instead of ending there.
+   */
+  const copyLink = useCallback(
+    (url: string, idle: string, setLabel: (label: string) => void) => {
+      const done = (ok: boolean) => {
+        setLabel(ok ? 'LINK COPIED' : 'COPY BLOCKED');
+        // Browsers block writeText on insecure origins and without a user-gesture
+        // grant, so this is a normal path, not an edge case.
+        if (!ok) toast.info('Copy this link', url);
+        setTimeout(() => setLabel(idle), 2500);
+      };
+      try {
+        const clip = globalThis.navigator?.clipboard;
+        if (!clip?.writeText) return done(false);
+        void clip.writeText(url).then(() => done(true), () => done(false));
+      } catch {
+        done(false);
+      }
+    },
+    [toast]
+  );
+
+  /**
    * A link anyone can open to read this duel — no wallet, no account.
    *
    * It points at /tape rather than /spectate. This button lives on the reveal,
@@ -110,31 +171,63 @@ export default function MaskedApp({ initialMarketMint }: MaskedAppProps = {}) {
    * thing that has just become public — every fill of both players — is what
    * /tape shows. The Tape account never changes after settlement, so the link
    * says the same thing tomorrow as it does now.
-   *
-   * The clipboard can be refused (permissions, an insecure origin), so the
-   * label reports what actually happened rather than always claiming success.
    */
   const [shareLabel, setShareLabel] = useState('COPY TAPE LINK');
   const shareWatchLink = () => {
-    const address = duel.matchAddress;
-    if (!address) return;
-    const url = `${globalThis.location?.origin ?? ''}/tape/${address}`;
-    const done = (ok: boolean) => {
-      setShareLabel(ok ? 'LINK COPIED' : 'COPY BLOCKED');
-      // A refused clipboard must not be a dead end: show the link so it can
-      // still be read off the screen. Browsers block writeText on insecure
-      // origins and without a user-gesture grant, so this is a normal path.
-      if (!ok) toast.info('Copy this link', url);
-      setTimeout(() => setShareLabel('COPY TAPE LINK'), 2500);
-    };
-    try {
-      const clip = globalThis.navigator?.clipboard;
-      if (!clip?.writeText) return done(false);
-      void clip.writeText(url).then(() => done(true), () => done(false));
-    } catch {
-      done(false);
-    }
+    if (!duel.matchAddress) return;
+    copyLink(`${globalThis.location?.origin ?? ''}/tape/${duel.matchAddress}`, 'COPY TAPE LINK', setShareLabel);
   };
+
+  /** An invite to one of this wallet's open matches: `/play?match=<address>`. */
+  const [inviteLabel, setInviteLabel] = useState('COPY INVITE LINK');
+  const shareInvite = useCallback(
+    (address: string) =>
+      copyLink(`${globalThis.location?.origin ?? ''}/play?match=${address}`, 'COPY INVITE LINK', setInviteLabel),
+    [copyLink]
+  );
+
+  /**
+   * Fade the winner: a new duel against them at the stake and round length just
+   * played, opened now, with its invite link handed back to send them.
+   *
+   * Spread over renders on purpose. `rematch` restores the stake and market and
+   * `setOpenDuration` the length, but `openMatch` closes over those values, so
+   * calling it in the same tick would open at the old stake — the stale-closure
+   * shape 7cf4a83 fixed twice. It runs once the state shows the target, and the
+   * link is handed back once that open has finished.
+   */
+  const fade = useRef<{ entrySol: number; duration: number; from: string | null } | null>(null);
+  const fadeStep = useRef<'restoring' | 'opening' | 'opened'>('restoring');
+  const [fadeLabel, setFadeLabel] = useState('FADE WINNER');
+  const fadeWinner = () => {
+    if (fade.current) return;
+    fade.current = { entrySol: duel.entrySol, duration: duel.duration, from: duel.matchAddress };
+    fadeStep.current = 'restoring';
+    setFadeLabel('OPENING…');
+    duel.rematch();
+    duel.setOpenDuration(duel.duration);
+  };
+  const { stake, openDuration, openMatch, matchAddress, busy } = duel;
+  useEffect(() => {
+    const target = fade.current;
+    if (!target) return;
+    if (fadeStep.current === 'restoring') {
+      if (phase !== 'searching' || Math.abs(stake - target.entrySol) > 1e-9 || openDuration !== target.duration) return;
+      fadeStep.current = 'opening';
+      openMatch();
+      return;
+    }
+    // `busy` rises when the open starts and falls when it ends, succeeded or refused.
+    if (fadeStep.current === 'opening') {
+      if (busy) fadeStep.current = 'opened';
+      return;
+    }
+    if (busy) return;
+    fade.current = null;
+    setFadeLabel('FADE WINNER');
+    // A refused open leaves no new match; its own toast has said why.
+    if (matchAddress && matchAddress !== target.from) shareInvite(matchAddress);
+  }, [phase, stake, openDuration, openMatch, busy, matchAddress, shareInvite]);
 
   return (
     <View style={{ flex: 1, backgroundColor: color.sunset[0] }}>
@@ -143,7 +236,7 @@ export default function MaskedApp({ initialMarketMint }: MaskedAppProps = {}) {
 
       <SafeAreaView style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <PocketShell screenHeight={SCREEN_HEIGHT}>
-          <AppHeader balance={duel.balance} trophies={trophies} onHome={() => setTab('feed')} />
+          <AppHeader balance={duel.balance} trophies={trophies} onHome={() => setTab('feed')} roundLive={duel.phase === 'live'} />
           <Ticker items={tickerItems} />
 
           {greeted && duel.phase === 'live' && greeted === duel.matchAddress ? (
@@ -182,6 +275,7 @@ export default function MaskedApp({ initialMarketMint }: MaskedAppProps = {}) {
               <DuelLobbyScreen
                 stake={duel.stake}
                 onStakeChange={duel.setStake}
+                balanceLamports={duel.connected ? Math.round(duel.balance * 1e9) : undefined}
                 duration={duel.openDuration}
                 onDurationChange={duel.setOpenDuration}
                 pot={duel.pot}
@@ -200,9 +294,15 @@ export default function MaskedApp({ initialMarketMint }: MaskedAppProps = {}) {
                 marketSymbol={duel.selectedMarket?.symbol}
                 marketMint={duel.selectedMarket?.mint}
                 marketImageUri={duel.selectedMarket?.imageUri}
-                onStart={duel.startMatch}
+                // Create-only. `startMatch` joins any compatible open match before it
+                // creates, so a button reading OPEN A MATCH joined a stranger's
+                // instead (found 2026-09-13 when two test duels collided).
+                onStart={duel.openMatch}
                 onJoin={duel.joinMatch}
                 onCancel={duel.cancelMatch}
+                inviteAddress={initialMatch}
+                onInvite={shareInvite}
+                inviteLabel={inviteLabel}
               />
             ) : null}
 
@@ -235,6 +335,17 @@ export default function MaskedApp({ initialMarketMint }: MaskedAppProps = {}) {
                 marketSource={duel.marketSource}
                 priceLabel={duel.priceLabel}
                 settleStages={duel.settleStages}
+                lastFillRaw={duel.lastFill}
+                pendingFill={
+                  duel.pendingFill
+                    ? {
+                        side: duel.pendingFill.side,
+                        state: duel.pendingFill.state,
+                        price: `${formatSolPrice(duel.pendingFill.px)}◎`,
+                        mark: `${formatSolPrice(duel.pendingFill.markBefore)}◎`,
+                      }
+                    : null
+                }
                 lastFill={
                   duel.lastFill
                     ? {
@@ -281,6 +392,9 @@ export default function MaskedApp({ initialMarketMint }: MaskedAppProps = {}) {
                 onRematch={duel.rematch}
                 onShare={shareWatchLink}
                 shareLabel={shareLabel}
+                onFade={fadeWinner}
+                fadeLabel={fadeLabel}
+                tapeUrl={duel.matchAddress ? `${globalThis.location?.origin ?? ''}/tape/${duel.matchAddress}` : null}
                 onPost={postToFeed}
               />
             ) : null}

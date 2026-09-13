@@ -17,6 +17,7 @@ import { permissionPdaFromAccount } from '@magicblock-labs/ephemeral-rollups-sdk
 import { FogduelClient } from '../src/chain/client';
 import { DEMO_MINT } from '../src/chain/market';
 import { CLUSTERS, DELEGATION_PROGRAM_ID } from '../src/chain/config';
+import { fund } from './fund';
 import { positionPda } from '../src/chain/pdas';
 import { pxFromSolPerToken } from '../src/chain/units';
 import nacl from 'tweetnacl';
@@ -64,17 +65,23 @@ async function main() {
   line(`  opponent : ${opponent.publicKey.toBase58()}`);
   line();
 
-  const sig = await rawL1.requestAirdrop(opponent.publicKey, 3 * LAMPORTS_PER_SOL);
-  await rawL1.confirmTransaction(sig, 'confirmed');
+  // Generous locally, where SOL is free. On devnet it comes out of the deploy
+  // wallet, so the opponent gets what one 0.1 SOL round needs, with room to spare.
+  const devnet = cluster.name === 'devnet';
+  await fund(rawL1, creator, opponent.publicKey, (devnet ? 0.5 : 3) * LAMPORTS_PER_SOL, devnet);
   await me.ensureTreasury(creator.publicKey);
 
   const matchId = Math.floor(Date.now() / 1000);
   const ENTRY = 0.1 * LAMPORTS_PER_SOL;
+  // Fifteen seconds suits the local stack. On devnet a seal can sit through a
+  // run of HTTP 429 retries and use up a short round before its first fill
+  // (verify:client did, 2026-09-13 02:47 UTC), so the devnet round is longer.
+  const ROUND_SECS = devnet ? 90 : 15;
 
   line('[1] opening a match and staking both sides');
   const match = await me.createMatch({
     creator: creator.publicKey, matchId, mint: DEMO_MINT,
-    durationSecs: 15, entryLamports: ENTRY, startPx: pxFromSolPerToken(0.1),
+    durationSecs: ROUND_SECS, entryLamports: ENTRY, startPx: pxFromSolPerToken(0.1),
     marketType: 'meme', symbol: 'PROOF', name: 'Privacy Proof',
   });
   await them.joinMatch(match, opponent.publicKey, creator.publicKey, {
@@ -105,11 +112,14 @@ async function main() {
     await me.delegatePosition(match, owner, creator.publicKey);
   }
   if (cluster.tee) {
-    // The TEE-only step that turns the ACL into an enforced read gate.
-    for (const owner of [creator.publicKey, opponent.publicKey]) {
-      await me.initPositionPrivacy(match, owner, creator.publicKey);
-    }
-    line('    ephemeral permissions created (TEE read gate active)');
+    // No init_position_privacy here. On MagicBlock's devnet TEE the delegated
+    // ACL is already the read gate: with both positions and both ACLs delegated
+    // and nothing more, an anonymous reader got neither position and each
+    // owner's token opened only their own (2026-09-13 02:53 UTC, match
+    // 7zH87FEB…), while the extra instruction was refused in simulation with
+    // "invalid account data for instruction". The mid-round block below
+    // re-proves the gate on this run rather than taking that on trust.
+    line('    TEE read gate: the delegated ACL itself (checked in the mid-round block)');
   }
   for (const [label, pos] of [['yours', myPos], ['theirs', theirPos]] as const) {
     const info = await rawL1.getAccountInfo(pos);
@@ -174,7 +184,16 @@ async function main() {
   // flat 0.00% on both sides.
   await me.walkPriceTo(match, creator.publicKey, pxFromSolPerToken(0.1215), creator.publicKey);
   line('    mark walked 0.1000 -> 0.1215 SOL, 5% a second, in public');
-  await new Promise((r) => setTimeout(r, 16_000));
+  // Wait for the match's own buzzer rather than a delay that fits one round length.
+  const running = (await me.fetchMatch(match))!;
+  await new Promise((r) => setTimeout(r, Math.max(0, (running.startTs + running.duration) * 1000 + 1_500 - Date.now())));
+  // After the buzzer only: releasing earlier would unseal a live round. Each
+  // ACL can only be released by the wallet it names.
+  const released = [
+    await me.releaseOwnAcl(match, creator.publicKey),
+    await them.releaseOwnAcl(match, opponent.publicKey),
+  ].filter(Boolean).length;
+  line(`    ${released} of 2 ACLs released by their own wallets`);
   const commitSigs = await me.commitAndUndelegate(match, creator.publicKey, creator.publicKey, opponent.publicKey);
   line(`    ${commitSigs.length} commit txs on the rollup, one per position`);
   // Both have to come home, not just yours: settle_match touches each of them

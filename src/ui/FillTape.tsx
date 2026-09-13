@@ -8,7 +8,7 @@ import FogOverlay from './FogOverlay';
 import { color, space } from './theme';
 
 export interface Fill {
-  /** LONG | CLOSE | SETTLE, or any short side label. */
+  /** LONG, SHORT, CLOSE, COVER, FLIP LONG / FLIP SHORT, LIQUIDATED or SETTLE — or any short label. */
   side: string;
   /** Fill price, pre-formatted. */
   px: string;
@@ -30,9 +30,16 @@ export interface FillTapeProps {
   style?: ViewStyle | ViewStyle[];
 }
 
+// Buys green and sells red, whatever they did to the position — the label says
+// which. SHORT used to fall through to white, and COVER did not exist.
 const SIDE_TONE: Record<string, string> = {
   LONG: color.green,
+  COVER: color.green,
+  'FLIP LONG': color.green,
+  SHORT: color.red,
   CLOSE: color.red,
+  'FLIP SHORT': color.red,
+  LIQUIDATED: color.red,
   SETTLE: color.yellow,
 };
 

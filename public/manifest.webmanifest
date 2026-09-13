@@ -1,0 +1,16 @@
+{
+  "name": "MASKED — 1v1 trading duels on Solana",
+  "short_name": "MASKED",
+  "description": "Trade blind, take the pot. Positions stay sealed on a private rollup until the buzzer.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#080d24",
+  "theme_color": "#080d24",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

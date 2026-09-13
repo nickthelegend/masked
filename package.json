@@ -9,9 +9,10 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext .ts,.tsx,.js,.mjs,.mts",
     "check:tokens": "node --no-warnings=MODULE_TYPELESS_PACKAGE_JSON scripts/check-tokens.mjs",
     "check:series": "node --no-warnings=MODULE_TYPELESS_PACKAGE_JSON scripts/check-series.mjs",
-    "check": "npm run typecheck && npm run check:build && npm run check:tokens && npm run check:series && npm run check:fog && npm run check:errors && npm run check:preflight && npm run check:markets && npm run check:pumpfun && npm run check:tape && npm run check:fuzz && npm run check:invariants && npm run check:h2h && npm run check:race && npm run check:guards && npm run check:session && npm run check:short && npm run check:legs && npm run check:er && npm run check:sealed && npm run check:gate",
+    "check": "npm run typecheck && npm run lint && npm run check:build && npm run check:tokens && npm run check:series && npm run check:fog && npm run check:errors && npm run check:preflight && npm run check:markets && npm run check:pumpfun && npm run check:tape && npm run check:fuzz && npm run check:invariants && npm run check:h2h && npm run check:race && npm run check:guards && npm run check:session && npm run check:short && npm run check:legs && npm run check:er && npm run check:sealed && npm run check:gate",
     "sync:idl": "node -e \"const fs=require('fs');const i=JSON.parse(fs.readFileSync('chain/target/idl/fogduel.json','utf8'));fs.writeFileSync('src/chain/idl.ts','export const FOGDUEL_IDL = '+JSON.stringify(i,null,2)+';\\n\\nexport default FOGDUEL_IDL;\\n');console.log('idl synced')\"",
     "verify:client": "tsx scripts/verify-client.mts",
     "prove:privacy": "tsx scripts/prove-privacy.mts",
@@ -27,6 +28,7 @@
     "check:markets": "tsx scripts/check-markets.mts",
     "check:gate": "tsx scripts/check-gate.mts",
     "proxy": "node server/market-proxy.mjs",
+    "serve": "node server/serve-dist.mjs",
     "hold": "tsx scripts/hold-live.mts",
     "join": "tsx scripts/join-as.mts",
     "trade": "tsx scripts/trade-as.mts",
@@ -44,13 +46,17 @@
     "check:er": "tsx scripts/check-er.mts",
     "check:invariants": "tsx scripts/check-invariants.mts",
     "check:fuzz": "tsx scripts/check-fuzz.mts",
-    "check:build": "tsx scripts/check-build.mts"
+    "check:build": "tsx scripts/check-build.mts",
+    "soak": "tsx scripts/soak.mts",
+    "check:palette": "node --no-warnings=MODULE_TYPELESS_PACKAGE_JSON scripts/check-palette.mjs",
+    "icons": "tsx scripts/make-icons.mjs"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",
     "@expo-google-fonts/press-start-2p": "^0.2.3",
     "@expo-google-fonts/silkscreen": "^0.2.3",
     "@expo/metro-runtime": "~4.0.1",
+    "@gsap/react": "^2.1.2",
     "@magicblock-labs/ephemeral-rollups-sdk": "^0.17.0",
     "@solana/wallet-adapter-base": "^0.9.27",
     "@solana/wallet-adapter-react": "^0.15.39",
@@ -63,6 +69,8 @@
     "expo-linking": "~7.0.5",
     "expo-router": "~4.0.22",
     "expo-status-bar": "~2.0.0",
+    "framer-motion": "^13.2.0",
+    "gsap": "^3.15.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-native": "0.76.9",
@@ -74,6 +82,8 @@
   },
   "devDependencies": {
     "@types/react": "~18.3.12",
+    "eslint": "^8.57.1",
+    "eslint-config-expo": "^8.0.1",
     "tsx": "^4.23.13",
     "typescript": "^5.3.3"
   }

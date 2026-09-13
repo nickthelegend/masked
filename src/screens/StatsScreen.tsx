@@ -52,6 +52,8 @@ function MarketRowStat({ m, rank, max }: { m: MarketStat; rank: number; max: num
   // A bar, because "how much has ridden on this market" is a comparison and a
   // column of numbers is not one.
   const share = max > 0 ? Math.max(0.02, m.volumeLamports / max) : 0;
+  // pump.fun tickers are not unique — two different WOFI mints read identically
+  // — so every row carries its mint, which is what actually tells them apart.
   return (
     <Stack gap={space.xs} bg={color.panel} pad={space.sm} round={radius.tile}>
       <Row align="center" gap={space.sm}>
@@ -71,7 +73,7 @@ function MarketRowStat({ m, rank, max }: { m: MarketStat; rank: number; max: num
       </Box>
       <Row justify="space-between">
         <PixelText variant="bodySmall" size={9} color={color.textFaint}>
-          {`${m.duels} duel${m.duels === 1 ? '' : 's'}`}
+          {`${m.duels} duel${m.duels === 1 ? '' : 's'} · ${m.mint.slice(0, 4)}…${m.mint.slice(-4)}`}
         </PixelText>
         <PixelText variant="bodySmall" size={9} color={color.textFaint}>
           {`biggest pot ${sol(m.biggestPotLamports)}`}

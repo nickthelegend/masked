@@ -26,7 +26,7 @@ import { assertFogIntact } from '../chain/fog';
 import { FogduelClient, pnlBps, type MatchLeg, type MatchState, type PositionState } from '../chain/client';
 import { formatSolPrice, MAX_OPEN_AGE_SECS, VALUE_DIV } from '../chain/units';
 import type { TapeState } from '../chain/tape';
-import { buyImpact, maxShortBase, quoteToBuyBase, sellImpact } from '../chain/book';
+import { buyBaseOut, buyExecPx, buyImpact, maxShortBase, quoteToBuyBase, sellExecPx, sellImpact } from '../chain/book';
 import { useHeadToHead, describeRecord } from '../chain/useHeadToHead';
 import { fetchMemeMarkets, livePxFor, searchMarkets, type TradableMarket } from '../chain/markets';
 import { mintSession, type ActiveSession } from '../chain/session';
@@ -74,6 +74,8 @@ const DEFAULT_FILL_FRACTION = 0.25;
 type GuardOutcome = void | 'noop' | { label: string };
 /** Poll cadence for on-chain state during a live round. */
 const POLL_MS = 1000;
+/** How long a refused fill stays on screen, marked rolled back, before it goes. */
+const PENDING_REFUSED_MS = 2500;
 /**
  * How often the live market price is posted on chain.
  *
@@ -81,6 +83,11 @@ const POLL_MS = 1000;
  * thank anyone for a request a second either.
  */
 const MARK_CRANK_MS = 5000;
+/**
+ * How old the opponent's mark may get before this client posts it for them —
+ * three missed heartbeats. See the backstop in the mark crank.
+ */
+const STALE_MARK_SECS = 15;
 /** How often the header balance is re-read. */
 const BALANCE_POLL_MS = 5000;
 
@@ -90,6 +97,34 @@ const BALANCE_POLL_MS = 5000;
  */
 const SETTLE_ATTEMPTS = 3;
 const SETTLE_RETRY_MS = 4000;
+/**
+ * How long the creator's client lets the joiner's seal show no progress before
+ * sealing itself. Any progress restarts the wait; the ceiling bounds the whole
+ * thing however slowly the seal is going.
+ */
+const SEAL_STALL_MS = 20_000;
+const SEAL_WAIT_CEILING_MS = 90_000;
+/**
+ * The same for settlement, from the joiner's side. Longer, because the first
+ * visible sign of the creator's settlement is a position landing back on Solana,
+ * and that waits on the rollup's commit.
+ */
+const SETTLE_STALL_MS = 30_000;
+const SETTLE_WAIT_CEILING_MS = 150_000;
+/**
+ * How long past the buzzer a round sits unsettled before the joiner's lobby
+ * sweep takes it. Past the whole settle wait above, so a sweep never races a
+ * creator that is still settling.
+ */
+const SWEEP_JOINER_AFTER_S = 180;
+/**
+ * How long settlement waits at the buzzer for the rollup's own crank to commit
+ * the round before this client commits it instead. The crank fires two seconds
+ * past the buzzer; this is that, plus the commit landing on Solana, with room.
+ * Shorter when this client does not know a crank was scheduled.
+ */
+const CRANK_COMMIT_WAIT_MS = 15_000;
+const UNKNOWN_CRANK_WAIT_MS = 8_000;
 
 export interface Duel {
   phase: DuelPhase;
@@ -158,6 +193,8 @@ export interface Duel {
   priceLabel: string;
   /** What the book charged for the most recent fill, or null. */
   lastFill: LastFill | null;
+  /** A fill sent and not yet confirmed, at its predicted price. See PendingFill. */
+  pendingFill: PendingFill | null;
   /** What the chosen size costs against the current mark. */
   sizeNote?: string;
   /**
@@ -209,6 +246,8 @@ export interface Duel {
   setOpenDuration: (secs: number) => void;
   findMatch: () => void;
   startMatch: () => void;
+  /** Open a match for a particular opponent, never joining one off the book. */
+  openMatch: () => void;
   openLong: () => void;
   /** Sell what you do not own — the mirror of openLong. */
   openShort: () => void;
@@ -269,6 +308,25 @@ export interface LastFill {
   /** Base quantity, in the program's scale. */
   qty: number;
   at: number;
+}
+
+/**
+ * A fill that has been sent and not yet confirmed (PLAN 7.15).
+ *
+ * Its price is the book's own prediction for that size at the mark read just
+ * before sending, which is what the program will charge unless the mark moves
+ * first. The chain's fill replaces it on confirmation; a refusal marks it
+ * rolled back, and it goes.
+ */
+export interface PendingFill {
+  id: number;
+  side: 'buy' | 'sell';
+  state: 'pending' | 'refused';
+  /** Predicted execution price, in the program's scale. */
+  px: number;
+  markBefore: number;
+  /** Predicted base quantity, in the program's scale. */
+  qty: number;
 }
 
 const bpsToPct = (bps: number) => bps / 100;
@@ -332,29 +390,57 @@ export function useDuel(): Duel {
    *
    * Resolved through the picker's own search rather than reconstructed from
    * the mint, because a market needs a *live price* to open a match and a
-   * remembered one is by definition stale. If it can no longer be priced the
-   * lobby simply opens unselected, which is the honest outcome: better than
-   * carrying forward a market `create_match` would reject.
+   * remembered one is by definition stale. One that can no longer be priced is
+   * not carried forward — `create_match` would reject it — and the lobby stays
+   * on its own default, the top market. For a remembered market that is the
+   * whole story. A deep link says so: the player followed it for one token, and
+   * landing on another without a word reads as though the link had worked.
    */
   const [deepLinkMint, setDeepLinkMint] = useState<string | null>(null);
   const restoredMint = deepLinkMint ?? prefs.marketMint ?? null;
-  const restored = useRef(false);
+  /**
+   * Which mint was restored, not whether one was.
+   *
+   * A boolean here let the remembered market beat the deep link. This effect
+   * runs before the app's own, so on mount it saw only the remembered mint,
+   * restored it and shut the door, and `?market=` arrived a moment later to
+   * find it shut. A deep link may still take over from a remembered market;
+   * nothing else may, so a player's own pick is never overwritten.
+   */
+  const restoredFor = useRef<string | null>(null);
   useEffect(() => {
-    if (restored.current || !restoredMint) return;
-    restored.current = true;
+    if (!restoredMint || restoredFor.current === restoredMint) return undefined;
+    if (restoredFor.current !== null && restoredMint !== deepLinkMint) return undefined;
+    restoredFor.current = restoredMint;
+    const linked = restoredMint === deepLinkMint;
+    const token = `${restoredMint.slice(0, 4)}…${restoredMint.slice(-4)}`;
     let alive = true;
     void (async () => {
       try {
         const [found] = await searchMarkets(restoredMint);
-        if (alive && found && found.mint === restoredMint) setSelectedMarket(found);
+        if (!alive) return;
+        if (found && found.mint === restoredMint) {
+          setSelectedMarket(found);
+        } else if (linked) {
+          toast.info(
+            'NO PRICE FOR THAT TOKEN',
+            `${token} has no live price on pump.fun or Jupiter, so a duel cannot open on it. Pick a market from the list.`
+          );
+        }
       } catch {
-        /* the picker is still there; the player can choose by hand */
+        // The picker is still there; the player can choose by hand.
+        if (alive && linked) {
+          toast.info(
+            'COULD NOT LOOK UP THAT TOKEN',
+            `The market search did not answer, so ${token} is not selected. Pick a market from the list.`
+          );
+        }
       }
     })();
     return () => {
       alive = false;
     };
-  }, [restoredMint]);
+  }, [restoredMint, deepLinkMint, toast]);
 
   const [phase, setPhase] = useState<DuelPhase>('lobby');
   const [stake, setStake] = useState(prefs.stake ?? 0.1); // SOL
@@ -417,6 +503,10 @@ export function useDuel(): Duel {
   }, [stake, openDuration, selectedMarket?.mint]);
 
   const settledRef = useRef(false);
+  /** Whether this round was handed to the rollup's crank — see `scheduleRoundCranks`. */
+  const roundCranked = useRef(false);
+  /** The match this client has already released its own ACL for. */
+  const aclReleasedFor = useRef<string | null>(null);
   /** Retries spent on the current settlement. Reset when a round begins. */
   const settleAttempts = useRef(0);
 
@@ -430,6 +520,7 @@ export function useDuel(): Duel {
    * a number on screen rather than something to take on trust.
    */
   const [lastFill, setLastFill] = useState<LastFill | null>(null);
+  const [pendingFill, setPendingFill] = useState<PendingFill | null>(null);
   const [settleStages, setSettleStages] = useState<SettleStage[]>(() =>
     SETTLE_STAGES.map((x) => ({ ...x }))
   );
@@ -550,7 +641,12 @@ export function useDuel(): Duel {
 
   /* ------------------------ live round: poll chain ----------------------- */
   useEffect(() => {
-    if (!client || !match || phase !== 'live' || !wallet.publicKey) return undefined;
+    // Through the refs rather than the render's values: this effect is keyed on
+    // the strings below, so a captured object would be the one from whichever
+    // render last rebuilt it.
+    const address = matchRef.current?.address;
+    const me = walletRef.current.publicKey;
+    if (!client || !address || phase !== 'live' || !me) return undefined;
 
     let alive = true;
     const id = setInterval(async () => {
@@ -558,9 +654,9 @@ export function useDuel(): Duel {
         // My own feed. The opponent has their own token and their own mark,
         // and neither is any of my business until the reveal.
         const [m, pxRaw, mine] = await Promise.all([
-          client.fetchMatch(match.address),
-          client.fetchPrice(match.address, wallet.publicKey!, true),
-          client.fetchPosition(match.address, wallet.publicKey!, true),
+          client.fetchMatch(address),
+          client.fetchPrice(address, me, true),
+          client.fetchPosition(address, me, true),
         ]);
         if (!alive) return;
 
@@ -614,11 +710,12 @@ export function useDuel(): Duel {
   // clamps to that rather than being rejected.
   useEffect(() => {
     const m0 = matchRef.current;
-    if (!client || !m0 || phase !== 'live' || !wallet.publicKey) {
+    const me = walletRef.current.publicKey;
+    if (!client || !m0 || phase !== 'live' || !me) {
       return undefined;
     }
     // My market, not the match's — there is no such thing any more.
-    const mine = legFor(m0, wallet.publicKey);
+    const mine = legFor(m0, me);
     if (!mine || !mine.symbol) return undefined;
     const mint = mine.mint.toBase58();
     const kind = mine.marketType;
@@ -627,7 +724,8 @@ export function useDuel(): Duel {
     let alive = true;
     const ac = new AbortController();
 
-    const opponent = m0.creator.equals(wallet.publicKey) ? m0.joiner : m0.creator;
+    const opponent = m0.creator.equals(me) ? m0.joiner : m0.creator;
+    const theirs = legFor(m0, opponent);
 
     // Stops at the buzzer, not at settlement: the program refuses a mark once
     // the clock has run out, so cranking through the commit-and-settle window
@@ -655,28 +753,61 @@ export function useDuel(): Duel {
         // only the positions are — so the rollup rejects a write to it with
         // InvalidWritableAccount, and every mark was silently failing. The
         // rollup clones the feed for reads, so fills there see the new mark.
-        await client.crankPrice(address, wallet.publicKey!, px, wallet.publicKey!, false);
+        await client.crankPrice(address, me, px, me, false);
       } catch {
         // The market API or the rate limit said no. The next tick tries again;
         // a failed crank must never interrupt a round in progress.
       }
 
-      // Then look for a blow-up, on both sides.
+      // The opponent's mark, when their own tab has stopped keeping it.
+      //
+      // Each client posts its own market's mark, and settlement values each
+      // side at its own last posted one — so a player who hid or closed the tab
+      // froze their mark, and with it a PnL the market may since have taken
+      // back. Measured in a duel here: a tab the browser had throttled in the
+      // background posted about once a minute. The post is permissionless and
+      // rate-limited, so the client still in the round keeps that mark moving
+      // once it has gone stale, from the same public price its owner would post.
+      if (theirs && opponent) {
+        try {
+          const feed = await client.fetchPriceFeed(address, opponent, false);
+          if (alive && feed && Math.floor(Date.now() / 1000) - feed.updatedTs > STALE_MARK_SECS) {
+            const theirPx = await livePxFor({ kind: theirs.marketType, mint: theirs.mint.toBase58() }, ac.signal);
+            if (alive) await client.crankPrice(address, me, theirPx, opponent, false);
+          }
+        } catch {
+          // Same rule as above: a failed backstop never interrupts the round.
+        }
+      }
+
+      // Then look for a blow-up on the other side.
       //
       // On the rollup, because that is where positions live. Permissionless
       // and harmless against a solvent position, so this fires blind rather
       // than reading anything private first — which it could not do anyway,
       // since the opponent's position is sealed to us.
+      //
+      // Only the opponent's position. Both clients used to probe both sides, so
+      // every five seconds four identical `liquidate` transactions hit the
+      // rollup — 44 in a one-minute round — and the only player with any reason
+      // to liquidate a position is the one on the other side of it.
+      //
+      // And only when the rollup is not already doing it. A round handed to the
+      // rollup's crank (see `scheduleRoundCranks`) is checked there every two
+      // seconds whether or not anybody's tab is open; this probe is the
+      // fallback for a round whose schedule did not land.
       try {
         if (!alive) return;
-        await Promise.all(
-          [wallet.publicKey!, opponent]
-            .filter((k): k is PublicKey => !!k)
-            .map((owner) => client.liquidate(address, wallet.publicKey!, owner).catch(() => {}))
-        );
+        if (!roundCranked.current) {
+          await Promise.all(
+            [opponent]
+              .filter((k): k is PublicKey => !!k)
+              .map((owner) => client.liquidate(address, me, owner).catch(() => {}))
+          );
+        }
         const status = await client.fetchRoundStatus(address, true);
         if (alive && status) {
-          const iAmCreator = m0.creator.equals(wallet.publicKey!);
+          const iAmCreator = m0.creator.equals(me);
           setLiquidated({
             me: iAmCreator ? status.liquidatedA : status.liquidatedB,
             opponent: iAmCreator ? status.liquidatedB : status.liquidatedA,
@@ -743,6 +874,13 @@ export function useDuel(): Duel {
           (m) => m.joiner && (m.creator.equals(me) || m.joiner.equals(me))
         );
         if (!alive || !target || !target.joiner) return;
+        // Same split as a live round: the creator's client settles, and the
+        // joiner's only once the round has sat unsettled well past the buzzer.
+        // Two lobbies sweeping the same round at once was a guaranteed failed
+        // transaction for one of them.
+        const endedAgo = Math.floor(Date.now() / 1000) - (target.startTs + target.duration);
+        if (!target.creator.equals(me) && endedAgo < SWEEP_JOINER_AFTER_S) return;
+        void client.releaseOwnAcl(target.address, me).catch(() => {});
         await client.commitAndUndelegate(
           target.address, wallet.publicKey!, target.creator, target.joiner
         );
@@ -818,11 +956,80 @@ export function useDuel(): Duel {
       );
     setSettleStages(SETTLE_STAGES.map((x) => ({ ...x })));
     try {
-      step('commit', 'running');
-      const commitSigs = await client.commitAndUndelegate(
-        match.address, wallet.publicKey, match.creator, match.joiner
-      );
-      step('commit', 'done', `${commitSigs.length} tx on the rollup`);
+      // This player's own ACL comes off the rollup now that the round is over.
+      // Nobody else can release it (see `releaseOwnAcl`), so each client does
+      // its own, once, and settlement never waits on it.
+      if (aclReleasedFor.current !== match.address.toBase58()) {
+        aclReleasedFor.current = match.address.toBase58();
+        void client.releaseOwnAcl(match.address, wallet.publicKey).catch(() => {
+          aclReleasedFor.current = null;
+        });
+      }
+
+      // One client settles: the creator's, at the buzzer. The joiner's waits
+      // for the chain to show the round settled and steps in only if it has not
+      // been within SETTLE_GRACE_MS — the creator may simply have closed the
+      // tab. Both used to go at once, and the loser's copy of each step failed
+      // on chain: a commit refused with 3007 on the rollup and a request_settle
+      // refused with MatchNotLive on Solana, on every duel.
+      if (!match.creator.equals(wallet.publicKey)) {
+        step('commit', 'running', "waiting for the other player's client");
+        const started = Date.now();
+        let stallAt = started + SETTLE_STALL_MS;
+        let seen = -1;
+        while (Date.now() < stallAt && Date.now() - started < SETTLE_WAIT_CEILING_MS) {
+          const p = await client
+            .settleProgress(match.address, match.creator, match.joiner)
+            .catch(() => null);
+          if (p?.status === 'settled') {
+            step('commit', 'done', 'committed by the other player');
+            step('undelegate', 'done', 'both positions back under the program');
+            step('settle', 'done', 'settled by the other player');
+            await showReveal();
+            return;
+          }
+          // The other client is visibly working — a position has landed back on
+          // Solana, or the round has moved to Settling — so a slow settlement is
+          // not an abandoned one, and the stall clock restarts.
+          if (p && p.steps > seen) {
+            if (seen >= 0) {
+              stallAt = Date.now() + SETTLE_STALL_MS;
+              step('commit', 'running', `the other player's client is settling (${p.steps}/5)`);
+            }
+            seen = p.steps;
+          }
+          await new Promise((r) => setTimeout(r, 1500));
+        }
+        step('commit', 'running', 'the other client went quiet — settling from here');
+      }
+      // The rollup's own crank commits the round two seconds past the buzzer.
+      // Committing from here at the same moment races it, and whichever copy
+      // loses is refused on the rollup — so wait for the crank's commit to land,
+      // and commit from this client only if it does not.
+      let crankCommitted = false;
+      {
+        step('commit', 'running', "waiting for the rollup's crank");
+        const deadline = Date.now() + (roundCranked.current ? CRANK_COMMIT_WAIT_MS : UNKNOWN_CRANK_WAIT_MS);
+        while (Date.now() < deadline) {
+          const p = await client
+            .settleProgress(match.address, match.creator, match.joiner)
+            .catch(() => null);
+          if (p && p.steps >= 3) {
+            crankCommitted = true;
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+      }
+      if (crankCommitted) {
+        step('commit', 'done', "committed by the rollup's own crank");
+      } else {
+        step('commit', 'running');
+        const commitSigs = await client.commitAndUndelegate(
+          match.address, wallet.publicKey, match.creator, match.joiner
+        );
+        step('commit', 'done', `${commitSigs.length} tx on the rollup`);
+      }
 
       // The commit is scheduled on the rollup and lands on L1 a moment later.
       // Settling before it does hands settle_match accounts still owned by the
@@ -836,14 +1043,27 @@ export function useDuel(): Duel {
       step('undelegate', 'done', 'both positions back under the program');
 
       step('settle', 'running');
-      await client.requestSettle(match.address, wallet.publicKey);
+      // Read before writing, for the same reason: the other client may have got
+      // here first. `settle_match` needs the round in Settling, and asking again
+      // for a round already there is refused on chain.
+      const before = await client.fetchMatch(match.address).catch(() => null);
+      if (before?.status === 'settled') {
+        step('settle', 'done', 'settled by the other player');
+        await showReveal();
+        return;
+      }
+      if (before?.status !== 'settling') {
+        await client.requestSettle(match.address, wallet.publicKey);
+      }
       await client.settleMatch(match.address, wallet.publicKey, match.creator, match.joiner);
       step('settle', 'done', 'pot paid, tape written');
 
       await showReveal();
     } catch (e) {
-      // Both players' clients settle, so one of them loses the race and its
-      // transaction is refused for a match that is already Settled. That is
+      // Both clients can still end up settling — the joiner's takes over when
+      // the creator's goes quiet, and a throttled tab can wake late — so one of
+      // them can lose the race and have a transaction refused for a match that
+      // is already Settled. That is
       // not a failure — the round finished, the pot was paid, and the loser of
       // the race may well be the player who won the duel. Played from two real
       // browser sessions, the winner was shown MATCH NOT LIVE three times and
@@ -899,16 +1119,64 @@ export function useDuel(): Duel {
    * position — and only then is anything traded.
    */
   const beginRound = useCallback(
-    async (m: MatchState, creator: PublicKey, joiner: PublicKey, payer: PublicKey) => {
-      await client!.sealAndDelegateMatch(m.address, creator, joiner, payer);
-      if (ACTIVE_CLUSTER.tee) {
-        // TEE clusters take the extra ephemeral-permission step that turns the
-        // ACL into an enforced read gate.
-        for (const owner of [creator, joiner]) {
-          await client!.initPositionPrivacy(m.address, owner, payer);
+    async (
+      m: MatchState,
+      creator: PublicKey,
+      joiner: PublicKey,
+      payer: PublicKey,
+      role: 'sealer' | 'waiter' = 'sealer'
+    ) => {
+      // One client seals. Both used to — the joiner the moment it joined, the
+      // creator the moment its poll saw a joiner — and reading the chain first
+      // could not stop two clients reading "not yet" in the same instant. The
+      // loser's seven transactions then failed on chain on every duel
+      // (CreatePositionPermission refused as already in use, each delegation
+      // refused with ExternalAccountDataModified), in exactly the history a
+      // judge opens from the Explorer link.
+      //
+      // So the joiner seals — it is the client certain to be online at that
+      // moment — and the creator waits for the chain to show the seal complete,
+      // sealing itself only if that never happens.
+      let sealedByOther = false;
+      if (role === 'waiter') {
+        const started = Date.now();
+        let stallAt = started + SEAL_STALL_MS;
+        let seen = -1;
+        while (Date.now() < stallAt && Date.now() - started < SEAL_WAIT_CEILING_MS) {
+          const p = await client!.sealProgress(m.address, creator, joiner).catch(() => null);
+          if (p?.sealed) {
+            sealedByOther = true;
+            break;
+          }
+          // The joiner's client is visibly working, so a slow seal is not an
+          // abandoned one: the stall clock restarts.
+          if (p && p.steps > seen) {
+            if (seen >= 0) stallAt = Date.now() + SEAL_STALL_MS;
+            seen = p.steps;
+          }
+          await new Promise((r) => setTimeout(r, 1000));
         }
       }
+      if (!sealedByOther) {
+        // On a TEE rollup too, the delegated ACL is the read gate — there is no
+        // extra step. init_position_privacy is the other way to seal a position,
+        // and the rollup refuses it once this L1 permission exists.
+        await client!.sealAndDelegateMatch(m.address, creator, joiner, payer);
+      }
       setSealed(await client!.isPositionSealed(m.address, creator));
+
+      // Hand the round's upkeep to the rollup: a keeper for blow-ups and a
+      // buzzer that commits everything home, run by the rollup whether or not
+      // either tab stays open. Both players' clients ask and the rollup keeps
+      // the first. Best effort — if it fails, the browser keeper covers this
+      // round exactly as it did before the rollup could.
+      roundCranked.current = false;
+      try {
+        await client!.scheduleRoundCranks(m.address, payer);
+        roundCranked.current = true;
+      } catch {
+        /* the browser keeper below covers this round */
+      }
 
       // A session key, so the round costs one signature rather than one per
       // fill. Deliberately best-effort: sealing is the most failure-prone
@@ -917,7 +1185,7 @@ export function useDuel(): Duel {
       // the wallet, which is exactly how it worked before.
       setSession(null);
       try {
-        const sign = wallet.signTransaction;
+        const sign = walletRef.current.signTransaction;
         if (sign) {
           const minted = await mintSession({
             connection: client!.l1,
@@ -934,6 +1202,7 @@ export function useDuel(): Duel {
       settledRef.current = false;
       settleAttempts.current = 0;
       setLastFill(null);
+      setPendingFill(null);
       setTape(null);
       setSettleStages(SETTLE_STAGES.map((x) => ({ ...x })));
       setMatch(m);
@@ -942,7 +1211,17 @@ export function useDuel(): Duel {
       // Resume from where the clock actually is: a match that was joined while
       // we were polling has already been running for a second or two.
       setSecondsLeft(Math.max(0, m.duration - (Math.floor(Date.now() / 1000) - m.startTs)));
-      setPrice(Number(await client!.fetchPrice(m.address, wallet.publicKey!, true)));
+      // Decoration, and it must not cost the player their round. This read goes
+      // through the rollup's front door, which refuses a client that has not
+      // signed in yet — the norm for a creator who reloaded while their match
+      // was open. Unguarded, the throw skipped `setPhase('live')`, the join
+      // poller retried it every two seconds, and the creator sat on the
+      // matchmaking screen while their own round ran and settled without them.
+      try {
+        setPrice(Number(await client!.fetchPrice(m.address, walletRef.current.publicKey!, true)));
+      } catch {
+        /* the crank posts a mark within MARK_CRANK_MS */
+      }
       setPhase('live');
     },
     [client]
@@ -963,7 +1242,13 @@ export function useDuel(): Duel {
   const resumedFor = useRef<string | null>(null);
   const resuming = useRef(false);
   useEffect(() => {
-    if (!client || !wallet.publicKey || phase !== 'lobby') return;
+    // From the lobby, and from matchmaking with nothing in hand. A landing can
+    // move the phase before this has looked: an invite link for your own match
+    // opens matchmaking straight away, and a creator who reloaded onto it was
+    // left there — `phase !== 'lobby'` shut the door on the resume, so the round
+    // they were already in ran and settled without them.
+    if (!client || !wallet.publicKey) return;
+    if (phase !== 'lobby' && !(phase === 'searching' && !matchRef.current)) return;
     const me = wallet.publicKey;
     const key = me.toBase58();
     if (resumedFor.current === key || resuming.current) return;
@@ -999,6 +1284,21 @@ export function useDuel(): Duel {
           } catch {
             /* the badge reads NOT SEALED until the next poll says otherwise */
           }
+          // The rollup is most likely cranking this round already, but a reload
+          // forgets that, and the fallback liquidation probe then ran every five
+          // seconds on top of the rollup's own keeper — 41 extra transactions in
+          // one duel. Asking again is safe: the program times both cranks from
+          // the match's own clock, replaces this wallet's tasks and leaves the
+          // other player's alone. Not awaited, so it cannot delay the round.
+          roundCranked.current = false;
+          void client
+            .scheduleRoundCranks(live.address, me)
+            .then(() => {
+              roundCranked.current = true;
+            })
+            .catch(() => {
+              /* the browser keeper covers this round, as it did before */
+            });
           try {
             setPrice(Number(await client.fetchPrice(live.address, me, true)));
           } catch {
@@ -1114,8 +1414,8 @@ export function useDuel(): Duel {
    * Join an existing open match if there is one, otherwise open a new one and
    * wait. This is the real matchmaking path — no fabricated opponent.
    */
-  const startMatch = useCallback(() => {
-    void guard('MATCH READY', async () => {
+  const openOrJoin = useCallback((createOnly: boolean) => {
+    void guard(createOnly ? 'MATCH OPEN' : 'MATCH READY', async () => {
       const me = wallet.publicKey!;
 
       // Fail fast and legibly rather than sending a doomed transaction and
@@ -1139,7 +1439,10 @@ export function useDuel(): Duel {
       }
       await client!.ensureTreasury(me);
 
-      const open = await client!.fetchOpenMatches();
+      // Opening on purpose skips the book entirely. A rematch is aimed at one
+      // player, and joining a stranger's match instead would send the invite
+      // link to a duel its recipient is not in.
+      const open = createOnly ? [] : await client!.fetchOpenMatches();
       // Only join a match on the market you picked — otherwise "FIND MATCH"
       // silently drops you into somebody else's coin.
       // Stale matches are excluded here as well as in the book. `join_match`
@@ -1240,7 +1543,20 @@ export function useDuel(): Duel {
     // that once let `joinMatchByAddress` omit `selectedMarket` and join a WOFI
     // match while the lobby showed SOL, which was invisible until the settled
     // tape named the wrong token.
-  }, [guard, client, wallet.publicKey, entryLamports, selectedMarket, openDuration, beginRound]);
+  }, [guard, client, wallet.publicKey, entryLamports, selectedMarket, openDuration, beginRound, toast]);
+
+  /** FIND MATCH: join a compatible match off the book, or open one if there is none. */
+  const startMatch = useCallback(() => openOrJoin(false), [openOrJoin]);
+
+  /**
+   * Open a match and wait for a particular opponent, never joining one.
+   *
+   * FIND MATCH joins the first compatible match on the book before it opens
+   * its own — right for a stranger, wrong for a rematch aimed at one player,
+   * where it could drop the loser into somebody else's duel instead of opening
+   * the one the invite link is for.
+   */
+  const openMatch = useCallback(() => openOrJoin(true), [openOrJoin]);
 
   /**
    * Watch a match we opened until somebody takes it.
@@ -1270,7 +1586,7 @@ export function useDuel(): Duel {
         const m = await client.fetchMatch(address);
         if (!alive || !m?.joiner || m.status !== 'live') return;
         starting = true;
-        await beginRound(m, m.creator, m.joiner, me);
+        await beginRound(m, m.creator, m.joiner, me, 'waiter');
         clearInterval(id);
       } catch (e) {
         starting = false;
@@ -1299,29 +1615,63 @@ export function useDuel(): Duel {
     async (side: 'buy' | 'sell', amount: number, markBefore: bigint) => {
       const me = wallet.publicKey!;
       const address = match!.address;
+      const entry = match!.entry;
+
+      // Optimistic (PLAN 7.15): drawn now, at what the book will charge for
+      // this size at the mark just read, and replaced by the chain's own fill
+      // when it lands. Set only here, after every caller's "nothing to do"
+      // check has returned, so a press that sends no transaction draws nothing.
+      const mark = Number(markBefore);
+      const id = Date.now() + Math.random();
+      if (mark > 0 && amount > 0) {
+        setPendingFill({
+          id,
+          side,
+          state: 'pending',
+          markBefore: mark,
+          px: side === 'buy' ? buyExecPx(amount, mark, entry) : sellExecPx(amount, mark, entry),
+          qty: side === 'buy' ? buyBaseOut(amount, mark, entry) : amount,
+        });
+      }
+      /** Change this fill's prediction only, never a newer one's. */
+      const mine = (update: (p: PendingFill) => PendingFill | null) =>
+        setPendingFill((p) => (p && p.id === id ? update(p) : p));
 
       const viaWallet = async () => {
         await client!.applyFill(address, me, side, amount);
       };
 
-      if (session && session.validUntil > Math.floor(Date.now() / 1000)) {
-        try {
-          await client!.applyFillAs(address, session, me, side, amount);
-        } catch {
-          // The session did not work. Drop it so the rest of the round does
-          // not keep retrying a key the program will not accept, and sign this
-          // fill with the wallet instead.
-          setSession(null);
+      try {
+        if (session && session.validUntil > Math.floor(Date.now() / 1000)) {
+          try {
+            await client!.applyFillAs(address, session, me, side, amount);
+          } catch {
+            // The session did not work. Drop it so the rest of the round does
+            // not keep retrying a key the program will not accept, and sign this
+            // fill with the wallet instead.
+            setSession(null);
+            await viaWallet();
+          }
+        } else {
           await viaWallet();
         }
-      } else {
-        await viaWallet();
+      } catch (e) {
+        // Rolled back: the prediction is marked refused, stays long enough to
+        // be read, and goes. The error still reaches `guard`, whose toast says why.
+        mine((p) => ({ ...p, state: 'refused' }));
+        setTimeout(() => mine(() => null), PENDING_REFUSED_MS);
+        throw e;
       }
 
-      const mine = await client!.fetchPosition(address, me, true);
-      if (mine) {
-        setMyPosition(mine);
-        noteFill(mine, Number(markBefore), side);
+      try {
+        const position = await client!.fetchPosition(address, me, true);
+        if (position) {
+          setMyPosition(position);
+          noteFill(position, Number(markBefore), side);
+        }
+      } finally {
+        // Reconciled: the confirmed fill is the receipt now.
+        mine(() => null);
       }
     },
     [client, match, wallet.publicKey, session, noteFill]
@@ -1343,7 +1693,10 @@ export function useDuel(): Duel {
       const markBefore = await client!.fetchPrice(match.address, wallet.publicKey!, true);
       await fill('buy', spend, markBefore);
     });
-  }, [guard, client, match, myPosition, wallet.publicKey, fillSize, noteFill, toast]);
+  // `fill`, not `noteFill`: `fill` is what these call, and it changes when a
+  // session key is minted. Listing the wrong one kept a LONG pressed in the
+  // first second after minting signing through the wallet instead.
+  }, [guard, client, match, myPosition, wallet.publicKey, fillSize, fill, toast]);
 
   /**
    * Sell what you do not own.
@@ -1379,7 +1732,10 @@ export function useDuel(): Duel {
       }
       await fill('sell', qty, markBefore);
     });
-  }, [guard, client, match, myPosition, wallet.publicKey, fillSize, noteFill, toast]);
+  // `fill`, not `noteFill`: `fill` is what these call, and it changes when a
+  // session key is minted. Listing the wrong one kept a LONG pressed in the
+  // first second after minting signing through the wallet instead.
+  }, [guard, client, match, myPosition, wallet.publicKey, fillSize, fill, toast]);
 
   /**
    * Reduce whatever is open, whichever way it points.
@@ -1427,7 +1783,7 @@ export function useDuel(): Duel {
         ? undefined
         : { label: `CLOSED ${Math.round(fillSize * 100)}% OF POSITION` };
     });
-  }, [guard, client, match, myPosition, wallet.publicKey, fillSize, toast]);
+  }, [guard, client, match, myPosition, wallet.publicKey, fillSize, fill, toast]);
 
   /** Take a specific match off the book, on whatever market I have picked. */
   const joinMatchByAddress = useCallback(
@@ -1509,6 +1865,7 @@ export function useDuel(): Duel {
     setSeries([]);
     setEquity([0]);
     setLastFill(null);
+    setPendingFill(null);
     settledRef.current = false;
     settleAttempts.current = 0;
     setMatch(null);
@@ -1600,11 +1957,47 @@ export function useDuel(): Duel {
    */
   const headToHead = useHeadToHead(wallet.publicKey ?? null, opponentKey, phase);
 
-  const fills: Fill[] = (myPosition?.fills ?? []).map((f) => ({
-    side: f.side === 'BUY' ? 'LONG' : f.side === 'SELL' ? 'CLOSE' : 'SETTLE',
-    px: formatSolPrice(f.px),
-    t: mmss(Math.max(0, (match?.startTs ?? 0) + (match?.duration ?? 0) - f.ts)),
-  })).reverse();
+  /**
+   * Each fill named for what it did to the position.
+   *
+   * The side alone cannot say: a sell closes a long or opens a short, and a buy
+   * opens a long or covers a short. This used to read every SELL as CLOSE and
+   * every BUY as LONG, so an opening short sat on your own tape as a close while
+   * the public tape said SELL.
+   *
+   * Replayed forward from where the position stood before the oldest fill still
+   * listed. The program keeps only the last sixteen, so when the list is short
+   * of the count that starting point is worked back from what is held now.
+   */
+  const fills: Fill[] = useMemo(() => {
+    const list = myPosition?.fills ?? [];
+    const trades = list.filter((f) => f.side === 'BUY' || f.side === 'SELL');
+    const complete = list.length >= (myPosition?.fillCount ?? 0) || trades.length !== list.length;
+    let held = complete
+      ? 0
+      : (myPosition?.baseQty ?? 0) - trades.reduce((sum, f) => sum + (f.side === 'BUY' ? f.qty : -f.qty), 0);
+    return list
+      .map((f) => {
+        const before = held;
+        let side: string;
+        if (f.side === 'BUY') {
+          held += f.qty;
+          side = before < 0 ? (held > 0 ? 'FLIP LONG' : 'COVER') : 'LONG';
+        } else if (f.side === 'SELL') {
+          held -= f.qty;
+          side = before > 0 ? (held < 0 ? 'FLIP SHORT' : 'CLOSE') : 'SHORT';
+        } else {
+          held = 0;
+          side = f.side === 'LIQUIDATION' ? 'LIQUIDATED' : 'SETTLE';
+        }
+        return {
+          side,
+          px: formatSolPrice(f.px),
+          t: mmss(Math.max(0, (match?.startTs ?? 0) + (match?.duration ?? 0) - f.ts)),
+        };
+      })
+      .reverse();
+  }, [myPosition, match]);
 
   return {
     phase,
@@ -1664,6 +2057,7 @@ export function useDuel(): Duel {
     // coin — here what matters is what a token costs against the stake.
     priceLabel: `${formatSolPrice(price)}◎`,
     lastFill,
+    pendingFill,
     sizeNote,
     sessionActive: !!session && session.validUntil > Math.floor(Date.now() / 1000),
     settleStages,
@@ -1689,6 +2083,7 @@ export function useDuel(): Duel {
     setOpenDuration,
     findMatch,
     startMatch,
+    openMatch,
     openLong,
     openShort,
     closeLong,

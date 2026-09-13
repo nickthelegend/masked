@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { router } from 'expo-router';
 import { ScrollView, View } from 'react-native';
-import { PublicKey } from '@solana/web3.js';
+import { Connection, PublicKey } from '@solana/web3.js';
 import {
   Badge,
   ConnectWalletButton,
@@ -58,28 +58,73 @@ export default function ProofScreen() {
   const { entries, loaded: txLoaded, ledgerPruned, firstAvailableBlock } = useTxFeed(10);
   const { tapes } = useTapes(12_000);
 
-  // Watch the ACLs of the most recently settled duel, so the permission
-  // accounts are visible as real on-chain objects rather than a claim.
-  const aclWatch = useMemo(() => {
-    const t = tapes[0];
-    if (!t) return [];
-    const matchKey = new PK(t.match);
-    return [
-      { label: 'winner position ACL', address: permissionPdaFromAccount(positionPda(matchKey, t.winner)) },
-      { label: 'loser position ACL', address: permissionPdaFromAccount(positionPda(matchKey, t.loser)) },
-    ];
-  }, [tapes]);
-  const { accounts: acls } = useDelegationStatus(aclWatch, 6000);
+  /**
+   * The most recent duel that was actually sealed.
+   *
+   * The newest tape is whatever settled last, and on a cluster that also runs
+   * the test suites that is usually a fixture that never had an ACL — so the
+   * panels below traced a duel with nothing in it to show: both ACLs ABSENT,
+   * three transactions and no delegation at all. A sealed duel is one whose
+   * positions were given permission accounts, so this picks the newest tape
+   * that has one, and falls back to the newest tape when none does.
+   */
+  const tapeKeys = tapes
+    .slice(0, 20)
+    .map((t) => `${t.match}:${t.winner.toBase58()}`)
+    .join(',');
+  const [sealedMatch, setSealedMatch] = useState<string | null>(null);
+  useEffect(() => {
+    if (!tapeKeys) {
+      setSealedMatch(null);
+      return undefined;
+    }
+    let alive = true;
+    const pairs = tapeKeys.split(',').map((pair) => pair.split(':'));
+    new Connection(ACTIVE_CLUSTER.l1, 'confirmed')
+      .getMultipleAccountsInfo(
+        pairs.map(([m, w]) => permissionPdaFromAccount(positionPda(new PK(m), new PK(w))))
+      )
+      .then((infos) => {
+        if (!alive) return;
+        const i = infos.findIndex((info) => !!info);
+        setSealedMatch(i >= 0 ? pairs[i][0] : null);
+      })
+      .catch(() => {
+        /* the next poll of the tapes tries again */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [tapeKeys]);
 
   // The same duel's transitions, as real signatures. The panels above report
   // what is true now; this reports how it got that way, which is the half
   // that would otherwise have to be believed.
-  const traced = tapes[0] ?? null;
+  const traced = tapes.find((t) => t.match === sealedMatch) ?? tapes[0] ?? null;
+  const tracedKey = traced
+    ? `${traced.match}:${traced.winner.toBase58()}:${traced.loser.toBase58()}`
+    : null;
+
+  // Watch that duel's ACLs, so the permission accounts are visible as real
+  // on-chain objects rather than a claim — and whether they came home.
+  const aclWatch = useMemo(() => {
+    if (!tracedKey) return [];
+    const [m, w, l] = tracedKey.split(':');
+    const matchKey = new PK(m);
+    return [
+      { label: 'winner position ACL', address: permissionPdaFromAccount(positionPda(matchKey, new PK(w))) },
+      { label: 'loser position ACL', address: permissionPdaFromAccount(positionPda(matchKey, new PK(l))) },
+    ];
+  }, [tracedKey]);
+  const { accounts: acls } = useDelegationStatus(aclWatch, 6000);
   const { steps: proofSteps, loaded: proofLoaded, cost: duelCost } = useDuelProof(
     traced ? new PK(traced.match) : null,
     traced?.winner ?? null,
     traced?.loser ?? null
   );
+  // The traced duel's own pot, off its tape. The cost panel used to divide by a
+  // fixed 0.20◎, which was only right for a duel at the default stake.
+  const tracedPot = traced ? traced.potPaid + traced.rake : 0;
 
   // Probe the front door for real: a delegated position should be refused
   // while an undelegated account on the same rollup is served. Candidates come
@@ -176,8 +221,11 @@ export default function ProofScreen() {
             // read the ACL — the row above proves it against a control — but
             // it is a process we run, and only a TEE makes that checkable by
             // somebody who does not trust us.
-            value: ACTIVE_CLUSTER.tee ? 'YES — TEE ingress' : 'NO — not a TEE',
-            tone: ACTIVE_CLUSTER.tee ? 'good' : undefined,
+            //
+            // And a TEE flag in our own config is not attestation either. This
+            // said YES on the flag's word. The quote check needs Node's crypto,
+            // so the page names the command that asks the enclave instead.
+            value: ACTIVE_CLUSTER.tee ? 'CHECK IT — npx tsx scripts/check-tee.mts' : 'NO — not a TEE',
           },
         ]}
       />
@@ -289,7 +337,7 @@ export default function ProofScreen() {
         note={
           aclWatch.length === 0
             ? 'No settled duel yet — play one and its ACLs appear here.'
-            : "The most recent duel's permission accounts, read from chain."
+            : "The most recent sealed duel's permission accounts, read from chain. Each player's client releases its own from the rollup after the buzzer, so both should be home."
         }
         status={
           acls.length > 0 && acls.every((a) => a.isPermission)
@@ -300,8 +348,13 @@ export default function ProofScreen() {
           acls.length > 0
             ? acls.map((a) => ({
                 label: a.label,
-                value: a.owner ? `${shortKey(a.address)} · ${a.owner.toBase58().slice(0, 6)}…` : 'ABSENT',
-                tone: (a.isPermission ? 'good' : 'bad') as 'good' | 'bad',
+                // Settled, so an ACL belongs back on Solana. One the delegation
+                // program still owns was left on the rollup — which is what
+                // every duel did before settlement started releasing them.
+                value: a.owner
+                  ? `${shortKey(a.address)} · ${a.delegated ? 'STILL ON THE ROLLUP' : 'HOME ON SOLANA'}`
+                  : 'ABSENT',
+                tone: (a.isPermission && !a.delegated ? 'good' : 'bad') as 'good' | 'bad',
                 mono: true,
               }))
             : [{ label: 'permission accounts', value: '—' }]
@@ -320,7 +373,7 @@ export default function ProofScreen() {
         loaded={proofLoaded}
         subtitle={
           traced
-            ? `Every base-layer transaction touching either position of duel ${traced.match.slice(0, 8)}…, oldest first. Click any row to check it yourself.`
+            ? `Every base-layer transaction touching either position of duel ${traced.match.slice(0, 8)}…, or either position's ACL, oldest first. Click any row to check it yourself.`
             : undefined
         }
         emptyLabel="NO SETTLED DUEL TO TRACE YET — PLAY ONE, OR RUN npm run seed"
@@ -333,7 +386,11 @@ export default function ProofScreen() {
         <ProofPanel
           title="WHAT ONE DUEL COSTS"
           note="Network fees for every base-layer transaction in the duel traced above, read from the transactions themselves."
-          status={{ label: `${duelCost.transactions} TX`, tone: 'live' }}
+          status={
+            duelCost.failed > 0
+              ? { label: `${duelCost.transactions} TX · ${duelCost.failed} FAILED`, tone: 'soon' }
+              : { label: `${duelCost.transactions} TX`, tone: 'live' }
+          }
           rows={[
             {
               label: 'total network fees',
@@ -346,8 +403,19 @@ export default function ProofScreen() {
               mono: true,
             },
             {
+              label: 'refused on chain',
+              value:
+                duelCost.failed > 0
+                  ? `${duelCost.failed} of ${duelCost.transactions} — their fees are in the total`
+                  : 'none',
+              tone: duelCost.failed > 0 ? 'bad' : 'good',
+            },
+            {
               label: 'against the pot',
-              value: `${((duelCost.lamports / 1e9 / 0.2) * 100).toFixed(3)}% of a 0.20◎ pot`,
+              value:
+                tracedPot > 0
+                  ? `${((duelCost.lamports / tracedPot) * 100).toFixed(3)}% of this duel's ${(tracedPot / 1e9).toFixed(2)}◎ pot`
+                  : '—',
             },
           ]}
         />
@@ -382,6 +450,11 @@ export default function ProofScreen() {
         subtitle="Every claim above, reproduced from a clean checkout. Tap a row to copy it."
         commands={[
           {
+            cmd: 'npx tsx scripts/check-tee.mts',
+            proves:
+              "MagicBlock's devnet TEE rollup answers a fresh random challenge with an Intel TDX quote that verifies against Intel's collateral. Attestation asked of the machine, not read off a config flag.",
+          },
+          {
             cmd: 'npm run check:gate',
             proves:
               'The read gate refuses a sealed position and serves the same account shape without a permission. The control row is the point — a door shut for everybody is not access control.',
@@ -399,7 +472,7 @@ export default function ProofScreen() {
           {
             cmd: 'npm run check:race',
             proves:
-              'Two independent clients sealing and settling the same match at once, which is what two people playing actually does.',
+              'Two independent clients sealing and settling the same match at once. The app splits that work — the joiner seals, the creator settles — and this is the fallback for when one of them goes quiet: the round still seals once and pays once.',
           },
           {
             cmd: 'npm run check:tape',
@@ -417,7 +490,7 @@ export default function ProofScreen() {
           },
           {
             cmd: 'cd chain && anchor test --skip-local-validator',
-            proves: '27 on-chain tests, 2 pending. Includes the negative case: a fill that succeeds on the rollup is rejected on L1 while the account is delegated.',
+            proves: "38 on-chain tests, 2 pending. Includes the rollup running a round by itself — its own crank liquidating a blown-up short and committing the round home at the buzzer with no client — a round busy enough that the rollup stages its commit through MagicBlock's committor program, a tape past sixteen fills replayed from the window start it records, each owner releasing their ACL, and the negative case: a fill that succeeds on the rollup is rejected on L1 while the account is delegated.",
           },
         ]}
       />

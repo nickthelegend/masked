@@ -387,6 +387,15 @@ pub struct Position {
     pub realized: i64,
     pub last_px: u64,
     pub fill_count: u16,
+    /// The quote and base this position held immediately before `fills[0]`.
+    ///
+    /// `fills` keeps only the last MAX_FILLS. Without these, a busy round's
+    /// tape held its last sixteen fills and nothing about where they started,
+    /// so a replay from the entry drew a curve that ended somewhere the chain
+    /// never was. Every fill that falls off the front is folded in here first,
+    /// which makes this snapshot plus `fills` the whole round again.
+    pub window_quote: i64,
+    pub window_base: i64,
     #[max_len(MAX_FILLS)]
     pub fills: Vec<Fill>,
     /// This player's own private book. Inside the Position, so the permission
@@ -475,6 +484,16 @@ pub struct Tape {
     pub pot_paid: u64,
     pub rake: u64,
     pub settled_ts: i64,
+    /// Where each side's stored fills begin, and how many fills it made in
+    /// all. When `fill_count_*` exceeds the stored list the earliest fills are
+    /// gone, and `start_quote_*` / `start_base_*` — the position just before
+    /// the first stored fill — are what let a replay start from the right place.
+    pub start_quote_a: i64,
+    pub start_base_a: i64,
+    pub fill_count_a: u16,
+    pub start_quote_b: i64,
+    pub start_base_b: i64,
+    pub fill_count_b: u16,
     #[max_len(MAX_FILLS)]
     pub fills_a: Vec<Fill>,
     #[max_len(MAX_FILLS)]
@@ -587,10 +606,46 @@ impl Position {
 
     pub fn push_fill(&mut self, fill: Fill) {
         if self.fills.len() >= MAX_FILLS {
-            self.fills.remove(0);
+            let evicted = self.fills.remove(0);
+            self.fold_into_window(&evicted);
         }
         self.fills.push(fill);
         self.fill_count = self.fill_count.saturating_add(1);
+    }
+
+    /// Carry a fill that is leaving `fills` into the window snapshot.
+    ///
+    /// This is the tape replay's arithmetic (`replayEquity` in
+    /// src/chain/tape.ts), not `apply_signed`'s: the snapshot exists so that a
+    /// replay of the stored fills picks up exactly where these left off. A
+    /// settle is always a round's last fill and is never evicted; it is folded
+    /// the way the replay reads one anyway.
+    fn fold_into_window(&mut self, f: &Fill) {
+        let value = ((f.qty as i128) * (f.px as i128) / VALUE_DIV) as i64;
+        let qty = f.qty as i64;
+        match f.side {
+            Side::Buy => {
+                self.window_quote -= value;
+                self.window_base += qty;
+            }
+            Side::Sell => {
+                self.window_quote += value;
+                self.window_base -= qty;
+            }
+            Side::Settle => {
+                if self.window_base > 0 {
+                    self.window_quote += value;
+                    self.window_base -= qty;
+                } else {
+                    self.window_quote -= value;
+                    self.window_base += qty;
+                }
+            }
+            Side::Liquidation => {
+                self.window_quote = 0;
+                self.window_base = 0;
+            }
+        }
     }
 }
 

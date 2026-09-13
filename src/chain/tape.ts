@@ -39,6 +39,20 @@ export interface TapeLeg {
   symbol: string;
 }
 
+/**
+ * Where a position stood just before the first fill its tape still holds.
+ *
+ * A position keeps its last `MAX_FILLS` fills. Each fill pushed out of that
+ * window is folded into this snapshot with the fill's own arithmetic, so the
+ * stored fills replayed from here land exactly where the program did.
+ */
+export interface TapeStart {
+  /** Lamports held as quote. */
+  quote: number;
+  /** Base held, x BASE_SCALE, signed. */
+  base: number;
+}
+
 export interface TapeState {
   match: PublicKey;
   /** The creator's market. */
@@ -58,6 +72,16 @@ export interface TapeState {
   settledTs: number;
   fillsA: TapeFill[];
   fillsB: TapeFill[];
+  /**
+   * The snapshot before each side's stored fills. Null on a tape written
+   * before the program kept one, where the stored fills are the whole round
+   * only if there are fewer than `MAX_FILLS` of them.
+   */
+  startA: TapeStart | null;
+  startB: TapeStart | null;
+  /** Every fill each side made, stored or not. At least the stored count. */
+  fillCountA: number;
+  fillCountB: number;
 }
 
 /** A zero-padded on-chain string back to a JS one. */
@@ -72,6 +96,16 @@ export const decodeFixed = (bytes: number[] | Uint8Array | undefined): string =>
    namespace is dynamically typed; every field is narrowed as it is read. */
 
 const num = (v: any): number => (typeof v === 'number' ? v : v?.toNumber?.() ?? 0);
+
+/** Both halves or nothing: a snapshot missing either is not one. */
+const startOf = (quote: any, base: any): TapeStart | null =>
+  quote === undefined || quote === null || base === undefined || base === null
+    ? null
+    : { quote: num(quote), base: num(base) };
+
+/** Never below what is stored, so a tape without the field reads as whole. */
+const countOf = (count: any, fills: any[] | undefined): number =>
+  Math.max(count === undefined || count === null ? 0 : num(count), (fills ?? []).length);
 
 const toFill = (f: any): TapeFill => ({
   side: Object.keys(f.side)[0] as FillSide,
@@ -101,6 +135,10 @@ export function toTapeState(raw: any): TapeState {
     settledTs: num(raw.settledTs),
     fillsA: (raw.fillsA ?? []).map(toFill),
     fillsB: (raw.fillsB ?? []).map(toFill),
+    startA: startOf(raw.startQuoteA, raw.startBaseA),
+    startB: startOf(raw.startQuoteB, raw.startBaseB),
+    fillCountA: countOf(raw.fillCountA, raw.fillsA),
+    fillCountB: countOf(raw.fillCountB, raw.fillsB),
   };
 }
 
@@ -137,6 +175,13 @@ export function markFromFill(fill: TapeFill, entry: number): number {
   return (Q * VALUE_DIV) / inv;
 }
 
+/**
+ * "LAST 16 OF 25 FILLS" for a side whose tape holds fewer fills than it made,
+ * null for a whole one. Every lane drawn from a truncated side says so.
+ */
+export const tapeWindowNote = (stored: number, count: number): string | null =>
+  count > stored ? `LAST ${stored} OF ${count} FILLS` : null;
+
 /** One moment on a player's reconstructed round. */
 export interface EquityPoint {
   ts: number;
@@ -171,17 +216,29 @@ export interface EquityPoint {
  * stamped with. Without it a player who never traded opened at unix epoch
  * zero, and any axis drawn across both players collapsed to its right edge.
  */
-export function replayEquity(fills: TapeFill[], entry: number, startTs?: number): EquityPoint[] {
+export function replayEquity(
+  fills: TapeFill[],
+  entry: number,
+  startTs?: number,
+  /** The tape's snapshot before these fills. Omitted, they replay from the opening. */
+  windowStart?: TapeStart | null
+): EquityPoint[] {
   const sorted = [...fills].sort((a, b) => a.ts - b.ts);
   const start = startTs ?? sorted[0]?.ts ?? 0;
-  let quote = entry;
-  let base = 0;
 
   const bpsOf = (equity: number) => (entry === 0 ? 0 : Math.trunc(((equity - entry) * 10_000) / entry));
 
+  // The round opened with the whole entry in quote and nothing held.
   const points: EquityPoint[] = [
-    { ts: start, quote, base, equity: entry, bps: 0, fill: null },
+    { ts: start, quote: entry, base: 0, equity: entry, bps: 0, fill: null },
   ];
+
+  // The stored fills pick up from where the position stood before the first
+  // of them: the opening on a whole tape, the snapshot on a truncated one.
+  // Replaying a truncated side from the opening left it holding base the
+  // buzzer had already closed, and drew a round the player never had.
+  let quote = windowStart ? windowStart.quote : entry;
+  let base = windowStart ? windowStart.base : 0;
 
   for (const f of sorted) {
     const value = (f.qty * f.px) / VALUE_DIV;

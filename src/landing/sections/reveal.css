@@ -1,0 +1,259 @@
+.mk-reveal__head {
+  display: grid;
+  gap: 22px;
+  margin-bottom: clamp(32px, 5vh, 56px);
+}
+
+.mk-reveal__pin {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: calc(100dvh - var(--nav-h));
+  overflow: hidden;
+}
+
+.mk-reveal__empty {
+  padding: 48px 0;
+}
+
+/* No tape yet: the pin wrapper still renders, so it must not hold a screen of height. */
+.mk-reveal__pin.is-empty {
+  display: block;
+  min-height: 0;
+}
+
+.mk-tape {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.6fr) minmax(0, 0.7fr);
+  gap: clamp(18px, 3vw, 44px);
+  align-items: center;
+  width: 100%;
+  max-width: 1180px;
+  padding: clamp(22px, 3vw, 44px);
+  background: var(--ink-1);
+  box-shadow: inset 0 0 0 2px var(--ink-5);
+}
+
+.mk-tape__side {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  text-align: center;
+}
+
+.mk-tape__side .mk-mask {
+  width: min(100%, 170px);
+}
+
+.mk-tape__role {
+  font-family: var(--display);
+  font-size: 9px;
+  color: var(--dim);
+}
+
+.mk-tape__role.is-winner {
+  color: var(--accent);
+}
+
+.mk-tape__token {
+  font-family: var(--display);
+  font-size: clamp(11px, 1.1vw, 14px);
+  color: var(--bright);
+  word-break: break-all;
+}
+
+.mk-tape__who {
+  font-family: var(--display);
+  font-size: 8px;
+  color: var(--faint);
+}
+
+.mk-tape__pnl {
+  min-height: 1.2em;
+  font-family: var(--display);
+  font-size: clamp(16px, 2vw, 28px);
+}
+
+.mk-tape__chart {
+  display: grid;
+  gap: 14px;
+}
+
+.mk-tape__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.mk-tape__zero {
+  stroke: var(--line);
+  stroke-width: 2;
+  stroke-dasharray: 6 6;
+}
+
+.mk-tape__path {
+  fill: none;
+  stroke-width: 4;
+  stroke-linejoin: miter;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+
+.mk-tape__path.is-winner {
+  stroke: var(--win);
+}
+
+.mk-tape__path.is-loser {
+  stroke: var(--loss);
+}
+
+.mk-tape__axis {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--display);
+  font-size: 8px;
+  color: var(--faint);
+}
+
+.mk-focus {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mk-focus button {
+  position: relative;
+  padding: 10px 12px 8px;
+  border: 0;
+  background: var(--ink-3);
+  box-shadow: inset 0 0 0 2px var(--ink-5);
+  font-family: var(--display);
+  font-size: 8px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.mk-focus button.is-on {
+  color: var(--accent-ink);
+}
+
+.mk-focus button:focus-visible {
+  outline: 3px solid var(--bright);
+  outline-offset: 3px;
+}
+
+.mk-focus__fill {
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+}
+
+.mk-focus__text {
+  position: relative;
+}
+
+.mk-tape__money {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  padding-top: 20px;
+  border-top: 2px solid var(--ink-5);
+}
+
+.mk-tape__figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 30px;
+  font-size: clamp(8px, 0.9vw, 11px);
+  color: var(--dim);
+}
+
+.mk-tape__figures strong {
+  font-weight: 400;
+  color: var(--bright);
+}
+
+/* ---------- the curtain ---------- */
+
+.mk-curtain {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  pointer-events: none;
+}
+
+.mk-curtain__half {
+  position: relative;
+  display: grid;
+  place-items: center;
+  background: var(--ink-2);
+}
+
+.mk-curtain__half::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: repeating-conic-gradient(rgba(143, 162, 224, 0.42) 0 25%, transparent 0 50%);
+  background-size: 6px 6px;
+}
+
+/* Torn edges that interlock, so the fog reads as one sheet until it splits. */
+.mk-curtain__half--left {
+  margin-right: -4%;
+  clip-path: polygon(0 0, 100% 0, 93% 8%, 100% 17%, 92% 26%, 100% 35%, 94% 44%, 100% 53%, 91% 62%, 100% 71%, 93% 80%, 100% 89%, 94% 95%, 100% 100%, 0 100%);
+}
+
+.mk-curtain__half--right {
+  margin-left: -4%;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 6% 95%, 0 89%, 7% 80%, 0 71%, 9% 62%, 0 53%, 6% 44%, 0 35%, 8% 26%, 0 17%, 7% 8%);
+}
+
+.mk-curtain__word {
+  position: relative;
+  z-index: 2;
+  padding: 12px 16px 8px;
+  background: var(--ink-2);
+  font-family: var(--display);
+  font-size: clamp(22px, 4vw, 64px);
+  color: var(--bright);
+}
+
+@media (max-width: 899px) {
+  .mk-tape {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .mk-tape__chart {
+    grid-column: 1 / -1;
+    order: 3;
+  }
+
+  .mk-tape__money {
+    order: 4;
+  }
+
+  .mk-curtain {
+    display: none;
+  }
+
+  .mk-reveal__pin {
+    min-height: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mk-curtain {
+    display: none;
+  }
+
+  .mk-reveal__pin {
+    min-height: 0;
+  }
+}

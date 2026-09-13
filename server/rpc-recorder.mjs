@@ -6,7 +6,7 @@
  * captures `fetch` when it loads, long before anything in the page can wrap
  * it, so a spy installed at runtime sees nothing. Sitting on the wire does.
  *
- * Every JSON-RPC call is appended to a log as {method, accounts}, and the
+ * Every JSON-RPC call is appended to a log as {m: method, keys: accounts}, and the
  * request is forwarded untouched.
  *
  *   node server/rpc-recorder.mjs http://127.0.0.1:6699 7010 .localnet/rpc.log

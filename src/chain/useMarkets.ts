@@ -7,7 +7,7 @@
  * empty state in an app whose whole claim is that the numbers are real.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { fetchMajorMarkets, fetchMemeMarkets, searchMarkets, type TradableMarket } from './markets';
+import { fetchMajorMarkets, fetchMemeMarkets, searchMarkets, type MarketSort, type TradableMarket } from './markets';
 import type { MarketKind } from './client';
 import { explainRead } from './errors';
 
@@ -35,8 +35,10 @@ export interface MarketsState {
 /**
  * @param query Free-text search. Empty falls back to the curated list for
  *   `kind`; anything else searches the whole priced universe.
+ * @param sort Order of the majors list. Memes are always by market cap:
+ *   pump.fun has no volume to sort on. Search keeps its own relevance order.
  */
-export function useMarkets(kind: MarketKind, limit = 12, query = ''): MarketsState {
+export function useMarkets(kind: MarketKind, limit = 12, query = '', sort: MarketSort = 'cap'): MarketsState {
   const [markets, setMarkets] = useState<TradableMarket[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +63,7 @@ export function useMarkets(kind: MarketKind, limit = 12, query = ''): MarketsSta
           ? await searchMarkets(trimmed, ac.signal)
           : kind === 'meme'
             ? await fetchMemeMarkets(limit, ac.signal)
-            : await fetchMajorMarkets(ac.signal);
+            : await fetchMajorMarkets(ac.signal, sort);
         if (!alive) return;
         setMarkets(next);
         setError(null);
@@ -92,7 +94,7 @@ export function useMarkets(kind: MarketKind, limit = 12, query = ''): MarketsSta
       if (debounce) clearTimeout(debounce);
       if (id) clearInterval(id);
     };
-  }, [kind, limit, nonce, trimmed]);
+  }, [kind, limit, nonce, trimmed, sort]);
 
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
   return { markets, loading, searching, error, refresh };

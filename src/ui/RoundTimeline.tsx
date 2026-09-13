@@ -11,6 +11,8 @@ export interface TimelinePlayer {
   /** Replayed from that player's real fills. See chain/tape.ts. */
   points: EquityPoint[];
   tone: string;
+  /** Said beside the label when the tape holds only the lane's last fills. */
+  note?: string | null;
 }
 
 export interface RoundTimelineProps {
@@ -198,7 +200,7 @@ export default function RoundTimeline({
           <Row key={`key-${p.label}`} gap={space.xs} align="center">
             <View style={{ width: 8, height: 3, backgroundColor: p.tone }} />
             <PixelText variant="bodySmall" size={8} color={color.textDim}>
-              {p.label.toUpperCase()}
+              {p.note ? `${p.label.toUpperCase()} · ${p.note}` : p.label.toUpperCase()}
             </PixelText>
           </Row>
         ))}

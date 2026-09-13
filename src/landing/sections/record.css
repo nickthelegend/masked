@@ -1,0 +1,186 @@
+.mk-record__head {
+  display: grid;
+  gap: 22px;
+  margin-bottom: clamp(36px, 6vh, 60px);
+}
+
+/* Five cells, no gaps: players 2x2, two figures, the rake under them, rooms full width. */
+.mk-bento {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-rows: minmax(190px, auto);
+  gap: 14px;
+}
+
+.mk-cell {
+  position: relative;
+  display: grid;
+  align-content: space-between;
+  gap: 18px;
+  padding: clamp(18px, 2vw, 28px);
+  overflow: hidden;
+  background: var(--ink-3);
+  box-shadow: inset 0 0 0 2px var(--ink-5);
+}
+
+.mk-cell--players {
+  grid-column: 1 / span 2;
+  grid-row: 1 / span 2;
+  background: var(--ink-1);
+}
+
+.mk-cell--settled {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.mk-cell--paid {
+  grid-column: 4;
+  grid-row: 1;
+}
+
+.mk-cell--rake {
+  grid-column: 3 / span 2;
+  grid-row: 2;
+  background-image: repeating-linear-gradient(135deg, rgba(255, 210, 30, 0.05) 0 10px, transparent 10px 20px);
+}
+
+.mk-cell--rooms {
+  grid-column: 1 / -1;
+  grid-row: 3;
+}
+
+.mk-cell__top {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.mk-cell__label {
+  font-family: var(--display);
+  font-size: 9px;
+  color: var(--dim);
+}
+
+.mk-cell__value {
+  display: block;
+  overflow: hidden;
+  font-family: var(--display);
+  font-size: clamp(20px, 2.8vw, 46px);
+  line-height: 1.2;
+  color: var(--bright);
+}
+
+.mk-cell--rake .mk-cell__value {
+  font-size: clamp(14px, 1.8vw, 28px);
+}
+
+.mk-cell__value.is-accent {
+  color: var(--accent);
+}
+
+.mk-cell__roll {
+  display: inline-block;
+}
+
+.mk-cell__note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--dim);
+}
+
+.mk-wall {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+  gap: 8px;
+  align-content: start;
+}
+
+.mk-wall__tile {
+  display: block;
+  width: 100%;
+  padding: 5px;
+  border: 0;
+  background: var(--ink-3);
+  cursor: default;
+}
+
+.mk-wall__tile:focus-visible {
+  outline: 3px solid var(--bright);
+  outline-offset: 2px;
+}
+
+.mk-rooms {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mk-room {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px 10px;
+  background: var(--ink-1);
+  color: var(--text);
+  font-family: var(--display);
+  font-size: 9px;
+  text-decoration: none;
+}
+
+.mk-room:focus-visible {
+  outline: 3px solid var(--bright);
+  outline-offset: 2px;
+}
+
+.mk-room__token {
+  color: var(--bright);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mk-room__len {
+  color: var(--faint);
+}
+
+@media (max-width: 899px) {
+  .mk-bento {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mk-cell--players,
+  .mk-cell--rake,
+  .mk-cell--rooms {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+
+  .mk-cell--settled,
+  .mk-cell--paid {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .mk-rooms {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 559px) {
+  .mk-bento {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mk-cell--settled,
+  .mk-cell--paid {
+    grid-column: 1 / -1;
+  }
+}

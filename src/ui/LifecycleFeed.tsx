@@ -51,6 +51,12 @@ export default function LifecycleFeed({
   emptyLabel = 'NO DUEL TO TRACE YET',
   style,
 }: LifecycleFeedProps) {
+  // A refused transaction is still a signature against the account, so it comes
+  // back in the history — and it used to be listed as a step of the duel's life,
+  // numbered and named for what it had tried to do, with only its colour to say
+  // otherwise. Counting the steps counted the failures as progress. They are
+  // labelled now, and counted on their own.
+  const failed = steps.filter((s) => s.err).length;
   return (
     <PixelPanel flat bg={color.chartBg} style={style}>
       <Stack gap={space.sm}>
@@ -58,7 +64,11 @@ export default function LifecycleFeed({
           <PixelText variant="label" size={8}>
             {title}
           </PixelText>
-          <Badge label={`${steps.length}`} tone="quiet" variant="tabLabel" />
+          <Badge
+            label={failed > 0 ? `${steps.length} · ${failed} FAILED` : `${steps.length}`}
+            tone={failed > 0 ? 'loss' : 'quiet'}
+            variant="tabLabel"
+          />
         </Row>
 
         {subtitle ? (
@@ -74,7 +84,7 @@ export default function LifecycleFeed({
               <Pressable
                 onPress={() => void Linking.openURL(s.url)}
                 accessibilityRole="link"
-                accessibilityLabel={`Open transaction ${s.signature} in an explorer`}
+                accessibilityLabel={`Open ${s.err ? 'failed ' : ''}transaction ${s.signature} in an explorer`}
               >
                 <Row gap={space.sm} align="center" style={{ paddingVertical: space.xs }}>
                   <Box
@@ -93,14 +103,14 @@ export default function LifecycleFeed({
                   <Stack flex={1} gap={1}>
                     <Row justify="space-between" gap={space.sm}>
                       <PixelText variant="bodySmall" size={9} color={s.err ? color.red : color.cyan}>
-                        {s.label}
+                        {s.err ? `${s.label} · FAILED` : s.label}
                       </PixelText>
                       <PixelText variant="bodySmall" size={8} color={color.textFaint}>
                         slot {s.slot}
                       </PixelText>
                     </Row>
-                    <PixelText variant="bodySmall" size={8} color={color.textDim} numberOfLines={2}>
-                      {s.meaning}
+                    <PixelText variant="bodySmall" size={8} color={s.err ? color.red : color.textDim} numberOfLines={2}>
+                      {s.err ? `REFUSED ON CHAIN — changed nothing (${s.meaning})` : s.meaning}
                     </PixelText>
                     <PixelText variant="bodySmall" size={8} color={color.textFaint}>
                       {short(s.signature)}

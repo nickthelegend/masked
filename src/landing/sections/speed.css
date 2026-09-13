@@ -1,0 +1,143 @@
+.mk-speed {
+  overflow: hidden;
+}
+
+.mk-speed__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: clamp(28px, 5vw, 80px);
+  align-items: end;
+}
+
+.mk-speed__copy {
+  display: grid;
+  gap: 22px;
+}
+
+.mk-speed__x {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15em;
+  overflow: hidden;
+  font-family: var(--display);
+  font-size: clamp(48px, 10vw, 168px);
+  line-height: 1.05;
+  color: var(--accent);
+  transform-origin: left bottom;
+}
+
+.mk-speed__xval {
+  display: inline-block;
+}
+
+.mk-speed__xunit {
+  font-size: 0.22em;
+  color: var(--bright);
+}
+
+.mk-lanes {
+  display: grid;
+  gap: 24px;
+  margin-top: clamp(40px, 7vh, 84px);
+}
+
+.mk-lane {
+  display: grid;
+  gap: 12px;
+}
+
+.mk-lane__head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  font-family: var(--display);
+}
+
+.mk-lane__name {
+  font-size: clamp(9px, 1vw, 12px);
+  color: var(--text);
+}
+
+.mk-lane__rate {
+  font-size: clamp(12px, 1.6vw, 22px);
+  color: var(--bright);
+}
+
+.mk-lane__track {
+  position: relative;
+  height: 36px;
+  overflow: hidden;
+  background: var(--ink-1);
+  box-shadow: inset 0 0 0 2px var(--ink-5);
+}
+
+/* One 14px square and a 10px gap: the 24px CELL in SpeedLanes.web.tsx. */
+.mk-lane__blocks {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 8px;
+  width: calc(100% + 480px);
+  background-image: repeating-linear-gradient(90deg, var(--bright) 0 14px, transparent 14px 24px);
+  will-change: transform;
+}
+
+.mk-lane--rollup .mk-lane__blocks {
+  background-image: repeating-linear-gradient(90deg, var(--accent) 0 14px, transparent 14px 24px);
+}
+
+.mk-lane.is-idle .mk-lane__blocks {
+  opacity: 0.18;
+}
+
+.mk-speed__foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px 28px;
+  margin-top: 26px;
+}
+
+.mk-disclose-wrap {
+  margin-top: 18px;
+}
+
+.mk-disclose {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border: 0;
+  background: none;
+  font-family: var(--display);
+  font-size: 9px;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.mk-disclose:focus-visible {
+  outline: 3px solid var(--bright);
+  outline-offset: 4px;
+}
+
+.mk-disclose span {
+  display: inline-block;
+  font-size: 14px;
+}
+
+.mk-disclose__body {
+  max-width: 66ch;
+  margin: 12px 0 0;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+@media (max-width: 899px) {
+  .mk-speed__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

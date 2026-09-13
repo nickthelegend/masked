@@ -1,0 +1,226 @@
+.mk-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) 3px minmax(0, 1fr);
+  min-height: calc(100dvh - var(--nav-h));
+}
+
+.mk-hero__you {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 30px;
+  padding: clamp(40px, 7vh, 96px) var(--gutter);
+  container-type: inline-size;
+}
+
+/* Sized from the column, not the viewport: the longer line, TAKE THE POT.,
+   is thirteen Press Start 2P cells, so 6.9cqi keeps the headline to two lines
+   at every width the split layout exists. */
+.mk-hero__title {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: clamp(20px, 6.9cqi, 60px);
+  line-height: 1.16;
+  color: var(--bright);
+}
+
+.mk-line--accent > span {
+  color: var(--accent);
+}
+
+.mk-hero__sub {
+  margin: 0;
+  max-width: 38ch;
+  font-size: clamp(15px, 1.3vw, 19px);
+  line-height: 1.65;
+  color: var(--text);
+}
+
+.mk-hero__ctas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.mk-seam {
+  background: var(--accent);
+  transform-origin: top center;
+}
+
+/* Their side sits on a faint dither, before any fog is laid over it. */
+.mk-hero__them {
+  position: relative;
+  display: grid;
+  place-items: center;
+  padding: clamp(36px, 6vh, 84px) var(--gutter);
+  background-color: var(--ink-1);
+  background-image: repeating-conic-gradient(rgba(143, 162, 224, 0.07) 0 25%, transparent 0 50%);
+  background-size: 4px 4px;
+  overflow: hidden;
+}
+
+@media (max-width: 899px) {
+  .mk-hero {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 3px auto;
+    min-height: 0;
+  }
+
+  .mk-seam {
+    transform-origin: left center;
+  }
+}
+
+/* ---------- the face-off ---------- */
+
+.mk-faceoff {
+  position: relative;
+  width: min(100%, 580px);
+  display: grid;
+  gap: 22px;
+}
+
+.mk-faceoff__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  font-family: var(--display);
+  font-size: 9px;
+  color: var(--dim);
+}
+
+.mk-faceoff__clock {
+  font-size: 16px;
+  color: var(--accent);
+}
+
+.mk-faceoff__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+}
+
+.mk-player {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  text-align: center;
+}
+
+.mk-player .mk-mask {
+  width: min(100%, 200px);
+}
+
+.mk-faceoff__ghost {
+  width: min(100%, 200px);
+  aspect-ratio: 1 / 1;
+}
+
+.mk-player__token {
+  font-family: var(--display);
+  font-size: clamp(11px, 1.1vw, 15px);
+  color: var(--bright);
+  word-break: break-all;
+}
+
+.mk-player__who {
+  font-family: var(--display);
+  font-size: 8px;
+  color: var(--faint);
+}
+
+.mk-player__pnl {
+  font-family: var(--display);
+  font-size: clamp(12px, 1.2vw, 16px);
+}
+
+.mk-player__pnl--sealed {
+  color: var(--dim);
+  background: var(--ink-4);
+  padding: 6px 8px 4px;
+}
+
+.mk-vs {
+  font-family: var(--display);
+  font-size: clamp(14px, 1.6vw, 22px);
+  color: var(--accent);
+}
+
+.mk-peek {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 116px;
+  padding: 18px;
+  border: 0;
+  background: var(--ink-3);
+  box-shadow: inset 0 0 0 2px var(--ink-5);
+  color: var(--dim);
+  font-family: var(--display);
+  font-size: 9px;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.mk-peek:focus-visible {
+  outline: 3px solid var(--bright);
+  outline-offset: 4px;
+}
+
+.mk-peek__label {
+  position: relative;
+  z-index: 2;
+  padding: 8px 10px 6px;
+  background: var(--ink-1);
+}
+
+.mk-stamp {
+  position: absolute;
+  z-index: 3;
+  padding: 12px 16px 10px;
+  border: 4px solid currentColor;
+  background: rgba(6, 10, 28, 0.92);
+  font-family: var(--display);
+  font-size: clamp(15px, 1.9vw, 24px);
+  color: var(--loss);
+}
+
+.mk-stamp.is-served {
+  color: var(--win);
+}
+
+.mk-faceoff__caption {
+  margin: 0;
+  min-height: 3.3em;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--text);
+}
+
+/* Attract mode's label. Hidden rather than absent, so it never shifts the
+   layout, and a slow two-step blink, the way a cabinet says PRESS START. */
+.mk-attract {
+  margin: 12px 0 0;
+  font-family: var(--display);
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  visibility: hidden;
+}
+
+.mk-attract[data-on='true'] {
+  visibility: visible;
+  animation: mk-attract-blink 1.2s steps(2, jump-none) infinite;
+}
+
+@keyframes mk-attract-blink {
+  from { opacity: 1; }
+  to { opacity: 0.25; }
+}

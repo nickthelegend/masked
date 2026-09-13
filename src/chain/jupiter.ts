@@ -40,6 +40,8 @@ export interface JupToken {
   /** Pool depth in USD. A price with nothing behind it is not a market. */
   liquidity?: number;
   mcap?: number;
+  /** Trailing 24h activity. Only the two volume legs are read. */
+  stats24h?: { buyVolume?: number; sellVolume?: number } | null;
   isVerified?: boolean;
 }
 

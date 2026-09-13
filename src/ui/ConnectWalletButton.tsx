@@ -10,6 +10,13 @@ export interface ConnectWalletButtonProps {
   flex?: number;
   /** Tone used when disconnected. Connected always falls back to `quiet`. */
   tone?: ButtonTone;
+  /**
+   * While set, a connected wallet is not disconnected on the first press: the
+   * button turns red and asks with this label, and a second press within a few
+   * seconds disconnects. Passed while a round is live, where a disconnect
+   * leaves the round with nobody signing for it.
+   */
+  confirmDisconnect?: string | null;
 }
 
 /** `7xKX…9fRt` — enough to recognise, short enough for the pixel grid. */
@@ -24,12 +31,24 @@ export default function ConnectWalletButton({
   padY = 10,
   flex,
   tone = 'gold',
+  confirmDisconnect = null,
 }: ConnectWalletButtonProps) {
   const { publicKey, connected, connecting, connect, disconnect, select, wallet, wallets } =
     useWallet();
   const [busy, setBusy] = useState(false);
   const [picking, setPicking] = useState(false);
   const [wantConnect, setWantConnect] = useState(false);
+  const [armed, setArmed] = useState(false);
+
+  // The question expires, and it is withdrawn if the round ends first.
+  useEffect(() => {
+    if (!armed) return undefined;
+    const id = setTimeout(() => setArmed(false), 4000);
+    return () => clearTimeout(id);
+  }, [armed]);
+  useEffect(() => {
+    if (!confirmDisconnect) setArmed(false);
+  }, [confirmDisconnect]);
 
   const choose = useCallback(
     (name: string) => {
@@ -65,6 +84,11 @@ export default function ConnectWalletButton({
     setBusy(true);
     try {
       if (connected) {
+        if (confirmDisconnect && !armed) {
+          setArmed(true);
+          return;
+        }
+        setArmed(false);
         await disconnect();
       } else if (wallets.length === 1) {
         choose(wallets[0].adapter.name);
@@ -78,12 +102,15 @@ export default function ConnectWalletButton({
     } finally {
       setBusy(false);
     }
-  }, [choose, connected, disconnect, wallets]);
+  }, [armed, choose, confirmDisconnect, connected, disconnect, wallets]);
 
   const noWallet = wallets.length === 0;
+  const asking = armed && connected && !!confirmDisconnect;
   const label = noWallet
     ? 'NO WALLET'
-    : connected && publicKey
+    : asking
+      ? (confirmDisconnect as string)
+      : connected && publicKey
       ? truncate(publicKey.toBase58())
       : 'CONNECT';
 
@@ -94,7 +121,7 @@ export default function ConnectWalletButton({
         size={size}
         padY={padY}
         flex={flex}
-        tone={connected ? 'quiet' : tone}
+        tone={asking ? 'danger' : connected ? 'quiet' : tone}
         disabled={noWallet}
         loading={busy || connecting}
         onPress={onPress}

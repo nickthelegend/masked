@@ -9,12 +9,15 @@ import {
   playSound,
   useSoundEnabled,
 } from '../ui';
+import { useBalanceTween } from '../ui/useBalanceTween';
 
 export interface AppHeaderProps {
   balance: number;
   /** Duels this wallet has won, read from its on-chain player account. */
   trophies?: number;
   onHome: () => void;
+  /** A round is live, so disconnecting the wallet asks first. */
+  roundLive?: boolean;
 }
 
 const BUTTON_WIDTH = 38;
@@ -32,8 +35,10 @@ const BUTTON_HEIGHT = 34;
  * The wordmark is gone from here. The shell it sits in already says MASKED
  * above the screen, and at 375px the six controls did not fit beside it.
  */
-export default function AppHeader({ balance, trophies = 0, onHome }: AppHeaderProps) {
+export default function AppHeader({ balance, trophies = 0, onHome, roundLive = false }: AppHeaderProps) {
   const [sound, setSound] = useSoundEnabled();
+  // Each new chain read of the wallet is counted up or down to, not jumped to.
+  const { shown, tone } = useBalanceTween(balance);
 
   const toggleSound = () => {
     const next = !sound;
@@ -44,8 +49,8 @@ export default function AppHeader({ balance, trophies = 0, onHome }: AppHeaderPr
   };
 
   return (
-    <HudBar balance={balance.toFixed(2)} trophies={trophies} onBack={onHome}>
-      <ConnectWalletButton size={8} padY={8} />
+    <HudBar balance={shown.toFixed(2)} balanceTone={tone} trophies={trophies} onBack={onHome}>
+      <ConnectWalletButton size={8} padY={8} confirmDisconnect={roundLive ? 'LEAVE ROUND?' : null} />
 
       <Pressable
         onPress={toggleSound}

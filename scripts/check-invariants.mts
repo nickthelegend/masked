@@ -107,6 +107,9 @@ for (const t of tapes) {
   // 6. Fill lists stay inside the bound the account was sized for.
   ok(a.fillsA.length <= MAX_FILLS, `${id}: fillsA ${a.fillsA.length} > MAX_FILLS`);
   ok(a.fillsB.length <= MAX_FILLS, `${id}: fillsB ${a.fillsB.length} > MAX_FILLS`);
+  //    …and the count beside them covers every fill, stored or folded away.
+  ok(a.fillCountA >= a.fillsA.length, `${id}: fillCountA ${a.fillCountA} < ${a.fillsA.length} stored fills`);
+  ok(a.fillCountB >= a.fillsB.length, `${id}: fillCountB ${a.fillCountB} < ${a.fillsB.length} stored fills`);
 
   // 7. A liquidated side cannot also be the winner on a strictly better PnL —
   //    being force-closed at zero equity is the worst outcome available.

@@ -10,9 +10,8 @@
 import { AnchorProvider, BN, Program, type Idl, type Wallet } from '@coral-xyz/anchor';
 import { Connection, Keypair, PublicKey, SystemProgram, Transaction, type Commitment } from '@solana/web3.js';
 import {
-  EPHEMERAL_VAULT_ID,
-  MAGIC_PROGRAM_ID,
   PERMISSION_PROGRAM_ID,
+  createCommitAndUndelegatePermissionInstruction,
   permissionPdaFromAccount,
   delegationRecordPdaFromDelegatedAccount,
   delegationMetadataPdaFromDelegatedAccount,
@@ -517,33 +516,58 @@ export class FogduelClient {
     return (pos.book.virtualQuote * VALUE_DIV) / pos.book.virtualBase;
   }
 
-  /**
-   * Mark a delegated position private on a TEE rollup.
-   *
-   * Runs on the ER, not L1, and only works on a TEE validator — on a plain
-   * rollup the permission account is not delegated and the write is refused.
-   * Called after sealAndDelegateMatch when `cluster.tee` is true.
-   */
-  async initPositionPrivacy(match: PublicKey, owner: PublicKey, payer: PublicKey): Promise<void> {
-    await (await this.erProgramAuthed()).methods
-      .initPositionPrivacy(owner)
-      .accounts({
-        payer,
-        matchAccount: match,
-        position: positionPda(match, owner),
-        permission: permissionPdaFromAccount(positionPda(match, owner)),
-        ephemeralVault: EPHEMERAL_VAULT_ID,
-        magicProgram: MAGIC_PROGRAM_ID,
-        permissionProgram: PERMISSION_PROGRAM_ID,
-      })
-      .rpc();
-  }
-
   /** Is this position's ACL actually on chain? Read, never assumed. */
   async isPositionSealed(match: PublicKey, owner: PublicKey): Promise<boolean> {
     const permission = permissionPdaFromAccount(positionPda(match, owner));
     const info = await this.l1.getAccountInfo(permission).catch(() => null);
     return !!info;
+  }
+
+  /**
+   * How far a seal has got, read off Solana: each position's ACL created and
+   * delegated, each position delegated, and the round status delegated. The
+   * status is the step `sealAndDelegateMatch` takes last, so `sealed` is only
+   * true once the whole seal has landed. The client waiting on the other
+   * player's seal watches `steps` rise to tell a slow seal from an abandoned one.
+   */
+  async sealProgress(
+    match: PublicKey,
+    creator: PublicKey,
+    joiner: PublicKey
+  ): Promise<{ steps: number; sealed: boolean }> {
+    const posA = positionPda(match, creator);
+    const posB = positionPda(match, joiner);
+    const [permA, permB, a, b, status] = await this.l1.getMultipleAccountsInfo([
+      permissionPdaFromAccount(posA),
+      permissionPdaFromAccount(posB),
+      posA,
+      posB,
+      statusPda(match),
+    ]);
+    const delegated = (i: { owner: PublicKey } | null) => !!i && i.owner.equals(DELEGATION_PROGRAM_ID);
+    const steps =
+      [permA, permB].filter(Boolean).length + [permA, permB, a, b, status].filter(delegated).length;
+    return { steps, sealed: delegated(a) && delegated(b) && delegated(status) };
+  }
+
+  /**
+   * How far a settlement has got: both positions and the round status handed
+   * back by the delegation program, then the round moving to Settling and to
+   * Settled. The client waiting on the other player's settlement watches
+   * `steps` rise to tell a slow settlement from an abandoned one.
+   */
+  async settleProgress(
+    match: PublicKey,
+    creator: PublicKey,
+    joiner: PublicKey
+  ): Promise<{ steps: number; status: string | null }> {
+    const [infos, m] = await Promise.all([
+      this.l1.getMultipleAccountsInfo([positionPda(match, creator), positionPda(match, joiner), statusPda(match)]),
+      this.fetchMatch(match).catch(() => null),
+    ]);
+    const home = infos.filter((i) => !i || !i.owner.equals(DELEGATION_PROGRAM_ID)).length;
+    const status = m?.status ?? null;
+    return { steps: home + (status === 'settling' ? 1 : status === 'settled' ? 2 : 0), status };
   }
 
   /** The permission PDA for a position, for inspectors and tests. */
@@ -637,7 +661,7 @@ export class FogduelClient {
   /**
    * Bring both positions home from the rollup.
    *
-   * One transaction each: a Position is 543 bytes and two will not fit in one
+   * One transaction each: a Position is 559 bytes and two will not fit in one
    * transaction, which pushes the rollup's committor onto a chunked buffer
    * path. Sequential rather than parallel, because both commits are scheduled
    * against the same payer and the rollup processes them in order anyway.
@@ -677,6 +701,65 @@ export class FogduelClient {
     }
 
     return sigs;
+  }
+
+  /**
+   * Hand the round's upkeep to the rollup itself.
+   *
+   * Schedules the program's two cranks on the Ephemeral Rollup's own task
+   * scheduler: a keeper that liquidates a blown-up position every two seconds,
+   * and a buzzer that commits both positions and the round status home just
+   * after the clock runs out. Both used to be the players' browsers' job, which
+   * is why a round nobody was watching never came home.
+   *
+   * Safe for both players to call: a task this wallet already owns is replaced,
+   * and one the other player's client scheduled first is left alone.
+   */
+  async scheduleRoundCranks(match: PublicKey, payer: PublicKey): Promise<string> {
+    return (await this.erProgramAuthed()).methods
+      .scheduleRoundCranks()
+      .accounts({ payer, matchAccount: match })
+      .rpc();
+  }
+
+  /**
+   * Release this wallet's own access-control list from the rollup.
+   *
+   * Sealing delegates each position's ACL to the rollup so the rollup can
+   * enforce it, and until this nothing brought it back: every duel left both
+   * ACLs owned by the delegation program on Solana.
+   *
+   * Only the wallet the ACL names can do it. The permission program pays for
+   * the commit from the authority that signs, and a delegated position PDA
+   * cannot pay without a fee vault the permission program does not pass — so
+   * neither this program nor the rollup's crank can release it for you. The
+   * position goes read-only, which is what lets this run before or after the
+   * position's own commit.
+   *
+   * After the buzzer only: releasing it earlier would unseal a round still in
+   * progress. Returns null when there is nothing left to release.
+   */
+  async releaseOwnAcl(match: PublicKey, owner: PublicKey): Promise<string | null> {
+    const position = positionPda(match, owner);
+    const permission = permissionPdaFromAccount(position);
+    const onL1 = await this.l1.getAccountInfo(permission).catch(() => null);
+    if (!onL1 || !onL1.owner.equals(DELEGATION_PROGRAM_ID)) return null;
+    // The rollup's copy changes owner the moment a release is scheduled, so a
+    // second attempt would be refused there. An unreadable copy is not proof
+    // either way, and is sent.
+    const onEr = await this.er.getAccountInfo(permission).catch(() => null);
+    if (onEr && onEr.owner.equals(DELEGATION_PROGRAM_ID)) return null;
+
+    const ix = createCommitAndUndelegatePermissionInstruction({
+      authority: [owner, true],
+      permissionedAccount: [position, false],
+    });
+    // The SDK marks the position writable. The permission program does not
+    // write it, and a position already on its way home is not writable on the
+    // rollup, so read-only is what lets the order not matter.
+    ix.keys[1].isWritable = false;
+    const program = await this.erProgramAuthed();
+    return program.provider.sendAndConfirm!(new Transaction().add(ix));
   }
 
   /* ------------------------------ settlement ----------------------------- */

@@ -346,3 +346,109 @@ only job is to be the page you land on when something has already gone wrong.
 chosen in round numbers and wrong for anything derived: a 2% rake on a 0.2 pot
 is 0.004, and under a heading reading SETTLED ON SOLANA, "0.00◎" states that no
 rake was taken.
+
+## 21. The arcade surfaces, masks, logos and lifetime records
+
+Everything added after §20, before the 2026-09-12 audit. Each line is the
+component's own source comment, condensed.
+
+- `HudBar` — the arcade HUD: back, what you hold, what you have won, menu. Two
+  counters and never more, so the countdown stays the loudest thing on screen.
+  Its buttons are square bevelled plates with one drawn icon each.
+- `EndingIn` — the round clock, with a screen-reader label separate from what is
+  drawn: minutes are announced as they turn and the final ten seconds one by
+  one, instead of every tick drowning out the round.
+- `ArenaChart` — the round as the arena draws it: a percentage axis, a dashed
+  curve and a puck on the leading edge carrying the live number. One series by
+  design; a second line, even fogged or delayed, would leak the shape the ACL
+  refuses.
+- `RankRow` — one standing on the live board or the result board. The fog rule
+  is two props: `pnl: null` and `side: null` draw an opponent mid-round with its
+  rank, avatar and token intact, because each leg's token is public on L1.
+- `ResultBoard` — the board a finished duel leaves behind, nothing fogged,
+  because settlement has already published both legs.
+- `MatchFound` — the lock-in card, shown once as a duel goes live. It says the
+  round is already running because it is: `join_match` starts the clock in the
+  same transaction that pairs the two wallets.
+- `VersusCard` — one fighter on that card, a framed portrait and a name, with no
+  numbers: neither side has traded yet.
+- `PotentialEarnings` — what this round pays the reader if they take it. A
+  conditional on the pot alone, the same all round, derived from nothing about
+  the opponent.
+- `TierBadge` — five tiers by wins: BRONZE 0, SILVER 3, GOLD 10, DIAMOND 25,
+  PLATINUM 50. The thresholds are the tiers' definition.
+- `maskFace.ts` — a mask generated from a wallet address. Everyone had been a
+  "?" plate, so a player could not pick out their own row and a duel between two
+  "?" boxes had no two sides to it.
+- `src/chain/logos.ts` and the market proxy's `/img` relay — mint to logo,
+  resolved once and remembered. Lists deposit the `imageUri` they already
+  fetched, so a board, lock-in card or tape that knows only a mint draws the
+  coin's real art instead of a letter tile; `/img` relays a logo from a host
+  that serves servers but refuses browsers.
+- `DurationPicker` — 1, 5 or 15 minutes, each inside the program's own
+  `MIN_DURATION`..`MAX_DURATION` (10–3600 s). `create_match` stores it and
+  `settle_match` refuses before `start_ts + duration`, so it is a real round
+  length, not a display setting.
+- `MarkTicker` — the mark, flashing the direction it last moved: green when the
+  last post was higher, red when lower, nothing when the market did not move.
+- `WinBurst` — square pixels thrown when the pot is taken: once, under a second,
+  `pointerEvents: none` so it never covers REMATCH, and skipped under reduced
+  motion.
+- `/stats` (`StatsScreen`) — everything the deployment has done, summed from
+  `Tape` and `Match` accounts and the treasury's balance, with no wallet. The
+  rake is shown from both sources, agreeing to the lamport once the treasury's
+  rent floor is subtracted.
+- Quests as lifetime achievements (`QuestsScreen`) — every number behind them
+  is a lifetime counter on the player's `PlayerStats` account, so they are no
+  longer headed "daily".
+
+## 22. Sort, colour-blind palette, attract mode, crosshair, result image
+
+PLAN 7.17, 2026-09-13. Each line is the change's own source comment, condensed.
+
+- `MarketPicker` sort — the majors list switches between BY MCAP and BY 24H VOL.
+  Volume is Jupiter's `stats24h` buys plus sells, sorted before the top-40 cut,
+  so "by volume" is a different list rather than the same forty reshuffled.
+  Memes get a line instead of a switch: pump.fun publishes no volume and answers
+  a volume sort with HTTP 400, so there is nothing true to sort them by.
+- Colour-blind palette (`colorSafe` in `tokens.ts`, `palette.ts`) — blue for up
+  and vermillion for down, in place of green and red, which sit 3.4 ΔE apart
+  under simulated deuteranopia. It is applied inside `tokens.ts`, before any
+  component copies a colour into a lookup table, so switching it reloads the
+  page. The switch sits at the foot of the lobby, the one screen with nothing
+  live. `npm run check:palette` keeps the pair apart for every kind of
+  colour-blindness and readable on the chart ground.
+- `ArenaChart` crosshair — pointing at the plot, or holding a finger on it, marks
+  the nearest sample with its second, your PnL and the mark at that moment. The
+  live screen records each sample's second and mark as it lands; a sample from
+  before the screen mounted says "~Ns" and "MARK —" rather than borrowing a mark.
+  The down line is now the loss colour instead of the opponent's magenta.
+- Hero attract mode (`Hero.web.tsx`) — eight seconds with nobody at the page and
+  the hero plays itself on the real round: it works the peek so the gate's
+  actual verdict is stamped, or rebuilds the settled pair's masks, under a
+  blinking DEMO LOOP label with reserved space. Any input ends it. It never runs
+  for reduced motion, in a hidden tab, or with the hero scrolled away.
+- SAVE RESULT IMAGE (`revealCard.ts`) — the reveal as a 1200×675 PNG painted on a
+  canvas from the settled tape: the headline, the chain-ordered board, both
+  lanes with their fills, each market's move, the record and the tape link. It
+  opens the share sheet where the browser can share files and saves the PNG
+  otherwise. A still, not a GIF: the reveal does not move, and an animated
+  capture would need an encoder the app does not ship.
+- `VenueQuote` (PLAN 7.18 #78) — under the fill receipt, Jupiter's real quote for
+  the same size right now, and how far the private book filled from it. It says
+  in words that it is a comparison and not a route, and gives the plain reason
+  when Jupiter has none: a coin still on its bonding curve, or SOL itself.
+- Installable shell (PLAN 7.18 #88) — a manifest, icons drawn from the product's
+  own mask, and a service worker that keeps only the app's own files. Offline
+  the app opens and says the cluster is out of reach; no price, balance or round
+  is ever served from a cache. INSTALL appears in the landing nav once the
+  browser offers it.
+- Tape lanes past 16 fills (PLAN 8.1) — a tape keeps a side's last 16 fills, and
+  a lane now replays from the tape's own snapshot of where the position stood
+  before them, labelled "LAST 16 OF N FILLS". Before this, a busy side replayed
+  from the opening and drew a round nobody had.
+- `PendingFill` (PLAN 7.15) — a fill shows the moment it is sent, at the price the
+  book will charge for that size at the mark just read, marked as a prediction.
+  The chain's receipt replaces it; a refusal marks it rolled back and struck
+  through, and it goes. Measured against the receipts it lands within a
+  billionth of a SOL, and a press that sends no transaction draws nothing.

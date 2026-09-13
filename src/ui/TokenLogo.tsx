@@ -89,32 +89,39 @@ export default function TokenLogo({ mint, symbol, uri, size = 32, style }: Token
    * the ones on hosts that refuse cross-origin embedding failed with
    * `ERR_BLOCKED_BY_RESPONSE.NotSameOrigin`. That is every Jupiter major,
    * whose art lives on ipfs.io: they fell back to letter tiles and printed an
-   * error per logo per page load. Relayed, the failure (when there is one)
-   * happens server-side and the page gets a clean 502 to fall back from.
+   * error per logo per page load. Relayed, and asked about first, a logo that
+   * cannot be shown never becomes a request that fails.
    */
-  const candidate = logoUrl(uri ?? found);
+  const source = uri ?? found;
+  const candidate = logoUrl(source);
 
   /**
-   * Only rendered once the URL is known to return an image — see
+   * Only rendered once the logo is known to yield an image — see
    * `checkUsable`. Until then the tile shows, which is what would have shown
    * anyway had the load failed.
    */
   const [usable, setUsable] = useState<boolean>(() =>
-    candidate ? cachedUsable(candidate) === true : false
+    source ? cachedUsable(source) === true : false
   );
   useEffect(() => {
-    if (!candidate) return undefined;
-    const known = cachedUsable(candidate);
+    if (!source) {
+      setUsable(false);
+      return undefined;
+    }
+    const known = cachedUsable(source);
     if (known !== undefined) {
       setUsable(known);
       return undefined;
     }
+    // A logo nothing is known about yet is not shown until it has been checked,
+    // even if the previous one this component drew was fine.
+    setUsable(false);
     let alive = true;
-    void checkUsable(candidate).then((ok) => alive && setUsable(ok));
+    void checkUsable(source).then((ok) => alive && setUsable(ok));
     return () => {
       alive = false;
     };
-  }, [candidate]);
+  }, [source]);
 
   const src = usable ? candidate : null;
 

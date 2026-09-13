@@ -23,6 +23,9 @@ custom-panic = []
 [dependencies]
 anchor-lang = { version = "0.32.1", features = ["init-if-needed"] }
 ephemeral-rollups-sdk = { version = "0.17.0", features = ["anchor-compat", "access-control", "vrf"] }
+# Named directly for `MagicBlockInstruction::ScheduleTask`, which the SDK builds
+# but does not re-export. The SDK already enables `backward-compat` on it.
+magicblock-magic-program-api = { version = "0.10.1", features = ["backward-compat"] }
 # Gum Session Protocol. The session program (KeyspM2s…) is preloaded by
 # mb-test-validator, so a session token can be created and used locally.
 session-keys = { version = "3.1.1", features = ["no-entrypoint"] }

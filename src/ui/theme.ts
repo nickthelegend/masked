@@ -1,5 +1,5 @@
 import { StyleSheet, type TextStyle, type ViewStyle } from 'react-native';
-import { color, type, space, radius, border, bevel, font } from './tokens';
+import { color, type, border, bevel } from './tokens';
 import type { TypeRole } from './tokens';
 
 /**
@@ -86,7 +86,29 @@ export const HIT_SLOP_MIN = 44;
 /** Bottom-tab plinths are 56–62px tall including the bevel. */
 export const TAB_BAR_MIN_HEIGHT = 56;
 
-export type { TypeRole };
+/**
+ * The keyboard focus ring: a solid white outline just outside the control.
+ *
+ * White, not yellow, because yellow already means "selected" on market rows
+ * and tabs, and a focused control has to be told apart from a chosen one. An
+ * outline rather than a border, so the ring never changes the control's size.
+ * Web reads the outline keys; native ignores them.
+ */
+export const focusRing = {
+  outlineWidth: 3,
+  outlineStyle: 'solid',
+  outlineColor: color.white,
+  outlineOffset: 2,
+} as unknown as ViewStyle;
+
+/**
+ * For a pressable that draws `focusRing` on an inner element instead of on
+ * itself: without this the browser's own outline shows too, two rings on one
+ * control.
+ */
+export const noOutline = { outlineStyle: 'none' } as unknown as ViewStyle;
+
 export type TextStyleRole = Record<TypeRole, TextStyle>;
-export { color, type, space, radius, border, bevel, font };
+// Every token, `TypeRole` included, is re-exported from here. Naming them again
+// in an `export { … }` beside this line exported each one twice.
 export * from './tokens';

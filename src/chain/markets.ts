@@ -46,11 +46,32 @@ export interface TradableMarket {
   source: 'pump.fun' | 'jupiter';
   /** Rough size signal, for ordering. USD market cap for memes. */
   usdMarketCap: number;
+  /**
+   * Trailing 24h volume in USD, buys plus sells, as Jupiter reports it.
+   *
+   * Null, not zero, for a pump.fun market: its API publishes no volume field
+   * and refuses every volume sort (HTTP 400), and a zero would read as "nobody
+   * trades this" when the truth is "nobody told us". Optional, because a
+   * market rebuilt from a match account carries no feed data at all.
+   */
+  usdVolume24h?: number | null;
 }
+
+/** What the curated lists are ordered by. */
+export type MarketSort = 'cap' | 'volume';
 
 const toTradable = (
   kind: MarketKind,
-  m: { mint: string; symbol: string; name: string; imageUri: string | null; priceSol: number; priceUsd: number; usdMarketCap: number },
+  m: {
+    mint: string;
+    symbol: string;
+    name: string;
+    imageUri: string | null;
+    priceSol: number;
+    priceUsd: number;
+    usdMarketCap: number;
+    usdVolume24h?: number | null;
+  },
   source: TradableMarket['source']
 ): TradableMarket | null => {
   let startPx: bigint;
@@ -72,6 +93,7 @@ const toTradable = (
     startPx,
     source,
     usdMarketCap: m.usdMarketCap,
+    usdVolume24h: m.usdVolume24h ?? null,
   };
 };
 
@@ -106,6 +128,10 @@ const MIN_LIQUIDITY_USD = 25_000;
  */
 const fromJupToken = (t: JupToken, solUsd: number): TradableMarket | null => {
   if (!t.usdPrice || t.usdPrice <= 0) return null;
+  const buys = t.stats24h?.buyVolume;
+  const sells = t.stats24h?.sellVolume;
+  const volume =
+    Number.isFinite(buys) || Number.isFinite(sells) ? (Number(buys) || 0) + (Number(sells) || 0) : null;
   return toTradable(
     'major',
     {
@@ -119,6 +145,7 @@ const fromJupToken = (t: JupToken, solUsd: number): TradableMarket | null => {
       priceSol: t.usdPrice / solUsd,
       priceUsd: t.usdPrice,
       usdMarketCap: t.mcap ?? 0,
+      usdVolume24h: volume,
     },
     'jupiter'
   );
@@ -171,12 +198,23 @@ const verifiedTokens = async (signal?: AbortSignal): Promise<JupToken[]> => {
   return tokens;
 };
 
-export async function fetchMajorMarkets(signal?: AbortSignal): Promise<TradableMarket[]> {
+/**
+ * The top of the verified set, by market cap or by 24h volume.
+ *
+ * Sorted before the cut, so "by volume" is the 40 busiest verified tokens, not
+ * the 40 biggest reshuffled — those are different lists: a large, quiet token
+ * drops out of the second and a small one everybody is trading today comes in.
+ */
+export async function fetchMajorMarkets(signal?: AbortSignal, sort: MarketSort = 'cap'): Promise<TradableMarket[]> {
   const [solUsd, tokens] = await Promise.all([solPriceUsd(signal), verifiedTokens(signal)]);
   const markets = tokens
     .map((t) => fromJupToken(t, solUsd))
     .filter((m): m is TradableMarket => m !== null)
-    .sort((a, b) => b.usdMarketCap - a.usdMarketCap)
+    .sort((a, b) =>
+      sort === 'volume'
+        ? (b.usdVolume24h ?? -1) - (a.usdVolume24h ?? -1) || b.usdMarketCap - a.usdMarketCap
+        : b.usdMarketCap - a.usdMarketCap
+    )
     .slice(0, 40);
   rememberLogos(markets);
   return markets;

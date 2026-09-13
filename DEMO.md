@@ -6,10 +6,11 @@ are measured, not estimated.
 
 **Target: one take, under 3 minutes.**
 
-> **What this file is for.** The submission needs a demo video. I can drive the
-> product and verify every beat, but I cannot screen-record or upload — so this
-> is the recording reduced to something a person can execute in one pass without
-> improvising. Follow it top to bottom.
+> **What this file is for.** The shot list for the demo recording, reduced to
+> something a person can execute in one pass without improvising. Recordings
+> made from it are in `docs/`: `masked-demo.mp4` (43 s), `masked-full-duel.mp4`
+> (28 s) and `masked-proof-walkthrough.mp4` (5 s). Follow it top to bottom for a
+> longer take.
 
 ---
 
@@ -21,7 +22,7 @@ Four things, in this order. The third is the one people forget.
 # 1. all five layers up
 ./scripts/localnet.sh          # base :8999, rollup :7799, gate :6699
 npm run proxy                  # market CORS shim :8791
-npm run web                    # app :8081        (or serve the export, below)
+npm run web -- --port 8082     # app :8082 (8081 belongs to another project here; or serve the export, below)
 
 # 2. the chain must not look empty
 npm run crank                  # settle anything abandoned; otherwise /proof
@@ -39,7 +40,7 @@ running for 900s, which is longer than the recording.
 
 ```bash
 # 4. optional — record against the production build a judge would open
-npx expo export -p web && npx serve -s dist -l 4173
+npx expo export -p web && npm run serve     # :4180
 ```
 
 Verified: the static export connects a wallet, escrows a real match and reads
@@ -52,7 +53,7 @@ key `localStorage` per origin, so each gets its own in-page wallet:
 
 | | Session A | Session B |
 |---|---|---|
-| URL | `http://localhost:8081/play` | `http://127.0.0.1:8081/play` |
+| URL | `http://localhost:4180/play` | `http://127.0.0.1:4180/play` |
 
 Connect each (CONNECT → LOCAL KEY (DEV)), then fund the second:
 
@@ -161,8 +162,9 @@ Two browsers side by side, both already connected and funded.
    `npm run check:short` proves that in 15 assertions if you have a terminal
    free — including that the liquidation is public while the position behind it
    stays refused.
-5. **Let the buzzer go.** Rounds are five minutes; record with
-   `EXPO_PUBLIC_ROUND_SECONDS=60` so the take fits under three minutes.
+5. **Let the buzzer go.** Rounds are five minutes by default; open the match
+   with **1 MIN** in the lobby's duration picker so the take fits under three
+   minutes.
    **SETTLING ON SOLANA** shows three real stages: the commit reports how many
    rollup transactions it took, undelegation reports both positions home,
    settle reports the pot paid.
@@ -174,8 +176,8 @@ Two browsers side by side, both already connected and funded.
    > "WOFI moved +0.34%, SOL moved +1.58%. Two markets, because we were not in
    > the same one — and that is what the score is measured against.
 
-**Timing note:** the product round is five minutes. Record with
-`EXPO_PUBLIC_ROUND_SECONDS=60` — the app reads it and the program accepts it,
+**Timing note:** the product round is five minutes. Pick **1 MIN** when opening
+the match: the length is a real `create_match` argument the program accepts,
 so the round on camera is a real 60s round, not a shortened display. The two
 settle paths take ~20s more.
 Do not narrate over the buzzer — let the settle stages play.

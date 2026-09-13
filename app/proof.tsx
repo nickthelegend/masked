@@ -4,3 +4,6 @@ import ProofScreen from '../src/screens/ProofScreen';
 export default function ProofRoute() {
   return <ProofScreen />;
 }
+
+// A render error here stays on this screen — see RouteErrorBoundary.
+export { default as ErrorBoundary } from '../src/ui/RouteErrorBoundary';

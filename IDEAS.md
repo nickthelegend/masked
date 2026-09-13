@@ -1,9 +1,12 @@
 # 100 ideas, ranked
 
 For **MagicBlock Solana Blitz v8**. The pitch is: *private during the fight,
-public after* — two traders stake a pot, trade the same market with their
-positions delegated to an Ephemeral Rollup and sealed by an on-chain ACL, and
-settle on Solana at the buzzer.
+public after* — two traders stake a pot, each picks a token of their own and
+trades it long or short for a round length chosen when the match is opened (1,
+5 or 15 minutes), with both positions delegated to an Ephemeral Rollup and
+sealed by an on-chain ACL, and the pot settles on Solana at the buzzer. (The
+ranking below was written for v1, when both players traded one shared market
+long-only; see `ARCHITECTURE-v2.md`.)
 
 Ranked by **impact × feasibility × fit**. Impact is "would a judge notice";
 feasibility is "can this be built for real, here, now"; fit is "does it
@@ -150,8 +153,9 @@ being faked.
 
 - **Anything that fakes a MagicBlock primitive.** If VRF cannot be made to work
   for real, it stays "not attempted" rather than being simulated.
-- **Devnet deploy / demo video.** Blocked on faucet funding, which no amount of
-  code fixes.
+- **Devnet deploy.** Blocked on faucet funding, which no amount of code fixes.
+  The demo video was never really blocked by it: it was recorded against the
+  local stack and is `docs/masked-demo.mp4`.
 - **Ten variations of one idea to reach 100.** Tier 4 is genuinely lower
   priority, and several of those modes would clutter the pitch rather than
   strengthen it — a grid of half-built modes reads worse than one that works.
@@ -383,3 +387,107 @@ than reciting every tick. The mark flashes the direction it last moved, on the
 *change* not the level — verified rendering a green caret after the crank
 moved it up. A short pixel burst on a win, once, `pointerEvents: none`, and
 skipped entirely under reduced motion.
+
+### Audit backfill, 2026-09-12 — the 23 built items this log skipped
+
+The 2026-09-12 audit counted 44 items built and found only 21 logged here.
+Checked one by one for this entry: 22 of the 23 are real, and #16 was
+deliberately removed. Rows like F4 are `TEST-PLAN.md` rows. A
+check marked *re-run* passed again on 2026-09-12; an item citing only source
+code was not re-verified in that pass.
+
+- **#2 — Session keys** · built, verified. A Gum session token authorises a
+  throwaway key to call `apply_fill`, scoped to this program for an hour.
+  `npm run check:session` (15 assertions, re-run); F4, F5.
+- **#3 — Spectator mode** · built, verified. `/spectate/<match>`, public data
+  only, both positions fogged to the viewer too. K1, K2, J7.
+- **#4 — Rematch that works** · built, verified. Starts a new match rather than
+  resurrecting the old one. H1.
+- **#6 — Live duel list on `/proof`** · built, verified. LIVE RIGHT NOW lists
+  real live duels, each linking to `/spectate`. L5.
+- **#8 — Fill flash + impact readout** · built, verified. Impact is quoted
+  before signing and the receipt shows the mark and the execution price. F6,
+  F7, F8; `npm run check:tape` asserts the quotes against every recorded fill
+  (re-run).
+- **#15 — "What you would have made"** · built as the market's own move. The
+  literal counterfactual is zero, because an untouched position is all quote, so
+  the reveal reports what each player's own market did over the round
+  (`src/chain/tape.ts`). G10, S16.
+- **#16 — Opponent fill count as a heartbeat** · not built, deliberately. The
+  position is sealed and the gate refuses it, so a count is not something the
+  client has; the row had been rendering `0` and was removed. F2.
+- **#17 — Keyboard controls** · built, verified. L and C act as LONG and CLOSE.
+  F12.
+- **#18 — Streaks on the leaderboard** · built, verified. Read from
+  `best_streak` on chain. I5.
+- **#19 — Auto-settle expired matches** · built, narrower than written. The
+  lobby sweep settles only the player's own abandoned rounds and never spends
+  SOL on strangers'; `npm run crank` settles the rest. Q6.
+- **#20 — Market search** · built, verified. Any ticker, name or mint, exact
+  matches first. S3, S4.
+- **#22 — `/proof` "run this yourself"** · built, verified. Each command
+  copies; a blocked clipboard says COPY BLOCKED. L9.
+- **#24 — Slippage preview** · built, verified. The exact impact quote of #8
+  and #23. F6, F7.
+- **#26 — A reveal curtain that tears** · built, verified. The tape is held
+  back until the curtain has torn, and the win burst fires after it
+  (`src/screens/RevealScreen.tsx`). V18.
+- **#29 — Explorer links on signatures** · built, verified. RECENT PROGRAM
+  TRANSACTIONS rows open the explorer. L8.
+- **#30 — What this costs** · built. `/proof` sums the network fees of every
+  base-layer transaction in the traced duel (`src/screens/ProofScreen.tsx`).
+  No test row covers it.
+- **#32 — Reduced motion** · built. `useReducedMotion` (`src/ui/motion.ts`)
+  gates the mark flash and the win burst. No test row covers it.
+- **#34 — Copy-trade button** · built, verified. DUEL THIS TOKEN on every feed
+  card (`src/ui/MatchCard.tsx`) opens a new duel on that card's market through
+  `duelToken` in `src/screens/MaskedApp.tsx`; it replaced a COPY button wired to
+  nothing (TEST-PLAN's fixed-fakes table). Used for real on 2026-09-12: the
+  button is on every row of the live feed.
+- **#36 — Toast stacking** · built. Toasts queue and stack, capped at
+  `MAX_VISIBLE` (`src/ui/Toast.tsx`). D7 and D8 cover single-toast behaviour
+  only.
+- **#42 — Retry with backoff** · built, verified. `withRetry`
+  (`src/chain/errors.ts`) retries only failures where a retry can help;
+  `npm run check:errors` asserts it does not retry a program refusal (re-run).
+- **#45 — PnL curve during the round** · built. `ArenaChart` draws the player's
+  own PnL as it moves, one series by design because a second would leak the
+  opponent's shape. No test row covers it.
+- **#48 — A tape row that shows every fill** · built as a link rather than an
+  expander. Feed rows open `/tape/<match>`, which lists every fill of both
+  players. I4, J2.
+- **#53 — Sound toggle, persisted** · built. The header toggle writes
+  `masked.sound` to `localStorage` and defaults to on (`src/ui/sound.ts`). No
+  test row covers it.
+
+### PLAN 7.16–7.18, 2026-09-13
+
+Rows like Y3 are `TEST-PLAN.md` section Y rows. Every item below was checked live on the post-reset stack.
+
+- **#98 — Rollup soak script** · built, verified. `npm run soak -- <duels>
+  <seconds>` plays real duels end to end on fresh wallets. It found that a
+  round with about 20 fills per position never came home, because the local
+  base layer was missing MagicBlock's committor program, and after that fix it
+  ran 3 × 60 s: 360/360 fills, p99 15 ms, all settled. Y1, Y2.
+- **#38 — Market cap / volume sort** · built, verified. Majors sort by
+  Jupiter's 24h volume before the top-40 cut; memes say pump.fun publishes no
+  volume. Y3.
+- **#54 — Colour-blind-safe palette** · built, verified. Blue and vermillion
+  replace green and red, which sit 3.4 ΔE apart under simulated deuteranopia.
+  `npm run check:palette` guards it. Y4.
+- **#37 — Attract mode on the landing hero** · built, verified. Plays the real
+  round when nobody is at the page, and any input ends it. Y5.
+- **#47 — Chart crosshair with the mark at that moment** · built, verified.
+  Y6.
+- **#89 — Reveal export** · built as a PNG, verified. A still rather than a
+  GIF, because the reveal does not move. Y7.
+- **#78 — Jupiter quote beside the private book's price** · built, verified
+  after a fix found by the first live check. A comparison and never a route. Y9.
+- **#88 — PWA install and offline shell** · built, verified. The worker never
+  caches chain or market data. Y10.
+- **#79 — Metaplex metadata for logos** · not built, deliberately. Every one of
+  the 90 markets a duel can open on already carries a feed logo, and 11 of 12
+  sampled mints have no Metaplex metadata account at all.
+- **#84 — Optimistic fills with rollback** · built, verified. The predicted fill
+  shows at once and matched its receipt to within 2e-9◎ in four measured fills;
+  a fill refused at the buzzer rolled back on screen. Y11, Y12.

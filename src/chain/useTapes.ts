@@ -54,10 +54,15 @@ const readOnlyWallet = {
  * start and its settled result, and nothing invented between them.
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-const curve = (fills: TapeState['fillsA'], finalBps: number, entry: number): number[] => {
+const curve = (
+  fills: TapeState['fillsA'],
+  finalBps: number,
+  entry: number,
+  start: TapeState['startA']
+): number[] => {
   if (!fills || fills.length === 0) return [0, finalBps / 100];
   if (entry <= 0) return [0, finalBps / 100];
-  return replayEquity(fills, entry).map((p) => p.bps / 100);
+  return replayEquity(fills, entry, undefined, start).map((p) => p.bps / 100);
 };
 
 export function useTapes(pollMs = 10_000) {
@@ -106,8 +111,8 @@ export function useTapes(pollMs = 10_000) {
               potPaid: a.potPaid,
               rake: a.rake,
               settledTs: a.settledTs,
-              winnerSeries: curve(winnerIsA ? a.fillsA : a.fillsB, wBps, entry),
-              loserSeries: curve(winnerIsA ? a.fillsB : a.fillsA, lBps, entry),
+              winnerSeries: curve(winnerIsA ? a.fillsA : a.fillsB, wBps, entry, winnerIsA ? a.startA : a.startB),
+              loserSeries: curve(winnerIsA ? a.fillsB : a.fillsA, lBps, entry, winnerIsA ? a.startB : a.startA),
             };
           })
           .sort((x: TapeSummary, y: TapeSummary) => y.settledTs - x.settledTs);

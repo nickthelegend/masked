@@ -21,11 +21,22 @@ import { fetchMemeMarkets } from '../src/chain/markets';
 /** From ephemeral-vrf-sdk consts. */
 const VRF_PROGRAM_ID = new PublicKey('Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz');
 const DEFAULT_TEST_QUEUE = new PublicKey('GKE6d7iv8kCBrsxr78W3xVdjGLLLJnxsGiuzrsZCGEvb');
+/**
+ * The queue devnet's oracles actually serve (ephemeral-vrf-sdk DEFAULT_QUEUE).
+ * A request on the test queue lands on devnet and is never answered; on this
+ * one the oracle answered in 1 s (2026-09-13 02:50 UTC).
+ */
+const DEFAULT_QUEUE = new PublicKey('Cuj97ggrhhidhbu39TijNVqE74xvKJ69gDervRUXAxGh');
 
 const load = (p: string) => Keypair.fromSecretKey(new Uint8Array(JSON.parse(readFileSync(p, 'utf8'))));
 
 async function main() {
-  const cluster = CLUSTERS.local;
+  // Local unless EXPO_PUBLIC_CLUSTER=devnet, the switch the other scripts use.
+  // Devnet's queues are served by live oracles, so a draw can be fulfilled
+  // there (PLAN 6.2). The payer is the deploy wallet itself, which is funded on
+  // devnet, so no transfer is needed.
+  const cluster = process.env.EXPO_PUBLIC_CLUSTER === 'devnet' ? CLUSTERS.devnet : CLUSTERS.local;
+  if (cluster.name !== 'local') console.log(`cluster: ${cluster.name} (${cluster.l1})`);
   const kp = load(`${process.env.HOME}/.config/solana/id.json`);
   const conn = new Connection(cluster.l1, 'confirmed');
   const wallet = {
@@ -60,7 +71,11 @@ async function main() {
     startPx: new BN(m.startPx),
   }));
 
-  const queue = process.env.VRF_QUEUE ? new PublicKey(process.env.VRF_QUEUE) : DEFAULT_TEST_QUEUE;
+  const queue = process.env.VRF_QUEUE
+    ? new PublicKey(process.env.VRF_QUEUE)
+    : cluster.name === 'devnet'
+      ? DEFAULT_QUEUE
+      : DEFAULT_TEST_QUEUE;
   console.log(`\nrequesting a draw on queue ${queue.toBase58().slice(0, 8)}…`);
 
   const sig = await program.methods

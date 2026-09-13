@@ -15,7 +15,8 @@
  */
 import { useEffect, useState } from 'react';
 import { Connection, PublicKey } from '@solana/web3.js';
-import { ACTIVE_CLUSTER } from './config';
+import { ACTIVE_CLUSTER, DELEGATION_PROGRAM_ID } from './config';
+import { permissionPdaFromAccount } from '@magicblock-labs/ephemeral-rollups-sdk';
 import { positionPda } from './pdas';
 
 export interface ProofStep {
@@ -61,13 +62,17 @@ export interface DuelCost {
   lamports: number;
   /** How many transactions that is. */
   transactions: number;
+  /** How many of them the chain refused. They still paid their fee, so they stay in `lamports`. */
+  failed: number;
 }
 
 export function useDuelProof(
   match: PublicKey | null,
   playerA: PublicKey | null,
   playerB: PublicKey | null,
-  limit = 12
+  // Per position. The page says "every" base-layer transaction, and twelve was
+  // not every one once a duel's history included refusals.
+  limit = 50
 ) {
   const [steps, setSteps] = useState<ProofStep[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -88,10 +93,14 @@ export function useDuelProof(
       try {
         const conn = new Connection(ACTIVE_CLUSTER.l1, 'confirmed');
         const m = new PublicKey(key);
-        const accounts = [
+        const positions = [
           positionPda(m, new PublicKey(aKey)),
           positionPda(m, new PublicKey(bKey)),
         ];
+        // Each position's ACL as well. Sealing hands it to the rollup and
+        // settlement brings it back, and that last step touches only the
+        // permission account — the position's own history cannot show it.
+        const accounts = [...positions, ...positions.map((p) => permissionPdaFromAccount(p))];
 
         const lists = await Promise.all(
           accounts.map((a) => conn.getSignaturesForAddress(a, { limit }))
@@ -99,15 +108,28 @@ export function useDuelProof(
         if (!alive) return;
 
         // Settlement touches both positions, so the same signature comes back
-        // from both queries. The chain did it once; show it once.
-        const seen = new Map<string, { slot: number; blockTime: number | null; err: boolean }>();
-        for (const list of lists) {
+        // from several queries. The chain did it once; show it once — and
+        // remember whether only an ACL's history had it.
+        const seen = new Map<
+          string,
+          { slot: number; blockTime: number | null; err: boolean; aclOnly: boolean }
+        >();
+        lists.forEach((list, i) => {
+          const fromAcl = i >= positions.length;
           for (const s of list) {
-            if (!seen.has(s.signature)) {
-              seen.set(s.signature, { slot: s.slot, blockTime: s.blockTime ?? null, err: !!s.err });
+            const prior = seen.get(s.signature);
+            if (!prior) {
+              seen.set(s.signature, {
+                slot: s.slot,
+                blockTime: s.blockTime ?? null,
+                err: !!s.err,
+                aclOnly: fromAcl,
+              });
+            } else if (!fromAcl) {
+              prior.aclOnly = false;
             }
           }
-        }
+        });
         if (seen.size === 0) {
           setSteps([]);
           setLoaded(true);
@@ -128,6 +150,14 @@ export function useDuelProof(
           // transaction with none is named by whatever it did run.
           const named = instructions.find((n) => MEANING[n]) ?? instructions[0] ?? 'TRANSACTION';
           const meta = seen.get(signature)!;
+          // An ACL coming home is the delegation program undelegating the
+          // permission account at the top level. The permission program is not
+          // Anchor, so that transaction logs no instruction name at all, and the
+          // row used to read TRANSACTION — the one step this list exists to show.
+          const aclHome =
+            meta.aclOnly &&
+            (named === 'ProcessUndelegation' ||
+              logs.some((l) => l.startsWith(`Program ${DELEGATION_PROGRAM_ID.toBase58()} invoke [1]`)));
           return {
             signature,
             fee: txs[i]?.meta?.fee ?? 0,
@@ -135,8 +165,10 @@ export function useDuelProof(
             blockTime: meta.blockTime,
             err: meta.err,
             instructions,
-            label: spaced(named),
-            meaning: MEANING[named] ?? 'a transaction against this duel',
+            label: aclHome ? 'ACL BACK ON SOLANA' : spaced(named),
+            meaning: aclHome
+              ? 'the rollup releases the ACL — the permission program owns it on Solana again'
+              : MEANING[named] ?? 'a transaction against this duel',
           };
         });
 
@@ -168,6 +200,7 @@ export function useDuelProof(
   const cost: DuelCost = {
     lamports: steps.reduce((sum, s) => sum + s.fee, 0),
     transactions: steps.length,
+    failed: steps.filter((s) => s.err).length,
   };
 
   return { steps, loaded, cost };

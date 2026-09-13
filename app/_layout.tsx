@@ -11,7 +11,12 @@ import { useFonts } from 'expo-font';
 import { PressStart2P_400Regular } from '@expo-google-fonts/press-start-2p';
 import { Silkscreen_400Regular } from '@expo-google-fonts/silkscreen';
 import { color, ErrorBoundary, ToastProvider } from '../src/ui';
+import OfflineBanner from '../src/ui/OfflineBanner';
 import MaskedWalletProvider from '../src/chain/WalletProvider';
+import { startShell } from '../src/ui/pwa';
+
+// The manifest, the offline shell and the install prompt, before anything renders.
+startShell();
 
 export default function RootLayout() {
   const [ready] = useFonts({ PressStart2P_400Regular, Silkscreen_400Regular });
@@ -22,13 +27,16 @@ export default function RootLayout() {
     <ErrorBoundary>
       <MaskedWalletProvider>
         <ToastProvider>
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              contentStyle: { backgroundColor: color.bg },
-              animation: 'none',
-            }}
-          />
+          <View style={{ flex: 1 }}>
+            <OfflineBanner />
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                contentStyle: { backgroundColor: color.bg },
+                animation: 'none',
+              }}
+            />
+          </View>
         </ToastProvider>
       </MaskedWalletProvider>
     </ErrorBoundary>

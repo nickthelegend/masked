@@ -43,7 +43,7 @@ export interface LiveMatch {
 }
 
 /** A zero-padded on-chain string back to a JS one. */
-const decodeFixed = (bytes: number[] | Uint8Array | undefined): string => {
+export const decodeFixed = (bytes: number[] | Uint8Array | undefined): string => {
   if (!bytes) return '';
   const arr = Array.from(bytes);
   const end = arr.indexOf(0);

@@ -11,8 +11,14 @@ import assert from 'node:assert/strict';
 import { FogduelClient, pnlBps } from '../src/chain/client';
 import { DEMO_MINT } from '../src/chain/market';
 import { CLUSTERS } from '../src/chain/config';
+import { fund } from './fund';
 import { pxFromSolPerToken } from '../src/chain/units';
 import nacl from 'tweetnacl';
+
+// The same selection seed-demo and prove-privacy make. Pinning CLUSTERS.local
+// here meant `EXPO_PUBLIC_CLUSTER=devnet npm run verify:client` silently
+// verified the local cluster instead.
+const cluster = process.env.EXPO_PUBLIC_CLUSTER === 'devnet' ? CLUSTERS.devnet : CLUSTERS.local;
 
 async function main() {
 
@@ -34,22 +40,32 @@ const wrap = (kp: Keypair) => ({
   const creator = load(`${process.env.HOME}/.config/solana/id.json`);
   const joiner = load('.keys/player-b.json');
 
-  const client = new FogduelClient(wrap(creator) as never, CLUSTERS.local, asSigner(creator));
-  const joinerClient = new FogduelClient(wrap(joiner) as never, CLUSTERS.local, asSigner(joiner));
+  const client = new FogduelClient(wrap(creator) as never, cluster, asSigner(creator));
+  const joinerClient = new FogduelClient(wrap(joiner) as never, cluster, asSigner(joiner));
+  console.log(`cluster: ${cluster.name} (L1 ${cluster.l1}, ER ${cluster.er})`);
 
-  // Fund the joiner from the faucet.
-  const sig = await client.l1.requestAirdrop(joiner.publicKey, 3 * LAMPORTS_PER_SOL);
-  await client.l1.confirmTransaction(sig, 'confirmed');
+  // Fund the joiner: the faucet locally, a transfer from the deploy wallet on devnet.
+  // Local SOL is free, so the local airdrop stays generous. Devnet SOL comes out
+  // of the deploy wallet, which also carries the program's rent, so the joiner
+  // gets what one 0.1 SOL round needs: the entry, a few fills, and rent for its
+  // position and stats accounts, with room to spare.
+  const devnet = cluster.name === 'devnet';
+  await fund(client.l1, creator, joiner.publicKey, (devnet ? 0.5 : 3) * LAMPORTS_PER_SOL, devnet);
 
   await client.ensureTreasury(creator.publicKey);
 
   const matchId = Math.floor(Date.now() / 1000);
   const ENTRY = 0.1 * LAMPORTS_PER_SOL;
+  // Twelve seconds is plenty on the local stack. On devnet the seal alone can
+  // sit through a run of HTTP 429 retries, and a 12 s round was over before its
+  // first fill was sent ("Match clock has already expired", 02:47 UTC), so the
+  // devnet round is long enough to absorb that.
+  const ROUND_SECS = devnet ? 90 : 12;
 
   console.log('1. create_match');
   const match = await client.createMatch({
     creator: creator.publicKey, matchId, mint: DEMO_MINT,
-    durationSecs: 12, entryLamports: ENTRY, startPx: pxFromSolPerToken(0.1),
+    durationSecs: ROUND_SECS, entryLamports: ENTRY, startPx: pxFromSolPerToken(0.1),
     marketType: 'meme', symbol: 'VERIFY', name: 'Client Verification',
   });
   let m = (await client.fetchMatch(match))!;
@@ -128,7 +144,17 @@ const wrap = (kp: Keypair) => ({
 
   console.log('6. price moves, commit + undelegate');
   await client.walkPriceTo(match, creator.publicKey, pxFromSolPerToken(0.118), creator.publicKey);
-  await new Promise((r) => setTimeout(r, 13_000));
+  // Settlement is refused before the buzzer, so wait for the match's own clock
+  // rather than a fixed delay that only suited one round length on one cluster.
+  const live = (await client.fetchMatch(match))!;
+  const buzzerMs = (live.startTs + live.duration) * 1000 + 1_500;
+  await new Promise((r) => setTimeout(r, Math.max(0, buzzerMs - Date.now())));
+  // Both ACLs home, each by its own wallet, as the app does at settle start.
+  const released = [
+    await client.releaseOwnAcl(match, creator.publicKey),
+    await joinerClient.releaseOwnAcl(match, joiner.publicKey),
+  ];
+  console.log('   ACLs released:', released.map((s) => (s ? 'yes' : 'nothing to release')).join(', '));
   await client.commitAndUndelegate(match, creator.publicKey, creator.publicKey, joiner.publicKey);
 
   const home = await client.waitForUndelegation(match, creator.publicKey, joiner.publicKey);

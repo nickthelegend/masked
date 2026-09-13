@@ -17,7 +17,8 @@ import {
   solExact,
   space,
 } from '../ui';
-import { carriedSide, marketMove, replayEquity, type TapeState } from '../chain/tape';
+import { carriedSide, marketMove, replayEquity, tapeWindowNote, type TapeState } from '../chain/tape';
+import { canExportRevealCard, exportRevealCard } from '../ui/revealCard';
 import { TROPHIES_PER_WIN } from './data';
 
 export interface RevealScreenProps {
@@ -55,6 +56,15 @@ export interface RevealScreenProps {
   onPost: () => void;
   /** Label for the share button, so it can confirm after a copy. */
   shareLabel?: string;
+  /**
+   * Fade the winner: open a match at this duel's stake and round length and
+   * hand back its invite link. Offered to the side that lost.
+   */
+  onFade?: () => void;
+  /** Label for the fade button, so it can report what it is doing. */
+  fadeLabel?: string;
+  /** The public tape's URL, printed on the result image so it can be checked. */
+  tapeUrl?: string | null;
 }
 
 /**
@@ -93,6 +103,9 @@ export default function RevealScreen({
   onShare,
   onPost,
   shareLabel = 'COPY TAPE LINK',
+  onFade,
+  fadeLabel = 'FADE WINNER',
+  tapeUrl = null,
 }: RevealScreenProps) {
   // Hold the tape back until the curtain has torn, so the numbers land at the
   // moment the fog lifts rather than before it.
@@ -115,11 +128,17 @@ export default function RevealScreen({
     if (!tape || entryLamports <= 0) return null;
     const mineFills = isPlayerA ? tape.fillsA : tape.fillsB;
     const theirFills = isPlayerA ? tape.fillsB : tape.fillsA;
+    const myCount = isPlayerA ? tape.fillCountA : tape.fillCountB;
+    const theirCount = isPlayerA ? tape.fillCountB : tape.fillCountA;
+    // A side with more fills than a tape keeps replays from the snapshot the
+    // program folded the older ones into, and says it is the last few.
     return {
-      mine: replayEquity(mineFills, entryLamports, startTs),
-      theirs: replayEquity(theirFills, entryLamports, startTs),
-      myCount: mineFills.length,
-      theirCount: theirFills.length,
+      mine: replayEquity(mineFills, entryLamports, startTs, isPlayerA ? tape.startA : tape.startB),
+      theirs: replayEquity(theirFills, entryLamports, startTs, isPlayerA ? tape.startB : tape.startA),
+      myCount,
+      theirCount,
+      myNote: tapeWindowNote(mineFills.length, myCount),
+      theirNote: tapeWindowNote(theirFills.length, theirCount),
     };
   }, [tape, isPlayerA, entryLamports, startTs]);
 
@@ -138,10 +157,10 @@ export default function RevealScreen({
    * neither is available.
    */
   const shownMyFills = tape
-    ? (isPlayerA ? tape.fillsA : tape.fillsB).length
+    ? (isPlayerA ? tape.fillCountA : tape.fillCountB)
     : myFills;
   const shownTheirFills = tape
-    ? (isPlayerA ? tape.fillsB : tape.fillsA).length
+    ? (isPlayerA ? tape.fillCountB : tape.fillCountA)
     : opponentFills ?? '—';
 
   const myMove = useMemo(
@@ -204,6 +223,64 @@ export default function RevealScreen({
    */
   const drawn = myPnl === opponentPnl;
 
+  // One line per market, because there are two of them now. "Both traded a
+  // market that moved X%" was true when the duel had one token; with a leg
+  // each it averaged a memecoin against SOL and reported +11,975%.
+  const movesLine = [
+    // Measured between a side's first and last stored fills, so a truncated
+    // side's move covers only that window, and says so.
+    myMove && myLeg?.symbol
+      ? `${myLeg.symbol.toUpperCase()} MOVED ${signedPct(myMove.bps)}${lanes?.myNote ? ` (${lanes.myNote})` : ''}`
+      : null,
+    theirMove && theirLeg?.symbol
+      ? `${theirLeg.symbol.toUpperCase()} MOVED ${signedPct(theirMove.bps)}${lanes?.theirNote ? ` (${lanes.theirNote})` : ''}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  /** The result image: what the button says it is doing, or just did. */
+  const [imageLabel, setImageLabel] = useState('SAVE RESULT IMAGE');
+  useEffect(() => {
+    if (imageLabel === 'SAVE RESULT IMAGE' || imageLabel === 'DRAWING…') return undefined;
+    const id = setTimeout(() => setImageLabel('SAVE RESULT IMAGE'), 4000);
+    return () => clearTimeout(id);
+  }, [imageLabel]);
+
+  const saveImage = async () => {
+    if (!lanes) return;
+    setImageLabel('DRAWING…');
+    try {
+      const outcome = await exportRevealCard({
+        won,
+        headline: won ? 'YOU TAKE THE POT' : 'POT LOST',
+        amount: won ? `+${solExact(pot)}` : `-${sol(stake)}`,
+        players: standings.map((e) => ({
+          rank: e.rank,
+          name: e.name,
+          you: e.you,
+          pnl: e.pnl,
+          symbol: e.token?.symbol ?? null,
+          liquidated: e.liquidated,
+        })),
+        you: lanes.mine,
+        them: lanes.theirs,
+        youNote: lanes.myNote,
+        themNote: lanes.theirNote,
+        opponentName,
+        fills: `YOUR FILLS ${shownMyFills} · THEIRS ${shownTheirFills}`,
+        startTs,
+        duration,
+        moves: movesLine || null,
+        record: record ?? null,
+        link: tapeUrl,
+      });
+      setImageLabel(outcome === 'shared' ? 'IMAGE SHARED' : outcome === 'saved' ? 'IMAGE SAVED' : 'SAVE RESULT IMAGE');
+    } catch {
+      setImageLabel('COULD NOT DRAW IT');
+    }
+  };
+
   return (
     <View>
     {/* Once, on a win, after the curtain has torn. */}
@@ -234,8 +311,8 @@ export default function RevealScreen({
           {/* Held back until the curtain tears, so the fills land with it. */}
           {unsealed && lanes ? (
             <RoundTimeline
-              you={{ label: 'YOU', points: lanes.mine, tone: color.cyan }}
-              opponent={{ label: opponentName, points: lanes.theirs, tone: color.magenta }}
+              you={{ label: 'YOU', points: lanes.mine, tone: color.cyan, note: lanes.myNote }}
+              opponent={{ label: opponentName, points: lanes.theirs, tone: color.magenta, note: lanes.theirNote }}
               startTs={startTs}
               duration={duration}
               height={150}
@@ -272,21 +349,9 @@ export default function RevealScreen({
         </PixelText>
       </Row>
 
-      {/* One line per market, because there are two of them now. "Both traded a
-          market that moved X%" was true when the duel had one token; with a leg
-          each it averaged a memecoin against SOL and reported +11,975%. */}
-      {myMove || theirMove ? (
+      {movesLine ? (
         <PixelText variant="bodySmall" size={9} align="center" color={color.textDim}>
-          {[
-            myMove && myLeg?.symbol
-              ? `${myLeg.symbol.toUpperCase()} MOVED ${signedPct(myMove.bps)}`
-              : null,
-            theirMove && theirLeg?.symbol
-              ? `${theirLeg.symbol.toUpperCase()} MOVED ${signedPct(theirMove.bps)}`
-              : null,
-          ]
-            .filter(Boolean)
-            .join(' · ')}
+          {movesLine}
         </PixelText>
       ) : null}
 
@@ -300,16 +365,32 @@ export default function RevealScreen({
 
       <Row gap={space.sm}>
         <PixelButton flex={1} tone="gold" label="REMATCH" size={10} onPress={onRematch} />
-        {/* Was "FADE WINNER", which called the same handler as REMATCH and
-            described something the game cannot do — positions are long-only,
-            so there is no side to take against anybody. The link is real, needs
-            no wallet at the other end, and keeps working: it points at the
-            Tape, which the program never rewrites. */}
+        {/* This slot once held a "FADE WINNER" that called REMATCH's handler;
+            the real one is below. The tape link is real, needs no wallet at
+            the other end, and keeps working: it points at the Tape, which the
+            program never rewrites. */}
         <PixelButton flex={1} tone="info" label={shareLabel} size={10} onPress={onShare} />
       </Row>
 
+      {/* Fading the winner is a new duel against them: the same stake and round
+          length, opened now, with an invite link to send. Only the side that
+          lost has someone to fade. */}
+      {!won && onFade ? <PixelButton tone="primary" label={fadeLabel} size={10} onPress={onFade} /> : null}
+
       {/* The tape is public the moment it settles — it is already in the feed.
           The old label promised a posting step that does not exist. */}
+      {/* The result as a picture, drawn from the same settled tape as the
+          timeline above, so only once that tape has been read. Web only. */}
+      {canExportRevealCard && unsealed && lanes ? (
+        <PixelButton
+          tone="quiet"
+          label={imageLabel}
+          size={9}
+          disabled={imageLabel === 'DRAWING…'}
+          onPress={() => void saveImage()}
+        />
+      ) : null}
+
       <PixelButton tone="quiet" label="SEE IT IN THE FEED" size={9} onPress={onPost} />
     </Stack>
     </View>

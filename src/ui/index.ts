@@ -56,6 +56,8 @@ export { default as RevealCurtain, type RevealCurtainProps } from './RevealCurta
 export { default as WinBurst, type WinBurstProps } from './WinBurst';
 export { default as PnLOdometer, type PnLOdometerProps } from './PnLOdometer';
 export { useReducedMotion, DURATION, FRAME_MS } from './motion';
+// PaletteName, colorSafe and PALETTE_KEY come through `export * from './theme'`.
+export { paletteName, paletteSwitchable, setPalette } from './palette';
 export { default as TxFeed, type TxFeedProps, type TxFeedItem } from './TxFeed';
 export { default as MatchRow, type MatchRowProps } from './MatchRow';
 
@@ -69,6 +71,7 @@ export {
   type MarketPickerProps,
   type PickableMarket,
   type MarketKindKey,
+  type MarketSortKey,
 } from './MarketPicker';
 export { default as MarketHeader, type MarketHeaderProps } from './MarketHeader';
 export { default as LiveDuelRow, type LiveDuelRowProps } from './LiveDuelRow';
@@ -105,6 +108,8 @@ export { default as VersusCard, type VersusCardProps } from './VersusCard';
 export { default as MatchFound, type MatchFoundProps } from './MatchFound';
 export { default as RankRow, type RankRowProps, type RowSide } from './RankRow';
 export { default as PotentialEarnings, type PotentialEarningsProps } from './PotentialEarnings';
-export { default as ArenaChart, type ArenaChartProps } from './ArenaChart';
+export { default as ArenaChart, type ArenaChartProps, type ArenaMoment } from './ArenaChart';
+export { default as VenueQuote, type VenueQuoteProps } from './VenueQuote';
+export { default as PendingFill, type PendingFillProps } from './PendingFill';
 export { default as ResultBoard, type ResultBoardProps, type ResultEntry } from './ResultBoard';
 export { default as TierBadge, type TierBadgeProps, type Tier, TIERS, TIER_AT, tierFor } from './TierBadge';

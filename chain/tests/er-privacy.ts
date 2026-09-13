@@ -16,16 +16,43 @@ import {
   escrowPdaFromEscrowAuthority,
   createTopUpEscrowInstruction,
   permissionPdaFromAccount,
+  getAuthToken,
 } from "@magicblock-labs/ephemeral-rollups-sdk";
 import { createDelegateEphemeralBalanceInstruction } from "./erHelpers";
 import { assert } from "chai";
+import { createPrivateKey, sign as cryptoSign } from "node:crypto";
 
 const PRICE_SCALE = 1_000_000;
 const BASE_SCALE = 1_000_000;
 const L1_URL = "http://127.0.0.1:8999";
-const ER_URL = "http://127.0.0.1:7799";
+/**
+ * Which rollup this suite runs against. Unset, the local ephemeral-validator,
+ * as `anchor test` always has. `FOGDUEL_ER=tee` selects MagicBlock's devnet
+ * TEE, where ephemeral permissions exist, so the PHASE 3 tests run instead of
+ * being skipped. Run it with the provider on devnet:
+ *
+ *   ANCHOR_PROVIDER_URL=https://api.devnet.solana.com ANCHOR_WALLET=~/.config/solana/id.json \
+ *   FOGDUEL_ER=tee npx mocha --import=tsx --timeout 1000000 tests/er-privacy.ts
+ */
+const TEE = process.env.FOGDUEL_ER === "tee";
+const ER_URL = TEE ? "https://devnet-tee.magicblock.app" : "http://127.0.0.1:7799";
 /** Local ER validator identity, per the MagicBlock docs. */
 const LOCAL_ER_VALIDATOR = new PublicKey("mAGicPQYBMvcYveUZA5F5UNNwyHvfYh5xkLS2Fr1mev");
+/** The devnet TEE's identity, as its own `getIdentity` reports and src/chain/config.ts names it. */
+const TEE_VALIDATOR = new PublicKey("MTEWGuqxUpYZGFJQcp8tLN7x5v9BSeoFHYWQQ3n3xzo");
+const ER_VALIDATOR = TEE ? TEE_VALIDATOR : LOCAL_ER_VALIDATOR;
+
+/**
+ * A bearer token for the TEE's query-filtering front door, the same header
+ * src/chain/client.ts sends. The challenge is signed with Node's own ed25519,
+ * from the wallet's 32-byte seed, so the suite needs no extra dependency.
+ */
+async function teeToken(owner: Keypair): Promise<string> {
+  const pkcs8 = Buffer.concat([Buffer.from("302e020100300506032b657004220420", "hex"), Buffer.from(owner.secretKey.slice(0, 32))]);
+  const key = createPrivateKey({ key: pkcs8, format: "der", type: "pkcs8" });
+  const { token } = await getAuthToken(ER_URL, owner.publicKey, async (m) => new Uint8Array(cryptoSign(null, Buffer.from(m), key)));
+  return token;
+}
 const DELEGATION_PROGRAM = new PublicKey("DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh");
 
 describe("fogduel · ephemeral rollup + privacy", () => {
@@ -36,14 +63,16 @@ describe("fogduel · ephemeral rollup + privacy", () => {
   const creator = provider.wallet as anchor.Wallet;
   const joiner = Keypair.generate();
 
-  // A second provider pointed at the ER, sharing the same wallet.
-  const erConnection = new Connection(ER_URL, "confirmed");
-  const erProvider = new anchor.AnchorProvider(erConnection, creator, { commitment: "confirmed" });
-  const erProgram = new Program<Fogduel>(program.idl as Fogduel, erProvider);
+  // A second provider pointed at the ER, sharing the same wallet. On the TEE
+  // it is rebuilt in `before` with the owner's bearer token.
+  let erConnection = new Connection(ER_URL, "confirmed");
+  let erProvider = new anchor.AnchorProvider(erConnection, creator, { commitment: "confirmed" });
+  let erProgram = new Program<Fogduel>(program.idl as Fogduel, erProvider);
 
   // Suite-unique id space, plus randomness so re-runs never reuse a PDA.
   const RUN = Math.floor(Date.now() / 1000) * 1000 + 200 + Math.floor(Math.random() * 90);
-  const ENTRY = 0.1 * LAMPORTS_PER_SOL;
+  // Devnet SOL comes out of the deploy wallet, so the TEE round stakes less.
+  const ENTRY = (TEE ? 0.02 : 0.1) * LAMPORTS_PER_SOL;
   const DURATION = 12;
   const START_PX = 100 * PRICE_SCALE;
 
@@ -73,8 +102,18 @@ describe("fogduel · ephemeral rollup + privacy", () => {
   }
 
   before(async () => {
-    const sig = await provider.connection.requestAirdrop(joiner.publicKey, 5 * LAMPORTS_PER_SOL);
-    await provider.connection.confirmTransaction(sig, "confirmed");
+    if (TEE) {
+      // Devnet refuses airdrops to strangers: fund the joiner from the wallet.
+      await provider.sendAndConfirm(new Transaction().add(
+        SystemProgram.transfer({ fromPubkey: creator.publicKey, toPubkey: joiner.publicKey, lamports: 0.2 * LAMPORTS_PER_SOL })));
+      const token = await teeToken(creator.payer);
+      erConnection = new Connection(ER_URL, { commitment: "confirmed", httpHeaders: { Authorization: `Bearer ${token}` } });
+      erProvider = new anchor.AnchorProvider(erConnection, creator, { commitment: "confirmed" });
+      erProgram = new Program<Fogduel>(program.idl as Fogduel, erProvider);
+    } else {
+      const sig = await provider.connection.requestAirdrop(joiner.publicKey, 5 * LAMPORTS_PER_SOL);
+      await provider.connection.confirmTransaction(sig, "confirmed");
+    }
     [treasuryPda] = PublicKey.findProgramAddressSync([Buffer.from("treasury")], program.programId);
     if (!(await provider.connection.getAccountInfo(treasuryPda))) {
       await program.methods.initTreasury()
@@ -99,7 +138,7 @@ describe("fogduel · ephemeral rollup + privacy", () => {
   it("PHASE 2 — delegates both positions to the ER", async () => {
     for (const owner of [creator.publicKey, joiner.publicKey]) {
       await program.methods
-        .delegatePositionToEr(owner, LOCAL_ER_VALIDATOR, 1_000)
+        .delegatePositionToEr(owner, ER_VALIDATOR, 1_000)
         .accounts({ payer: creator.publicKey, matchAccount: p.matchPda })
         .rpc();
     }
@@ -163,20 +202,38 @@ describe("fogduel · ephemeral rollup + privacy", () => {
   // (devnet-tee.magicblock.app), which needs devnet SOL, and every public
   // faucet is currently rate-limited. The on-chain instruction is implemented
   // and builds; only the live proof is outstanding.
-  it.skip("PHASE 3 — funds a delegated ephemeral fee payer on the ER", async () => {
-    const escrow = escrowPdaFromEscrowAuthority(creator.publicKey);
-    const tx = new Transaction().add(
-      createTopUpEscrowInstruction(escrow, creator.publicKey, creator.publicKey, LAMPORTS_PER_SOL),
-      createDelegateEphemeralBalanceInstruction(creator.publicKey, creator.publicKey, LOCAL_ER_VALIDATOR)
-    );
-    await provider.sendAndConfirm(tx);
+  // Skipped on the local ER (see above); run on the devnet TEE with FOGDUEL_ER=tee.
+  (TEE ? it : it.skip)("PHASE 3 — funds a delegated ephemeral fee payer on the ER", async () => {
+    // Index 0, the escrow createDelegateEphemeralBalanceInstruction delegates.
+    // The SDK's escrowPdaFromEscrowAuthority defaults to index 255, so without
+    // it this test topped up and checked one escrow while delegating another.
+    const escrow = escrowPdaFromEscrowAuthority(creator.publicKey, 0);
+    // The escrow belongs to the wallet, not to this run. Delegating it again is
+    // refused (DelegationRecordInvalidAccountOwner), which a second run on the
+    // same devnet wallet hit, so only an undelegated escrow is topped up and
+    // delegated. The assertion below holds either way.
+    const current = await provider.connection.getAccountInfo(escrow);
+    if (current?.owner.toBase58() !== DELEGATION_PROGRAM.toBase58()) {
+      const tx = new Transaction().add(
+        createTopUpEscrowInstruction(escrow, creator.publicKey, creator.publicKey, (TEE ? 0.1 : 1) * LAMPORTS_PER_SOL),
+        createDelegateEphemeralBalanceInstruction(creator.publicKey, creator.publicKey, ER_VALIDATOR)
+      );
+      await provider.sendAndConfirm(tx);
+    }
 
-    const info = await provider.connection.getAccountInfo(escrow);
+    // An RPC can serve the pre-transaction state for a moment after confirming
+    // (on devnet the escrow read back system-owned while its delegation record
+    // already existed), so poll the owner rather than reading it once.
+    let info = await provider.connection.getAccountInfo(escrow);
+    for (let i = 0; i < 20 && info?.owner.toBase58() !== DELEGATION_PROGRAM.toBase58(); i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      info = await provider.connection.getAccountInfo(escrow);
+    }
     assert.ok(info, "escrow exists on L1");
     assert.equal(info!.owner.toBase58(), DELEGATION_PROGRAM.toBase58(), "escrow is delegated");
   });
 
-  it.skip("PHASE 3 — seals both positions private on the ER", async () => {
+  (TEE ? it : it.skip)("PHASE 3 — seals both positions private on the ER", async () => {
     for (const owner of [creator.publicKey, joiner.publicKey]) {
       const permission = permissionPdaFromAccount(owner.equals(creator.publicKey) ? p.posA : p.posB);
       await erProgram.methods
@@ -208,7 +265,8 @@ describe("fogduel · ephemeral rollup + privacy", () => {
     // applies it. Poll until L1 ownership returns to the program for both —
     // settle_match is handed each of them and Anchor checks every owner.
     let owners: string[] = [];
-    for (let i = 0; i < 60; i++) {
+    // The devnet committor lands through real base-layer transactions: allow longer.
+    for (let i = 0; i < (TEE ? 180 : 60); i++) {
       owners = await Promise.all(
         [p.posA, p.posB].map(async (k) =>
           (await provider.connection.getAccountInfo(k))!.owner.toBase58())

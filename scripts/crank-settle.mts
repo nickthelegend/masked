@@ -31,7 +31,10 @@ const asSigner = (kp: Keypair) => ({
 
 async function main() {
   const cranker = load(`${process.env.HOME}/.config/solana/id.json`);
-  const client = new FogduelClient(wrap(cranker) as never, CLUSTERS.local, asSigner(cranker));
+  // Local unless EXPO_PUBLIC_CLUSTER=devnet, the switch the other scripts use.
+  const cluster = process.env.EXPO_PUBLIC_CLUSTER === 'devnet' ? CLUSTERS.devnet : CLUSTERS.local;
+  if (cluster.name !== 'local') console.log(`cluster: ${cluster.name} (${cluster.l1})`);
+  const client = new FogduelClient(wrap(cranker) as never, cluster, asSigner(cranker));
 
   const expired = (await client.fetchExpiredMatches()).filter((m) => m.joiner);
   if (expired.length === 0) {

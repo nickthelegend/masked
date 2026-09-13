@@ -18,7 +18,11 @@ use anchor_lang::system_program;
 use ephemeral_rollups_sdk::anchor::{commit, delegate, ephemeral};
 use ephemeral_rollups_sdk::consts::{EPHEMERAL_VAULT_ID, PERMISSION_PROGRAM_ID};
 use ephemeral_rollups_sdk::cpi::DelegateConfig;
-use ephemeral_rollups_sdk::ephem::commit_and_undelegate_accounts;
+use anchor_lang::InstructionData;
+use anchor_lang::solana_program::instruction::{AccountMeta, Instruction};
+use anchor_lang::solana_program::program::invoke;
+use ephemeral_rollups_sdk::consts::{MAGIC_CONTEXT_ID, MAGIC_PROGRAM_ID};
+use ephemeral_rollups_sdk::ephem::{FoldableIntentBuilder, IntentInstructions, MagicIntentBundleBuilder};
 use ephemeral_rollups_sdk::access_control::instructions::{
     CreateEphemeralPermissionCpi, CreatePermissionCpi, CreatePermissionCpiAccounts,
     CreatePermissionInstructionArgs, DelegatePermissionCpi, DelegatePermissionCpiAccounts,
@@ -27,6 +31,8 @@ use ephemeral_rollups_sdk::access_control::structs::{
     EphemeralMembersArgs, Member, MembersArgs, AUTHORITY_FLAG, TX_BALANCES_FLAG, TX_LOGS_FLAG,
     TX_MESSAGE_FLAG,
 };
+use magicblock_magic_program_api::args::ScheduleTaskArgs;
+use magicblock_magic_program_api::instruction::MagicBlockInstruction;
 use ephemeral_rollups_sdk::vrf::anchor::{vrf, vrf_callback};
 use ephemeral_rollups_sdk::vrf::consts::VRF_PROGRAM_IDENTITY;
 use session_keys::{session_auth_or, Session, SessionError, SessionToken};
@@ -54,6 +60,104 @@ pub const POSITION_PREFUND_LAMPORTS: u64 = 5_000_000;
 
 pub const MIN_DURATION: i64 = 10;
 pub const MAX_DURATION: i64 = 3600;
+
+/* ------------------------- MagicBlock: rollup cranks ------------------------ */
+
+/// The rollup's crank program. A task scheduled on the rollup runs under a PDA
+/// of this program derived from whoever scheduled it, and that PDA is the only
+/// signer a scheduled instruction may ask for.
+pub const CRANK_PROGRAM_ID: Pubkey =
+    Pubkey::from_str_const("Crank11111111111111111111111111111111111111");
+pub const CRANK_SEED: &[u8] = b"crank-executor";
+
+/// How often the rollup's keeper looks for a blown-up position.
+pub const KEEPER_INTERVAL_MS: i64 = 2_000;
+/// The keeper's last look lands at least this long before the buzzer, so it
+/// never meets the commit that follows it.
+pub const KEEPER_STOP_BEFORE_BUZZER_MS: i64 = 1_000;
+/// How long past the buzzer the rollup commits the round home by itself.
+pub const BUZZER_GRACE_MS: i64 = 2_000;
+
+/// The signer a task scheduled by `authority` runs under.
+pub fn crank_signer_for(authority: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[CRANK_SEED, authority.as_ref()], &CRANK_PROGRAM_ID).0
+}
+
+/// A task id that belongs to one round. The rollup keys tasks by id alone, so
+/// it comes from the match address, with a salt per task.
+pub fn round_task_id(match_key: &Pubkey, salt: u8) -> i64 {
+    let mut b = [0u8; 8];
+    b.copy_from_slice(&match_key.as_ref()[..8]);
+    b[0] = (b[0] & 0xF0) | (salt & 0x0F);
+    b[7] &= 0x7F;
+    i64::from_le_bytes(b)
+}
+
+/// Schedule one account's commit and undelegation through the intent-bundle API.
+///
+/// This replaces `commit_and_undelegate_accounts`, which the SDK deprecates.
+/// The builder marks its payer writable, which is right for a wallet and wrong
+/// for a crank: the rollup only lets a task sign with its crank PDA read-only,
+/// and a CPI may not raise a privilege its caller never had. So the payer keeps
+/// whatever writability it arrived with.
+fn schedule_commit_and_undelegate<'info>(
+    payer: &AccountInfo<'info>,
+    account: &AccountInfo<'info>,
+    magic_context: &AccountInfo<'info>,
+    magic_program: &AccountInfo<'info>,
+) -> Result<()> {
+    let IntentInstructions { schedule_intent_ix: (infos, mut ix), .. } =
+        MagicIntentBundleBuilder::new(payer.clone(), magic_context.clone(), magic_program.clone())
+            .commit_and_undelegate(&[account.clone()])
+            .build();
+    if let Some(meta) = ix.accounts.iter_mut().find(|meta| meta.pubkey == *payer.key) {
+        meta.is_writable = payer.is_writable;
+    }
+    invoke(&ix, &infos)?;
+    Ok(())
+}
+
+/// Ask the rollup to run `args.instructions` on a timer. A new task runs once
+/// straight away, then every `execution_interval_millis`.
+fn schedule_task<'info>(
+    payer: &AccountInfo<'info>,
+    magic_program: &AccountInfo<'info>,
+    args: ScheduleTaskArgs,
+) -> Result<()> {
+    let ix = Instruction::new_with_bincode(
+        MAGIC_PROGRAM_ID,
+        &MagicBlockInstruction::ScheduleTask(args),
+        vec![AccountMeta::new(*payer.key, true)],
+    );
+    invoke(&ix, &[payer.clone(), magic_program.clone()])?;
+    Ok(())
+}
+
+/// Close a position that has run out of equity at `mark`. Returns whether it did.
+fn close_if_underwater(pos: &mut Position, mark: u64, entry: u64, now: i64) -> Result<bool> {
+    // Solvent, or holding nothing. Not an error — the keeper calls this blind
+    // on both sides every few seconds.
+    if pos.base_qty == 0 || !pos.is_underwater(mark) {
+        return Ok(false);
+    }
+
+    // Record it as an execution at the mark, so the tape says what the
+    // position was and when it went, rather than just showing a hole.
+    pos.book.repeg(entry, mark).ok_or(FogError::InvalidPrice)?;
+    let qty = (pos.base_qty as i128).unsigned_abs() as u64;
+    // `push_fill` counts it. This used to add one more on top, so every
+    // liquidated position reported a fill more than it had.
+    pos.push_fill(Fill { side: Side::Liquidation, qty, px: mark, ts: now });
+
+    // Equity was already at or below zero. Closing it out leaves exactly
+    // nothing, which is -100% and cannot go further: the entry is the most
+    // anyone can lose, and the pot always covers the payout.
+    pos.base_qty = 0;
+    pos.avg_px = 0;
+    pos.quote_balance = 0;
+    pos.last_px = mark;
+    Ok(true)
+}
 
 /// `#[ephemeral]` wires in the magic-program plumbing every delegated program
 /// needs. It must sit above `#[program]`.
@@ -217,6 +321,8 @@ pub mod fogduel {
         pa.realized = 0;
         pa.last_px = px_a;
         pa.fill_count = 0;
+        pa.window_quote = quote;
+        pa.window_base = 0;
         pa.fills = Vec::new();
         pa.bump = ctx.bumps.position_a;
         // Each side gets its own book, seeded at the mark of the token that
@@ -234,6 +340,8 @@ pub mod fogduel {
         pb.realized = 0;
         pb.last_px = start_px;
         pb.fill_count = 0;
+        pb.window_quote = quote;
+        pb.window_base = 0;
         pb.fills = Vec::new();
         pb.bump = ctx.bumps.position_b;
         pb.book.seed(entry, start_px).ok_or(FogError::InvalidPrice)?;
@@ -279,10 +387,8 @@ pub mod fogduel {
         let entry = ctx.accounts.match_account.entry;
         let vault_ai = ctx.accounts.vault.to_account_info();
         let rent_floor = Rent::get()?.minimum_balance(vault_ai.data_len());
-        require!(
-            vault_ai.lamports() >= entry + rent_floor,
-            FogError::VaultUnderfunded
-        );
+        let needed = entry.checked_add(rent_floor).ok_or(FogError::MathOverflow)?;
+        require!(vault_ai.lamports() >= needed, FogError::VaultUnderfunded);
 
         **vault_ai.try_borrow_mut_lamports()? -= entry;
         **ctx.accounts.creator.to_account_info().try_borrow_mut_lamports()? += entry;
@@ -478,26 +584,9 @@ pub mod fogduel {
         let pos = &mut ctx.accounts.position;
         require_keys_eq!(pos.owner, owner, FogError::NotAParticipant);
 
-        // Solvent, or holding nothing. Not an error — the crank calls this
-        // blind on both sides every few seconds.
-        if pos.base_qty == 0 || !pos.is_underwater(mark) {
+        if !close_if_underwater(pos, mark, entry, now)? {
             return Ok(());
         }
-
-        // Record it as an execution at the mark, so the tape says what the
-        // position was and when it went, rather than just showing a hole.
-        pos.book.repeg(entry, mark).ok_or(FogError::InvalidPrice)?;
-        let qty = (pos.base_qty as i128).unsigned_abs() as u64;
-        pos.push_fill(Fill { side: Side::Liquidation, qty, px: mark, ts: now });
-        pos.fill_count = pos.fill_count.saturating_add(1);
-
-        // Equity was already at or below zero. Closing it out leaves exactly
-        // nothing, which is -100% and cannot go further: the entry is the most
-        // anyone can lose, and the pot always covers the payout.
-        pos.base_qty = 0;
-        pos.avg_px = 0;
-        pos.quote_balance = 0;
-        pos.last_px = mark;
 
         let status = &mut ctx.accounts.round_status;
         if is_creator {
@@ -602,10 +691,8 @@ pub mod fogduel {
 
         let vault_ai = ctx.accounts.vault.to_account_info();
         let rent_floor = Rent::get()?.minimum_balance(vault_ai.data_len());
-        require!(
-            vault_ai.lamports() >= pot + rent_floor,
-            FogError::VaultUnderfunded
-        );
+        let needed = pot.checked_add(rent_floor).ok_or(FogError::MathOverflow)?;
+        require!(vault_ai.lamports() >= needed, FogError::VaultUnderfunded);
 
         let winner_ai = if winner == creator {
             ctx.accounts.creator.to_account_info()
@@ -632,6 +719,14 @@ pub mod fogduel {
         tape.pot_paid = payout;
         tape.rake = rake;
         tape.settled_ts = now;
+        // Where the stored fills start, after the SETTLE fill above has had
+        // its chance to push one more off the front.
+        tape.start_quote_a = ctx.accounts.position_a.window_quote;
+        tape.start_base_a = ctx.accounts.position_a.window_base;
+        tape.fill_count_a = ctx.accounts.position_a.fill_count;
+        tape.start_quote_b = ctx.accounts.position_b.window_quote;
+        tape.start_base_b = ctx.accounts.position_b.window_base;
+        tape.fill_count_b = ctx.accounts.position_b.fill_count;
         tape.fills_a = ctx.accounts.position_a.fills.clone();
         tape.fills_b = ctx.accounts.position_b.fills.clone();
         tape.bump = ctx.bumps.tape;
@@ -922,20 +1017,18 @@ pub mod fogduel {
     /// Called on the ER once the clock expires, once per side. After both have
     /// landed the positions are readable on L1 again and `settle_match` can run.
     ///
-    /// One at a time, deliberately. A Position is 543 bytes, so two of them do
+    /// One at a time, deliberately. A Position is 559 bytes, so two of them do
     /// not fit in a single 1232-byte transaction, and asking the rollup to
     /// commit both at once pushes its committor onto a chunked buffer path.
     /// Committing them separately keeps every commit inline, and a failure on
     /// one side no longer strands the other.
     pub fn commit_and_undelegate_position(ctx: Context<CommitAndUndelegatePosition>) -> Result<()> {
-        commit_and_undelegate_accounts(
+        schedule_commit_and_undelegate(
             &ctx.accounts.payer.to_account_info(),
-            vec![&ctx.accounts.position.to_account_info()],
-            &ctx.accounts.magic_context,
-            &ctx.accounts.magic_program,
-            None,
-        )?;
-        Ok(())
+            &ctx.accounts.position.to_account_info(),
+            &ctx.accounts.magic_context.to_account_info(),
+            &ctx.accounts.magic_program.to_account_info(),
+        )
     }
 
     /// Bring the public round status back from the rollup.
@@ -945,13 +1038,206 @@ pub mod fogduel {
     /// delegation program on L1, so without this the settle transaction would
     /// be rejected before it read anything.
     pub fn commit_and_undelegate_status(ctx: Context<CommitAndUndelegateStatus>) -> Result<()> {
-        commit_and_undelegate_accounts(
+        schedule_commit_and_undelegate(
             &ctx.accounts.payer.to_account_info(),
-            vec![&ctx.accounts.round_status.to_account_info()],
-            &ctx.accounts.magic_context,
-            &ctx.accounts.magic_program,
-            None,
+            &ctx.accounts.round_status.to_account_info(),
+            &ctx.accounts.magic_context.to_account_info(),
+            &ctx.accounts.magic_program.to_account_info(),
+        )
+    }
+
+    /// Hand the round's upkeep to the rollup itself.
+    ///
+    /// Schedules two tasks on the Ephemeral Rollup, run by the rollup's own
+    /// crank rather than by anybody's browser:
+    ///
+    /// - a keeper that looks for a blown-up position every two seconds until
+    ///   just before the buzzer, and liquidates it in public;
+    /// - the buzzer: just past the end of the round, commit both positions and
+    ///   the round status back to Solana, and release them.
+    ///
+    /// The access-control lists are not the crank's to release. The permission
+    /// program pays for that commit from whoever signs as the list's authority,
+    /// and a signer the rollup holds delegated — a position PDA — can only pay
+    /// alongside a fee vault the permission program does not pass. So each
+    /// player's client releases its own list after the buzzer, signed by the
+    /// wallet the list names.
+    ///
+    /// Both used to be the players' clients' job. A round whose players had
+    /// closed their tabs was never checked for a blow-up and never came home;
+    /// it sat on the rollup until somebody ran a script.
+    ///
+    /// A task runs once the moment it is scheduled, so the buzzer task gets two
+    /// runs: the first lands mid-round and does nothing, the second lands just
+    /// past the buzzer. Scheduling again replaces a task this signer owns and
+    /// leaves one another signer owns alone, so both players' clients can call
+    /// this and exactly one keeper runs.
+    ///
+    /// Runs on the rollup.
+    pub fn schedule_round_cranks(ctx: Context<ScheduleRoundCranks>) -> Result<()> {
+        let m = &ctx.accounts.match_account;
+        require!(m.status == MatchStatus::Live, FogError::MatchNotLive);
+        let joiner = m.joiner.ok_or(FogError::MatchNotLive)?;
+        let now_ms = Clock::get()?
+            .unix_timestamp
+            .checked_mul(1000)
+            .ok_or(FogError::MathOverflow)?;
+        let buzzer_ms = m
+            .start_ts
+            .checked_add(m.duration)
+            .and_then(|t| t.checked_mul(1000))
+            .ok_or(FogError::MathOverflow)?;
+        let remaining_ms = buzzer_ms.saturating_sub(now_ms);
+        require!(remaining_ms > 0, FogError::MatchExpired);
+
+        let match_key = m.key();
+        let crank_signer = crank_signer_for(ctx.accounts.payer.key);
+        let pda = |seeds: &[&[u8]]| Pubkey::find_program_address(seeds, &crate::ID).0;
+        let position_a = pda(&[&b"position"[..], match_key.as_ref(), m.creator.as_ref()]);
+        let position_b = pda(&[&b"position"[..], match_key.as_ref(), joiner.as_ref()]);
+        let round_status = pda(&[&b"status"[..], match_key.as_ref()]);
+
+        let payer = ctx.accounts.payer.to_account_info();
+        let magic_program = ctx.accounts.magic_program.to_account_info();
+
+        let keeper_runs = (remaining_ms - KEEPER_STOP_BEFORE_BUZZER_MS) / KEEPER_INTERVAL_MS;
+        if keeper_runs >= 1 {
+            let keeper = Instruction {
+                program_id: crate::ID,
+                accounts: crate::accounts::CrankLiquidate {
+                    cranker: crank_signer,
+                    match_account: match_key,
+                    price_feed_a: pda(&[&b"feed"[..], match_key.as_ref(), m.creator.as_ref()]),
+                    price_feed_b: pda(&[&b"feed"[..], match_key.as_ref(), joiner.as_ref()]),
+                    position_a,
+                    position_b,
+                    round_status,
+                }
+                .to_account_metas(None),
+                data: crate::instruction::CrankLiquidate {}.data(),
+            };
+            schedule_task(
+                &payer,
+                &magic_program,
+                ScheduleTaskArgs {
+                    task_id: round_task_id(&match_key, 1),
+                    execution_interval_millis: KEEPER_INTERVAL_MS,
+                    iterations: keeper_runs,
+                    instructions: vec![keeper],
+                },
+            )?;
+        }
+
+        let accounts = crate::accounts::CrankCommitRound {
+            cranker: crank_signer,
+            match_account: match_key,
+            position_a,
+            position_b,
+            round_status,
+            magic_context: MAGIC_CONTEXT_ID,
+            magic_program: MAGIC_PROGRAM_ID,
+        }
+        .to_account_metas(None);
+        schedule_task(
+            &payer,
+            &magic_program,
+            ScheduleTaskArgs {
+                task_id: round_task_id(&match_key, 2),
+                execution_interval_millis: remaining_ms + BUZZER_GRACE_MS,
+                iterations: 2,
+                instructions: vec![Instruction {
+                    program_id: crate::ID,
+                    accounts,
+                    data: crate::instruction::CrankCommitRound {}.data(),
+                }],
+            },
         )?;
+
+        msg!(
+            "round cranks scheduled: keeper x{} every {}ms, buzzer commit in {}ms, crank signer {}",
+            keeper_runs.max(0),
+            KEEPER_INTERVAL_MS,
+            remaining_ms + BUZZER_GRACE_MS,
+            crank_signer
+        );
+        Ok(())
+    }
+
+    /// The keeper's beat, run by the rollup: liquidate whichever side has run
+    /// out of equity.
+    ///
+    /// Both sides in one instruction, and quiet about everything that is not a
+    /// blow-up — the round not live, the clock run out — because a task that
+    /// errors is retried and then dropped, and a keeper that stops at the first
+    /// awkward moment is not a keeper.
+    pub fn crank_liquidate(ctx: Context<CrankLiquidate>) -> Result<()> {
+        let now = Clock::get()?.unix_timestamp;
+        let (live, entry, ends) = {
+            let m = &ctx.accounts.match_account;
+            (m.status == MatchStatus::Live, m.entry, m.start_ts + m.duration)
+        };
+        if !live || now >= ends {
+            return Ok(());
+        }
+
+        let mark_a = ctx.accounts.price_feed_a.px;
+        if mark_a > 0 && close_if_underwater(&mut ctx.accounts.position_a, mark_a, entry, now)? {
+            ctx.accounts.round_status.liquidated_a = true;
+            msg!("keeper liquidated owner={} at px={}", ctx.accounts.position_a.owner, mark_a);
+        }
+        let mark_b = ctx.accounts.price_feed_b.px;
+        if mark_b > 0 && close_if_underwater(&mut ctx.accounts.position_b, mark_b, entry, now)? {
+            ctx.accounts.round_status.liquidated_b = true;
+            msg!("keeper liquidated owner={} at px={}", ctx.accounts.position_b.owner, mark_b);
+        }
+        Ok(())
+    }
+
+    /// The buzzer, run by the rollup: commit and release both positions and the
+    /// round status.
+    ///
+    /// Does nothing before the buzzer (the task's first run lands mid-round)
+    /// and skips anything already on its way home, so a player's client that
+    /// got there first costs nothing and fails nothing. Each account is its own
+    /// intent: a position is 559 bytes, and committing two at once sends the
+    /// committor down a chunked path that one at a time never needs.
+    pub fn crank_commit_round(ctx: Context<CrankCommitRound>) -> Result<()> {
+        let m = &ctx.accounts.match_account;
+        let now = Clock::get()?.unix_timestamp;
+        if m.status != MatchStatus::Live || now < m.start_ts + m.duration {
+            return Ok(());
+        }
+        let Some(joiner) = m.joiner else {
+            return Ok(());
+        };
+        let match_key = m.key();
+        let payer = ctx.accounts.cranker.to_account_info();
+        let magic_context = ctx.accounts.magic_context.to_account_info();
+        let magic_program = ctx.accounts.magic_program.to_account_info();
+
+        for (owner, position) in [
+            (m.creator, ctx.accounts.position_a.to_account_info()),
+            (joiner, ctx.accounts.position_b.to_account_info()),
+        ] {
+            // Already on its way home: a player's client got there first.
+            if position.owner != &crate::ID {
+                continue;
+            }
+            let (expected, _) = Pubkey::find_program_address(
+                &[b"position", match_key.as_ref(), owner.as_ref()],
+                &crate::ID,
+            );
+            require_keys_eq!(*position.key, expected, FogError::NotAParticipant);
+            schedule_commit_and_undelegate(&payer, &position, &magic_context, &magic_program)?;
+            msg!("buzzer: committing position owner={}", owner);
+        }
+
+        let status = ctx.accounts.round_status.to_account_info();
+        if status.owner == &crate::ID {
+            let expected = Pubkey::find_program_address(&[b"status", match_key.as_ref()], &crate::ID).0;
+            require_keys_eq!(*status.key, expected, FogError::NotAParticipant);
+            schedule_commit_and_undelegate(&payer, &status, &magic_context, &magic_program)?;
+        }
         Ok(())
     }
 }
@@ -1435,4 +1721,81 @@ pub struct DelegatePositionPermission<'info> {
     pub delegation_program: Program<'info, ephemeral_rollups_sdk::anchor::DelegationProgram>,
 
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct ScheduleRoundCranks<'info> {
+    /// Signs the schedule. Both tasks run under this key's crank signer.
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    #[account(seeds = [b"match", match_account.creator.as_ref(), &match_account.match_id.to_le_bytes()], bump = match_account.bump)]
+    pub match_account: Box<Account<'info, Match>>,
+
+    /// CHECK: fixed address from the SDK.
+    #[account(address = MAGIC_PROGRAM_ID)]
+    pub magic_program: UncheckedAccount<'info>,
+}
+
+#[derive(Accounts)]
+pub struct CrankLiquidate<'info> {
+    /// On the rollup, the crank signer of whoever scheduled the keeper. Never
+    /// writable: the rollup refuses a task that asks for that.
+    pub cranker: Signer<'info>,
+
+    #[account(seeds = [b"match", match_account.creator.as_ref(), &match_account.match_id.to_le_bytes()], bump = match_account.bump)]
+    pub match_account: Box<Account<'info, Match>>,
+
+    #[account(seeds = [b"feed", match_account.key().as_ref(), match_account.creator.as_ref()], bump = price_feed_a.bump)]
+    pub price_feed_a: Box<Account<'info, PriceFeed>>,
+
+    #[account(
+        seeds = [b"feed", match_account.key().as_ref(), position_b.owner.as_ref()],
+        bump = price_feed_b.bump,
+    )]
+    pub price_feed_b: Box<Account<'info, PriceFeed>>,
+
+    #[account(mut, seeds = [b"position", match_account.key().as_ref(), match_account.creator.as_ref()], bump = position_a.bump)]
+    pub position_a: Box<Account<'info, Position>>,
+
+    #[account(
+        mut,
+        seeds = [b"position", match_account.key().as_ref(), position_b.owner.as_ref()],
+        bump = position_b.bump,
+        constraint = match_account.joiner == Some(position_b.owner) @ FogError::NotAParticipant,
+    )]
+    pub position_b: Box<Account<'info, Position>>,
+
+    /// Unsealed on purpose. See `RoundStatus`.
+    #[account(mut, seeds = [b"status", match_account.key().as_ref()], bump = round_status.bump)]
+    pub round_status: Box<Account<'info, RoundStatus>>,
+}
+
+#[derive(Accounts)]
+pub struct CrankCommitRound<'info> {
+    /// As in `CrankLiquidate`. Also the payer of the commits it schedules.
+    pub cranker: Signer<'info>,
+
+    #[account(seeds = [b"match", match_account.creator.as_ref(), &match_account.match_id.to_le_bytes()], bump = match_account.bump)]
+    pub match_account: Box<Account<'info, Match>>,
+
+    /// CHECK: seeds checked in the handler; skipped if already on its way home.
+    #[account(mut)]
+    pub position_a: UncheckedAccount<'info>,
+
+    /// CHECK: as `position_a`.
+    #[account(mut)]
+    pub position_b: UncheckedAccount<'info>,
+
+    /// CHECK: seeds and owner checked in the handler.
+    #[account(mut)]
+    pub round_status: UncheckedAccount<'info>,
+
+    /// CHECK: fixed address from the SDK.
+    #[account(mut, address = MAGIC_CONTEXT_ID)]
+    pub magic_context: UncheckedAccount<'info>,
+
+    /// CHECK: fixed address from the SDK.
+    #[account(address = MAGIC_PROGRAM_ID)]
+    pub magic_program: UncheckedAccount<'info>,
 }

@@ -87,7 +87,7 @@ const GALLERY_MARKETS: PickableMarket[] = [
     source: 'pump.fun',
   },
   {
-    mint: 'qX4gjQfLKZaTfLKZaTfLKZaTfLKZaTfLKZaTfLKZpump',
+    mint: 'LVC9prkf2S17isxQSorJSxAN4X89WrmkmKYD8nLpump',
     symbol: 'WOTF',
     name: 'World Of The Future',
     price: '$0.8061',
@@ -163,6 +163,13 @@ export default function UIGallery() {
       <Stack gap={space.xs}>
         <PixelText variant="wordmark">MASKED</PixelText>
         <PixelText variant="bodySmall">UI GALLERY · every component, every state</PixelText>
+        <PixelText variant="label" size={9} color={color.yellow}>
+          SAMPLE DATA — COMPONENT GALLERY
+        </PixelText>
+        <PixelText variant="bodySmall" color={color.yellow}>
+          Every figure on this page is a frozen or generated example for showing
+          components, not live chain state. The real duel is at /play.
+        </PixelText>
       </Stack>
 
       <Section title="TYPE ROLES" note="9 roles">

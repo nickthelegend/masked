@@ -18,6 +18,7 @@ import {
 import { short } from '../chain/useTapes';
 import { MAX_OPEN_AGE_SECS } from '../chain/units';
 import { useOpenMatches } from '../chain/useOpenMatches';
+import { useMatchInvite } from '../chain/useMatchInvite';
 
 
 export interface MatchmakingScreenProps {
@@ -32,6 +33,12 @@ export interface MatchmakingScreenProps {
   onStart: () => void;
   onJoin?: (address: string, creator: string) => void;
   onCancel?: (address: string) => void;
+  /** A match address from an invite link, shown above the book. */
+  inviteAddress?: string | null;
+  /** Copies the invite link for one of this wallet's open matches. */
+  onInvite?: (address: string) => void;
+  /** What the invite button currently says — COPY, COPIED or BLOCKED. */
+  inviteLabel?: string;
 }
 
 const ago = (secs: number) => (secs < 60 ? `${secs}s ago` : `${Math.floor(secs / 60)}m ago`);
@@ -53,8 +60,22 @@ export default function MatchmakingScreen({
   onStart,
   onJoin,
   onCancel,
+  inviteAddress = null,
+  onInvite,
+  inviteLabel = 'COPY INVITE LINK',
 }: MatchmakingScreenProps) {
-  const { matches, loaded } = useOpenMatches();
+  const { matches: book, loaded } = useOpenMatches();
+  const invite = useMatchInvite(inviteAddress, myAddress);
+  // A joinable invite is drawn above the book, so it is not listed twice.
+  const matches =
+    invite.kind === 'joinable' ? book.filter((m) => m.address.toBase58() !== invite.match.address) : book;
+  // The newest match this wallet opened that the program would still let
+  // someone join — the one an invite link is worth sending for.
+  const myOpen = myAddress
+    ? book
+        .filter((m) => m.creator.toBase58() === myAddress && m.ageSecs <= MAX_OPEN_AGE_SECS)
+        .sort((a, b) => a.ageSecs - b.ageSecs)[0]
+    : undefined;
 
   return (
     <Stack pad={space.lg} gap={space.lg} align="center">
@@ -121,6 +142,50 @@ export default function MatchmakingScreen({
       </Row>
 
       <PixelButton tone="gold" label="OPEN A MATCH" size={11} loading={busy} onPress={onStart} />
+
+      {/* 1v1 needs a second person; a link is how you bring one. Only for a
+          match the program would still let them join. */}
+      {myOpen && onInvite ? (
+        <PixelButton
+          tone="info"
+          label={inviteLabel}
+          size={9}
+          onPress={() => onInvite(myOpen.address.toBase58())}
+        />
+      ) : null}
+
+      {invite.kind !== 'none' ? (
+        <Stack gap={space.sm} style={{ width: '100%' }}>
+          <PixelText variant="label" size={8} color={color.yellow}>
+            YOU WERE INVITED
+          </PixelText>
+          {invite.kind === 'reading' ? (
+            <PixelText variant="bodySmall" color={color.textFaint}>
+              READING THE INVITED MATCH…
+            </PixelText>
+          ) : invite.kind === 'joinable' ? (
+            <MatchRow
+              creator={invite.match.creatorShort}
+              symbol={invite.match.symbol}
+              mint={invite.match.mint}
+              entrySol={invite.match.entry / 1e9}
+              durationSecs={invite.match.duration}
+              ageLabel={ago(invite.match.ageSecs)}
+              busy={busy}
+              onJoin={() => onJoin?.(invite.match.address, invite.match.creator)}
+            />
+          ) : (
+            <Stack gap={2}>
+              <PixelText variant="label" size={9} color={color.red}>
+                {invite.title}
+              </PixelText>
+              <PixelText variant="bodySmall" color={color.textFaint}>
+                {invite.detail}
+              </PixelText>
+            </Stack>
+          )}
+        </Stack>
+      ) : null}
 
       <Stack gap={space.sm} style={{ width: '100%' }}>
         <Row justify="space-between">

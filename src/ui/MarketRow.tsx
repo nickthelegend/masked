@@ -4,17 +4,18 @@ import Stack from './Stack';
 import PixelText from './PixelText';
 import TokenLogo from './TokenLogo';
 import SourceBadge, { type PriceSource } from './SourceBadge';
-import { border, color, pressedBevel, space } from './theme';
+import { border, color, focusRing, noOutline, pressedBevel, space } from './theme';
 
 export interface MarketRowProps {
   mint: string;
   symbol: string;
   /**
-   * Drawn after the ticker when another row in the same list shares it.
+   * Another row in the same list claims this ticker.
    *
    * pump.fun tickers are not unique — four separate WOFI mints sit in the top
-   * six by market cap — so a list keyed on the symbol alone offers four
-   * identical-looking rows that trade completely different tokens.
+   * six by market cap — so a list keyed on the symbol alone offers identical-
+   * looking rows that trade completely different tokens. Every row shows its
+   * short mint; this lights the mint up where the ticker alone would mislead.
    */
   ambiguous?: boolean;
   name: string;
@@ -50,8 +51,8 @@ export default function MarketRow({
   style,
 }: MarketRowProps) {
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${symbol}, ${price}`}>
-      {({ pressed }) => (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${symbol}, ${price}`} style={noOutline}>
+      {(state) => (
         <Row
           gap={space.sm}
           pad={space.sm}
@@ -59,7 +60,11 @@ export default function MarketRow({
           bg={selected ? color.panelLight : color.panel}
           outline={selected ? color.yellow : color.blue}
           outlineWidth={border.base}
-          style={[pressedBevel(pressed) as ViewStyle, ...(Array.isArray(style) ? style : style ? [style] : [])]}
+          style={[
+            pressedBevel(state.pressed) as ViewStyle,
+            ...((state as { focused?: boolean }).focused ? [focusRing] : []),
+            ...(Array.isArray(style) ? style : style ? [style] : []),
+          ]}
         >
           <TokenLogo mint={mint} symbol={symbol} uri={imageUri} size={32} />
 
@@ -67,8 +72,13 @@ export default function MarketRow({
             <PixelText variant="label" size={10} color={selected ? color.yellow : color.white} numberOfLines={1}>
               {symbol}
             </PixelText>
+            {/* The mint is the token; the ticker is only a label anyone can reuse.
+                It leads, so a long name truncates before the identity does. */}
             <PixelText variant="bodySmall" size={10} color={color.textFaint} numberOfLines={1}>
-              {ambiguous ? `${name} · ${mint.slice(0, 4)}…${mint.slice(-4)}` : name}
+              <PixelText variant="bodySmall" size={10} color={ambiguous ? color.yellow : color.textDim}>
+                {`${mint.slice(0, 4)}…${mint.slice(-4)}`}
+              </PixelText>
+              {` · ${name}`}
             </PixelText>
           </Stack>
 

@@ -1,0 +1,67 @@
+.mk-finale {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: clamp(22px, 4vh, 40px);
+  padding-bottom: clamp(64px, 11vh, 128px);
+  overflow: hidden;
+  text-align: center;
+  border-top: 2px solid var(--ink-5);
+}
+
+.mk-finale__band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 18%;
+  height: clamp(90px, 16vw, 260px);
+  background-image: repeating-conic-gradient(rgba(143, 162, 224, 0.16) 0 25%, transparent 0 50%);
+  background-size: 6px 6px;
+  transform-origin: center center;
+}
+
+.mk-finale__word {
+  position: relative;
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: clamp(40px, 14.5vw, 240px);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  color: var(--accent);
+}
+
+.mk-finale__char {
+  display: inline-block;
+}
+
+.mk-finale__line {
+  position: relative;
+  max-width: 34ch;
+  margin: 0;
+  font-size: clamp(15px, 1.5vw, 20px);
+  line-height: 1.6;
+  color: var(--bright);
+}
+
+.mk-finale__links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px 30px;
+}
+
+.mk-finale__note {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 8px;
+  line-height: 1.8;
+  color: var(--faint);
+}
+
+@media (max-width: 767px) {
+  .mk-finale__links .mk-navlink {
+    display: inline-block;
+  }
+}

@@ -1,7 +1,7 @@
 import { Pressable, type ViewStyle } from 'react-native';
 import Row from './Row';
 import PixelText from './PixelText';
-import { border, color, onInk, pressedBevel, space } from './theme';
+import { border, color, focusRing, noOutline, onInk, pressedBevel, space } from './theme';
 
 export interface MarketTab<T extends string> {
   key: T;
@@ -33,16 +33,16 @@ export default function MarketTabs<T extends string>({ tabs, active, onChange, s
             onPress={() => onChange(t.key)}
             accessibilityRole="tab"
             accessibilityState={{ selected: on }}
-            style={{ flex: 1 }}
+            style={[{ flex: 1 }, noOutline]}
           >
-            {({ pressed }) => (
+            {(state) => (
               <Row
                 justify="center"
                 padY={space.sm}
                 bg={on ? color.yellow : color.ink}
                 outline={on ? color.yellow : color.panelLight}
                 outlineWidth={border.thin}
-                style={pressedBevel(pressed) as ViewStyle}
+                style={[pressedBevel(state.pressed) as ViewStyle, ...((state as { focused?: boolean }).focused ? [focusRing] : [])]}
               >
                 <PixelText variant="tabLabel" color={on ? onInk.yellow : color.textDim}>
                   {t.label}

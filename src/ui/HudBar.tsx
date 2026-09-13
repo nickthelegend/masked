@@ -55,6 +55,7 @@ function CounterPill({
   iconBg,
   iconInk,
   value,
+  valueColor = color.white,
   onAdd,
   label,
 }: {
@@ -62,6 +63,8 @@ function CounterPill({
   iconBg: string;
   iconInk: string;
   value: string;
+  /** The number's ink; the balance tints it for a moment when money moves. */
+  valueColor?: string;
   onAdd?: () => void;
   label: string;
 }) {
@@ -88,7 +91,7 @@ function CounterPill({
       >
         <Icon size={12} color={iconInk} />
       </View>
-      <PixelText variant="numeric" size={9} color={color.white}>
+      <PixelText variant="numeric" size={9} color={valueColor}>
         {value}
       </PixelText>
       {onAdd ? (
@@ -118,6 +121,8 @@ function CounterPill({
 export interface HudBarProps {
   /** SOL in the connected wallet, already formatted. */
   balance: string;
+  /** Which way the balance just moved, if it did: green up, red down. */
+  balanceTone?: 'up' | 'down' | null;
   /** Rounds won. The trophy counter. */
   trophies: number;
   onBack?: () => void;
@@ -134,7 +139,7 @@ export interface HudBarProps {
  * Two counters, never more. The bar is read at a glance mid-round and every
  * extra chip costs the countdown its place as the loudest thing on screen.
  */
-export default function HudBar({ balance, trophies, onBack, onMenu, onTopUp, children }: HudBarProps) {
+export default function HudBar({ balance, balanceTone = null, trophies, onBack, onMenu, onTopUp, children }: HudBarProps) {
   return (
     <Row
       align="center"
@@ -152,6 +157,7 @@ export default function HudBar({ balance, trophies, onBack, onMenu, onTopUp, chi
           iconBg={color.blue}
           iconInk={color.white}
           value={balance}
+          valueColor={balanceTone === 'up' ? color.green : balanceTone === 'down' ? color.red : color.white}
           onAdd={onTopUp}
           label="Balance"
         />

@@ -2,7 +2,7 @@ import { Pressable, View } from 'react-native';
 import IconPlate from './IconPlate';
 import { DuelIcon, FeedIcon, ModesIcon, QuestIcon, RankIcon, type PixelIconProps } from './icons';
 import PixelText from './PixelText';
-import { TAB_BAR_MIN_HEIGHT, bevel, border, color, onInk, radius, shade } from './theme';
+import { TAB_BAR_MIN_HEIGHT, bevel, border, color, focusRing, onInk, radius, shade } from './theme';
 
 export interface TabSpec {
   key: string;
@@ -63,17 +63,20 @@ export default function TabBar({ active, onChange, tabs = TABS }: TabBarProps) {
             accessibilityState={{ selected: on }}
             accessibilityLabel={t.label}
             android_ripple={null}
-            style={{
-              flex: t.big ? 1.3 : 1,
-              alignItems: 'center',
-              gap: 5,
-              paddingVertical: t.big ? 12 : 8,
-              backgroundColor: plinth,
-              borderWidth: border.base,
-              borderColor: color.ink,
-              borderBottomWidth: border.base + bevel.sm,
-              borderRadius: radius.card,
-            }}
+            style={(state) => [
+              {
+                flex: t.big ? 1.3 : 1,
+                alignItems: 'center',
+                gap: 5,
+                paddingVertical: t.big ? 12 : 8,
+                backgroundColor: plinth,
+                borderWidth: border.base,
+                borderColor: color.ink,
+                borderBottomWidth: border.base + bevel.sm,
+                borderRadius: radius.card,
+              },
+              (state as { focused?: boolean }).focused ? focusRing : null,
+            ]}
           >
             <IconPlate icon={t.icon} bg={t.plate} ink={t.ink} size={t.big ? 34 : 26} />
             <PixelText variant="tabLabel" color={t.big && on ? onInk.yellow : color.white}>

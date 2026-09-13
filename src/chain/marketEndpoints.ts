@@ -47,12 +47,26 @@ export const proxyBase = PROXY_BASE;
  * that blocks it. The image still fails silently behind a fallback tile, but it
  * fails *loudly* in the console, once per broken logo per page load.
  *
- * Fetched through the proxy instead, the failure happens server-side and the
- * page sees a clean 502 it can fall back from without printing anything.
- * Outside a browser there is no such policy, so the URL is used as-is.
+ * Fetched through the proxy instead, the failure happens server-side, and
+ * `logoCheckUrl` lets the page ask first so it never requests one that will
+ * fail. Outside a browser there is no such policy, so the URL is used as-is.
  */
 export function logoUrl(uri: string | null | undefined): string | null {
   if (!uri) return null;
   if (!inBrowser) return uri;
   return `${PROXY_BASE}/img?url=${encodeURIComponent(uri)}`;
+}
+
+/**
+ * Where to ask whether `logoUrl(uri)` will actually yield an image.
+ *
+ * The relay answers a dead or non-image logo with an HTTP error — 404, 403,
+ * 415 — which is right for an `<img>` and wrong for a question: every handled
+ * "no" still lands in the browser's network log as a failed request.
+ * `/img/check` answers with a 200 and the verdict in the body. Outside a
+ * browser there is no relay, so there is nothing to ask it.
+ */
+export function logoCheckUrl(uri: string | null | undefined): string | null {
+  if (!uri || !inBrowser) return null;
+  return `${PROXY_BASE}/img/check?url=${encodeURIComponent(uri)}`;
 }

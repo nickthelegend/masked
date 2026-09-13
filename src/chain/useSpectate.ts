@@ -167,8 +167,9 @@ export function useSpectate(address: string | null, pollMs = 1000) {
           pnlBBps: raw.pnlBBps.toNumber(),
           revealed: tape
             ? {
-                fillsA: (tape.fillsA ?? []).length,
-                fillsB: (tape.fillsB ?? []).length,
+                // Every fill made; a tape keeps only the last MAX_FILLS a side.
+                fillsA: Math.max(typeof tape.fillCountA === 'number' ? tape.fillCountA : 0, (tape.fillsA ?? []).length),
+                fillsB: Math.max(typeof tape.fillCountB === 'number' ? tape.fillCountB : 0, (tape.fillsB ?? []).length),
                 potPaid: tape.potPaid.toNumber(),
                 rake: tape.rake.toNumber(),
               }

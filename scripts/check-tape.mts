@@ -7,12 +7,16 @@
  * players of every one, that the last replayed point equals the `pnl_*_bps`
  * the program wrote. There is no fixture here: if the cluster has no settled
  * duels the check says so and fails, rather than passing on nothing.
+ *
+ * A busy side keeps only its last MAX_FILLS fills on the tape, so its replay
+ * starts from the window start the program recorded rather than from the
+ * entry — and a tape without one fails.
  */
 import { Connection } from '@solana/web3.js';
 import { AnchorProvider, Program, type Idl } from '@coral-xyz/anchor';
 import { FOGDUEL_IDL } from '../src/chain/idl';
 import { ACTIVE_CLUSTER } from '../src/chain/config';
-import { toTapeState, replayEquity, markFromFill, type TapeFill } from '../src/chain/tape';
+import { toTapeState, replayEquity, markFromFill, MAX_FILLS, type TapeFill } from '../src/chain/tape';
 import { buyImpact, sellImpact, buyExecPx, sellExecPx } from '../src/chain/book';
 import { VALUE_DIV } from '../src/chain/units';
 
@@ -48,6 +52,7 @@ async function main() {
 
   // The entry is not on the tape, so it comes from the match the tape names.
   let withFills = 0;
+  let truncated = 0;
   for (const tape of tapes) {
     const matchAcc = await program.account.match
       .fetchNullable(tape.match)
@@ -56,11 +61,30 @@ async function main() {
     const entry = matchAcc.entry.toNumber();
     ok(entry > 0, `match ${tape.match.toBase58()} has a zero entry`);
 
-    for (const [who, fills, chainBps] of [
-      ['A', tape.fillsA, tape.pnlABps],
-      ['B', tape.fillsB, tape.pnlBBps],
+    for (const [who, fills, chainBps, start, fillCount] of [
+      ['A', tape.fillsA, tape.pnlABps, tape.startA, tape.fillCountA],
+      ['B', tape.fillsB, tape.pnlBBps, tape.startB, tape.fillCountB],
     ] as const) {
-      const points = replayEquity(fills, entry);
+      const id = `${tape.match.toBase58().slice(0, 8)} ${who}`;
+
+      // A tape keeps only the last MAX_FILLS fills a side, and since the window
+      // snapshot it also says where they start. Without that a busy side's
+      // replay began at the entry and ended somewhere the chain never was — so
+      // a tape missing it is a failure here, not something to skip.
+      ok(start !== null, `${id}: the tape has no window start (written before the snapshot, or a stale IDL)`);
+      ok(fills.length <= MAX_FILLS, `${id}: ${fills.length} stored fills, more than MAX_FILLS`);
+      ok(fillCount >= fills.length, `${id}: ${fills.length} stored fills but a fill count of ${fillCount}`);
+      if (fillCount === fills.length) {
+        // Nothing fell off the front, so nothing was folded in.
+        ok(
+          start!.quote === entry && start!.base === 0,
+          `${id}: nothing was evicted, but the window starts at ${start!.quote} quote / ${start!.base} base`
+        );
+      } else {
+        truncated += 1;
+      }
+
+      const points = replayEquity(fills, entry, undefined, start ?? undefined);
       const last = points[points.length - 1];
 
       if (fills.length === 0) {
@@ -140,7 +164,8 @@ async function main() {
 
   console.log(
     `tape ok — ${checks} assertions over ${tapes.length} real tape(s), ` +
-      `${withFills} fill list(s) replayed to the chain's own bps`
+      `${withFills} fill list(s) replayed to the chain's own bps` +
+      (truncated ? `, ${truncated} of them past ${MAX_FILLS} fills and replayed from the window start` : '')
   );
 }
 

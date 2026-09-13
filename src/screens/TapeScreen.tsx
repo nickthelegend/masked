@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import { ScrollView } from 'react-native';
+import { Pressable, ScrollView } from 'react-native';
+import { router } from 'expo-router';
 import {
   Badge,
   MaskAvatar,
@@ -17,10 +18,11 @@ import {
   space,
 } from '../ui';
 import { useTape } from '../chain/useTape';
+import { useNow } from '../ui/useNow';
 import { useHeadToHead } from '../chain/useHeadToHead';
-import { fillTokens, fillValue, marketMove, replayEquity, type TapeFill } from '../chain/tape';
+import { fillTokens, fillValue, marketMove, replayEquity, tapeWindowNote, type TapeFill } from '../chain/tape';
 import { formatSolPrice } from '../chain/units';
-import { short } from '../chain/useTapes';
+import { bpsPct, short, useTapes } from '../chain/useTapes';
 import { RAKE } from './data';
 
 export interface TapeScreenProps {
@@ -79,6 +81,91 @@ function FillList({ fills, startTs, tone }: { fills: TapeFill[]; startTs: number
 }
 
 /**
+ * How long ago, from the chain's own settlement timestamp, measured against the
+ * app's one shared clock like every other relative time — not a `Date.now()`
+ * taken whenever this list last happened to render.
+ */
+const ago = (ts: number, now: number) => {
+  const s = Math.max(0, now - ts);
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86_400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86_400)}d ago`;
+};
+
+/**
+ * `/tape` with no address: every settled duel on this cluster, newest first.
+ *
+ * A bare /tape used to answer with an instruction to go and find a match
+ * address somewhere else, under a SETTLED badge that described nothing. Tapes
+ * are world-readable accounts, so the list is one read away, and each row
+ * opens that duel's permanent page.
+ */
+function TapeIndex() {
+  const { tapes, loaded } = useTapes(15_000);
+  const now = useNow();
+
+  if (!loaded) {
+    return (
+      <PixelText variant="bodySmall" color={color.textFaint}>
+        READING THE CHAIN…
+      </PixelText>
+    );
+  }
+  if (tapes.length === 0) {
+    return (
+      <PixelText variant="bodySmall" color={color.textFaint}>
+        No settled duel on this cluster yet. Play one at /play and its tape lands here.
+      </PixelText>
+    );
+  }
+  return (
+    <Stack gap={space.xs}>
+      <PixelText variant="label" size={8} color={color.textDim}>
+        {`${tapes.length} SETTLED DUEL${tapes.length === 1 ? '' : 'S'} · NEWEST FIRST`}
+      </PixelText>
+      {tapes.slice(0, 50).map((t) => (
+        <Pressable
+          key={t.match}
+          onPress={() => router.push(`/tape/${t.match}`)}
+          accessibilityRole="link"
+          accessibilityLabel={`Read the tape of duel ${t.match}`}
+        >
+          <Stack gap={space.xs} pad={space.sm} bg={color.panel} outline={color.panelLight}>
+            <Row justify="space-between" align="center" gap={space.sm}>
+              <Row gap={space.sm} align="center" wrap style={{ flex: 1 }}>
+                <TokenLogo mint={t.mint.toBase58()} symbol={t.symbol || '?'} size={20} />
+                <PixelText variant="label" size={9} color={color.yellow}>
+                  {t.symbol || 'UNNAMED'}
+                </PixelText>
+                <PixelText variant="bodySmall" size={9} color={color.textFaint}>
+                  vs
+                </PixelText>
+                <TokenLogo mint={t.loserMint.toBase58()} symbol={t.loserSymbol || '?'} size={20} />
+                <PixelText variant="label" size={9} color={color.textDim}>
+                  {t.loserSymbol || 'UNNAMED'}
+                </PixelText>
+              </Row>
+              <PixelText variant="bodySmall" size={9} color={color.textFaint}>
+                {ago(t.settledTs, now)}
+              </PixelText>
+            </Row>
+            <Row justify="space-between" gap={space.sm} wrap>
+              <PixelText variant="bodySmall" size={9} color={color.green}>
+                {`${short(t.winner)} ${bpsPct(t.winnerPnlBps)} · paid ${sol(t.potPaid / 1e9)}`}
+              </PixelText>
+              <PixelText variant="bodySmall" size={9} color={color.red}>
+                {`${short(t.loser)} ${bpsPct(t.loserPnlBps)}`}
+              </PixelText>
+            </Row>
+          </Stack>
+        </Pressable>
+      ))}
+    </Stack>
+  );
+}
+
+/**
  * A settled duel at a permanent address.
  *
  * `/spectate/<match>` is for a round that is happening; once it settles there
@@ -87,8 +174,9 @@ function FillList({ fills, startTs, tone }: { fills: TapeFill[]; startTs: number
  * working: the `Tape` never changes after `settle_match` writes it, so this
  * page reads once and is the same page forever.
  *
- * No wallet, and nothing here is fogged. Every fill of both players is on
- * chain and shown: side, size, execution price and the second it landed.
+ * No wallet, and nothing here is fogged. Every fill the tape keeps is shown —
+ * side, size, execution price and the second it landed — and a side busier
+ * than the tape's sixteen says how many it made in all.
  */
 export default function TapeScreen({ address }: TapeScreenProps) {
   const { data, error, loaded } = useTape(address);
@@ -100,18 +188,16 @@ export default function TapeScreen({ address }: TapeScreenProps) {
   const lanes = useMemo(() => {
     if (!data || data.entry <= 0) return null;
     return {
-      a: replayEquity(data.tape.fillsA, data.entry, data.startTs),
-      b: replayEquity(data.tape.fillsB, data.entry, data.startTs),
+      // A busy side's tape keeps only its last fills; the window start the
+      // program recorded is where their replay begins.
+      a: replayEquity(data.tape.fillsA, data.entry, data.startTs, data.tape.startA),
+      b: replayEquity(data.tape.fillsB, data.entry, data.startTs, data.tape.startB),
     };
   }, [data]);
 
   const body = () => {
     if (!address) {
-      return (
-        <PixelText variant="bodySmall" color={color.textFaint}>
-          Open /tape/&lt;match address&gt; to read a settled duel.
-        </PixelText>
-      );
+      return <TapeIndex />;
     }
     if (!loaded) {
       return (
@@ -136,8 +222,24 @@ export default function TapeScreen({ address }: TapeScreenProps) {
     const { tape, startTs, duration } = data;
     const aWon = tape.winner.equals(tape.playerA);
     const sides = [
-      { who: tape.playerA, bps: tape.pnlABps, fills: tape.fillsA, tone: color.cyan, won: aWon },
-      { who: tape.playerB, bps: tape.pnlBBps, fills: tape.fillsB, tone: color.magenta, won: !aWon },
+      {
+        who: tape.playerA,
+        bps: tape.pnlABps,
+        fills: tape.fillsA,
+        count: tape.fillCountA,
+        note: tapeWindowNote(tape.fillsA.length, tape.fillCountA),
+        tone: color.cyan,
+        won: aWon,
+      },
+      {
+        who: tape.playerB,
+        bps: tape.pnlBBps,
+        fills: tape.fillsB,
+        count: tape.fillCountB,
+        note: tapeWindowNote(tape.fillsB.length, tape.fillCountB),
+        tone: color.magenta,
+        won: !aWon,
+      },
     ];
 
     return (
@@ -181,8 +283,8 @@ export default function TapeScreen({ address }: TapeScreenProps) {
             </PixelText>
             {lanes ? (
               <RoundTimeline
-                you={{ label: short(tape.playerA), points: lanes.a, tone: color.cyan }}
-                opponent={{ label: short(tape.playerB), points: lanes.b, tone: color.magenta }}
+                you={{ label: short(tape.playerA), points: lanes.a, tone: color.cyan, note: sides[0].note }}
+                opponent={{ label: short(tape.playerB), points: lanes.b, tone: color.magenta, note: sides[1].note }}
                 startTs={startTs}
                 duration={duration}
                 height={170}
@@ -220,7 +322,7 @@ export default function TapeScreen({ address }: TapeScreenProps) {
                 {pct(side.bps)}
               </PixelText>
               <PixelText variant="bodySmall" size={9} color={color.textFaint}>
-                {side.fills.length} fill{side.fills.length === 1 ? '' : 's'}
+                {side.count} fill{side.count === 1 ? '' : 's'}
                 {side.won ? ' · TOOK THE POT' : ''}
               </PixelText>
             </Stack>
@@ -231,15 +333,21 @@ export default function TapeScreen({ address }: TapeScreenProps) {
           // Per leg: the two players traded different tokens, so one combined
           // "the market moved" would be an average of unrelated assets.
           const pct = (bps: number) => `${bps >= 0 ? '+' : ''}${(bps / 100).toFixed(2)}%`;
-          const lines = [
-            { move: marketMove(tape.fillsA, data.entry), leg: tape.legA },
-            { move: marketMove(tape.fillsB, data.entry), leg: tape.legB },
-          ]
-            .filter((x) => x.move && x.leg.symbol)
-            .map((x) => `${x.leg.symbol.toUpperCase()} MOVED ${pct(x.move!.bps)}`);
+          // A busy side's first stored fill is not the round's open, so its
+          // move is measured over the fills the tape kept, and says so.
+          const legs = [
+            { move: marketMove(tape.fillsA, data.entry), leg: tape.legA, note: sides[0].note },
+            { move: marketMove(tape.fillsB, data.entry), leg: tape.legB, note: sides[1].note },
+          ].filter((x) => x.move && x.leg.symbol);
+          const whole = legs.every((x) => !x.note);
+          const lines = legs.map((x) => {
+            const moved = `${x.leg.symbol.toUpperCase()} MOVED ${pct(x.move!.bps)}`;
+            if (whole) return moved;
+            return x.note ? `${moved} OVER ITS ${x.note}` : `${moved} OVER THE ROUND`;
+          });
           return lines.length ? (
             <PixelText variant="bodySmall" size={9} align="center" color={color.textDim}>
-              {`${lines.join(' · ')} OVER THIS ROUND`}
+              {`${lines.join(' · ')}${whole ? ' OVER THIS ROUND' : ''}`}
             </PixelText>
           ) : null;
         })()}
@@ -257,7 +365,7 @@ export default function TapeScreen({ address }: TapeScreenProps) {
         {sides.map((side, i) => (
           <Stack key={i} gap={space.sm} pad={space.md} bg={color.ink} outline={color.panelLight}>
             <PixelText variant="label" size={9} color={side.tone}>
-              {short(side.who)} — EVERY FILL
+              {short(side.who)} — {side.note ?? 'EVERY FILL'}
             </PixelText>
             <FillList fills={side.fills} startTs={startTs} tone={side.tone} />
           </Stack>
@@ -311,7 +419,13 @@ export default function TapeScreen({ address }: TapeScreenProps) {
     >
       <Row justify="space-between" align="center">
         <Wordmark size={16} />
-        <Badge label="SETTLED" tone="quiet" variant="label" />
+        {/* Says what the page is showing. It read SETTLED on every visit — over
+            the bare index, while loading, and over an address holding nothing. */}
+        <Badge
+          label={!address ? 'ALL TAPES' : !loaded ? 'READING' : data && !error ? 'SETTLED' : 'NOT FOUND'}
+          tone={address && loaded && (!data || error) ? 'loss' : 'quiet'}
+          variant="label"
+        />
       </Row>
 
       <Stack gap={space.xs}>

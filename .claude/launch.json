@@ -9,6 +9,48 @@
         "start"
       ],
       "port": 3000
+    },
+    {
+      "name": "proxy",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "proxy"
+      ],
+      "port": 8791
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "expo",
+        "start",
+        "--web",
+        "--port",
+        "8082"
+      ],
+      "port": 8082
+    },
+    {
+      "name": "serve",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "serve"
+      ],
+      "port": 4180
+    },
+    {
+      "name": "serve-f0",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "server/serve-dist.mjs",
+        "--port",
+        "4181",
+        "--dir",
+        ".localnet/dist-f0"
+      ],
+      "port": 4181
     }
   ]
 }

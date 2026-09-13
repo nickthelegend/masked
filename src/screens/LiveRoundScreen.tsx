@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Platform } from 'react-native';
 import {
   ArenaChart,
@@ -25,7 +25,9 @@ import {
   color,
   space,
 } from '../ui';
-import type { Fill, PriceSource } from '../ui';
+import { PendingFill, VenueQuote } from '../ui';
+import type { ArenaMoment, Fill, PriceSource } from '../ui';
+import { useVenueQuote } from '../chain/useVenueQuote';
 import { FRAME_MS, USE_NATIVE_DRIVER, useReducedMotion } from '../ui/motion';
 import { RAKE } from './data';
 
@@ -114,6 +116,10 @@ export interface LiveRoundScreenProps {
   trophies?: number;
   /** Seconds since the round opened, for the chart's x-axis. */
   elapsed?: number;
+  /** The most recent fill in the program's own scale, for Jupiter's quote of the same size. */
+  lastFillRaw?: { side: 'buy' | 'sell'; px: number; qty: number; at: number } | null;
+  /** A fill sent and not yet confirmed, already formatted. */
+  pendingFill?: { side: 'buy' | 'sell'; state: 'pending' | 'refused'; price: string; mark: string } | null;
 }
 
 /**
@@ -159,6 +165,8 @@ export default function LiveRoundScreen({
   payout = '',
   trophies = 0,
   elapsed = 0,
+  lastFillRaw = null,
+  pendingFill = null,
 }: LiveRoundScreenProps) {
   /**
    * The opponent's fill count, beating when it changes.
@@ -180,6 +188,25 @@ export default function LiveRoundScreen({
       Animated.timing(beat, { toValue: 1, duration: FRAME_MS * 3, easing: Easing.out(Easing.quad), useNativeDriver: USE_NATIVE_DRIVER }),
     ]).start();
   }, [opponentFills, reduced, beat]);
+
+  /**
+   * The second and the mark behind each point on the chart, recorded as each
+   * sample lands, so the crosshair can say where the market stood at that
+   * moment. The poll sets the mark and appends the sample in the same tick, so
+   * the render that brings a new sample carries that sample's mark. Samples
+   * taken before this screen mounted have no entry and say so.
+   */
+  const [moments, setMoments] = useState<ArenaMoment[]>([]);
+  const lastEquity = useRef(equity);
+  useEffect(() => {
+    if (equity === lastEquity.current) return;
+    lastEquity.current = equity;
+    const moment = { sec: Math.round(elapsed), mark: priceLabel ?? null };
+    setMoments((m) => (equity.length > 1 ? [...m, moment].slice(-equity.length) : [moment]));
+  }, [equity, elapsed, priceLabel]);
+
+  // What a real venue would have done with the fill just made. See jupiterQuote.ts.
+  const venue = useVenueQuote(lastFillRaw, marketMint || null);
 
   /**
    * Keyboard: L to long, C to close, space to settle.
@@ -242,7 +269,7 @@ export default function LiveRoundScreen({
 
       <PixelPanel flat bg={color.chartBg} pad={0}>
         <Stack gap={space.xs}>
-          <ArenaChart series={equity} height={200} elapsed={elapsed} />
+          <ArenaChart series={equity} height={200} elapsed={elapsed} moments={moments} />
           <Row justify="space-between" padX={space.sm} padY={space.xs}>
             <MarkTicker label={String(priceLabel ?? price)} value={price} source={marketSource} />
             {/* The other figure that changes with no interaction behind it. */}
@@ -269,6 +296,10 @@ export default function LiveRoundScreen({
           way to it. */}
       {settling ? <SettleProgress stages={settleStages!} /> : null}
 
+      {/* Sent and not yet confirmed: the predicted price at once, replaced by
+          the receipt below when the chain answers, or marked rolled back. */}
+      {!settling && pendingFill ? <PendingFill {...pendingFill} /> : null}
+
       {/* What the private book just charged. Only after a fill, and only for
           the player who made it. */}
       {!settling && lastFill ? (
@@ -280,6 +311,10 @@ export default function LiveRoundScreen({
           nonce={lastFill.at}
         />
       ) : null}
+
+      {/* The same size priced on Jupiter, beside the book's price. A read of the
+          market, never a route: the fill has already happened on the book. */}
+      {!settling && lastFill ? <VenueQuote {...venue} /> : null}
 
       {/* The board. Both rows are unranked while the round runs — see the
           `rank: null` note on RankRow — and the opponent's PnL and side are

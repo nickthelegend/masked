@@ -6,11 +6,13 @@ import PixelText from './PixelText';
 import PixelButton from './PixelButton';
 import Box from './Box';
 import MarketRow from './MarketRow';
+import MarketRowSkeleton from './MarketRowSkeleton';
 import MarketTabs from './MarketTabs';
 import type { PriceSource } from './SourceBadge';
 import { border, color, space, type as typeTokens } from './theme';
 
 export type MarketKindKey = 'meme' | 'major';
+export type MarketSortKey = 'cap' | 'volume';
 
 export interface PickableMarket {
   mint: string;
@@ -37,6 +39,9 @@ export interface MarketPickerProps {
   onQueryChange?: (q: string) => void;
   /** True while a search is in flight, so the field can say so. */
   searching?: boolean;
+  /** Order of the curated majors list. Omit `onSortChange` to hide the toggle. */
+  sort?: MarketSortKey;
+  onSortChange?: (s: MarketSortKey) => void;
   /** Cap on list height so the picker cannot push the stake control off screen. */
   maxHeight?: number;
   style?: ViewStyle | ViewStyle[];
@@ -45,6 +50,11 @@ export interface MarketPickerProps {
 const TABS = [
   { key: 'meme' as const, label: 'MEMES' },
   { key: 'major' as const, label: 'MAJORS' },
+];
+
+const SORTS = [
+  { key: 'cap' as const, label: 'BY MCAP' },
+  { key: 'volume' as const, label: 'BY 24H VOL' },
 ];
 
 /**
@@ -68,6 +78,8 @@ export default function MarketPicker({
   query = '',
   onQueryChange,
   searching = false,
+  sort = 'cap',
+  onSortChange,
   maxHeight = 260,
   style,
 }: MarketPickerProps) {
@@ -84,6 +96,20 @@ export default function MarketPicker({
   return (
     <Stack gap={space.sm} style={style}>
       <MarketTabs tabs={TABS} active={kind} onChange={onKindChange} />
+
+      {/* Order of the curated list. Search results keep their own relevance
+          order, so the switch is not offered while a query is typed. Memes get
+          a line instead of a switch: pump.fun publishes no volume and answers a
+          volume sort with HTTP 400, so there is nothing true to sort them by. */}
+      {onSortChange && !query.trim() ? (
+        kind === 'major' ? (
+          <MarketTabs tabs={SORTS} active={sort} onChange={onSortChange} />
+        ) : (
+          <PixelText variant="bodySmall" size={9} color={color.textFaint}>
+            BY MARKET CAP · PUMP.FUN PUBLISHES NO VOLUME
+          </PixelText>
+        )
+      ) : null}
 
       {/* Any token, by ticker, name or mint address. The tabs above are the
           curated lists; this is the rest of the universe. */}
@@ -121,11 +147,15 @@ export default function MarketPicker({
           {onRetry ? <PixelButton label="RETRY" tone="quiet" size={8} onPress={onRetry} /> : null}
         </Stack>
       ) : loading && markets.length === 0 ? (
-        <Row justify="center" pad={space.xl} bg={color.ink} outline={color.panelLight} outlineWidth={border.thin}>
-          <PixelText variant="bodySmall" size={10} color={color.textFaint}>
+        // Rows the shape of the ones coming, so the list does not jump when they land.
+        <Stack gap={space.xs}>
+          <PixelText variant="bodySmall" size={9} color={color.textFaint}>
             {searching ? 'SEARCHING…' : 'LOADING MARKETS…'}
           </PixelText>
-        </Row>
+          {[0, 1, 2, 3].map((i) => (
+            <MarketRowSkeleton key={i} />
+          ))}
+        </Stack>
       ) : markets.length === 0 ? (
         <Row justify="center" pad={space.xl} bg={color.ink} outline={color.panelLight} outlineWidth={border.thin}>
           <PixelText variant="bodySmall" size={10} color={color.textFaint}>

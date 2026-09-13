@@ -4,6 +4,7 @@ import { BIG_POT_LAMPORTS, FEED_FILTERS, type FeedFilter } from './data';
 import { marketLabel } from '../chain/market';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { bpsPct, short, useTapes } from '../chain/useTapes';
+import { useNow } from '../ui/useNow';
 
 export interface FeedScreenProps {
   /** Opens a duel on the token this tape was fought over. */
@@ -12,13 +13,24 @@ export interface FeedScreenProps {
   onReadTape: (match: string) => void;
 }
 
+/** Rounds drawn at once. SHOW MORE adds another page of the same list. */
+const PAGE = 10;
+
 /** Reveals feed: finished duels you can copy, fade, or challenge into. */
 export default function FeedScreen({ onChallenge, onReadTape }: FeedScreenProps) {
   const [filter, setFilter] = useState<FeedFilter>(FEED_FILTERS[0]);
+  const [shown, setShown] = useState(PAGE);
   const { publicKey } = useWallet();
   const { tapes: allTapes, loaded } = useTapes();
 
-  // Each filter is a real predicate over real tapes.
+  const choose = (f: FeedFilter) => {
+    setFilter(f);
+    setShown(PAGE);
+  };
+
+  // Each filter is a real predicate over real tapes. `useTapes` reads every
+  // Tape account and sorts newest first, so MINE is the wallet's whole
+  // settled history, not its recent slice.
   const tapes = allTapes.filter((t) => {
     if (filter === 'BIG POTS') return t.potPaid >= BIG_POT_LAMPORTS;
     if (filter === 'MINE') {
@@ -27,8 +39,11 @@ export default function FeedScreen({ onChallenge, onReadTape }: FeedScreenProps)
     return true;
   });
 
+  // From the shared clock, so "just now" turns into "1m ago" on screen even
+  // when the tape poll has nothing new to say.
+  const now = useNow();
   const ago = (ts: number) => {
-    const mins = Math.max(0, Math.floor((Date.now() / 1000 - ts) / 60));
+    const mins = Math.max(0, Math.floor((now - ts) / 60));
     return mins < 1 ? 'just now' : mins < 60 ? `${mins}m ago` : `${Math.floor(mins / 60)}h ago`;
   };
 
@@ -43,13 +58,19 @@ export default function FeedScreen({ onChallenge, onReadTape }: FeedScreenProps)
             size={9}
             padY={space.sm}
             tone={f === filter ? 'gold' : 'quiet'}
-            onPress={() => setFilter(f)}
+            onPress={() => choose(f)}
           />
         ))}
       </Row>
 
-      {/* Real settled tapes, read from chain. */}
-      {tapes.map((t) => (
+      {filter === 'MINE' && tapes.length > 0 ? (
+        <PixelText variant="bodySmall" color={color.textDim}>
+          {`${tapes.length} SETTLED DUEL${tapes.length === 1 ? '' : 'S'} WITH THIS WALLET · NEWEST FIRST`}
+        </PixelText>
+      ) : null}
+
+      {/* Real settled tapes, read from chain, a page at a time. */}
+      {tapes.slice(0, shown).map((t) => (
         <MatchCard
           key={t.match}
           // Off the tape itself. An older tape written before the market was
@@ -67,6 +88,16 @@ export default function FeedScreen({ onChallenge, onReadTape }: FeedScreenProps)
           onReadTape={() => onReadTape(t.match)}
         />
       ))}
+
+      {tapes.length > shown ? (
+        <PixelButton
+          tone="quiet"
+          size={9}
+          padY={space.sm}
+          label={`SHOW ${Math.min(PAGE, tapes.length - shown)} MORE · ${shown} OF ${tapes.length}`}
+          onPress={() => setShown((n) => n + PAGE)}
+        />
+      ) : null}
 
       {loaded && tapes.length === 0 ? (
         <PixelText variant="bodySmall" align="center" color={color.textFaint}>

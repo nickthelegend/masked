@@ -1,7 +1,10 @@
+import { useEffect, useState } from 'react';
 import { ScrollView, View } from 'react-native';
+import { router } from 'expo-router';
 import {
   Badge,
   FogOverlay,
+  LiveDuelRow,
   MaskAvatar,
   Orb,
   orbStateForPnl,
@@ -19,6 +22,7 @@ import {
   space,
 } from '../ui';
 import { useSpectate } from '../chain/useSpectate';
+import { useOpenMatches } from '../chain/useOpenMatches';
 import { formatSolPrice } from '../chain/units';
 import { short } from '../chain/useTapes';
 import { RAKE } from './data';
@@ -29,6 +33,68 @@ export interface SpectateScreenProps {
 }
 
 const pct = (bps: number) => `${bps >= 0 ? '+' : ''}${(bps / 100).toFixed(2)}%`;
+
+/**
+ * `/spectate` with no address: the duels a spectator could open right now.
+ *
+ * A bare /spectate used to tell a visitor to go and find a match address
+ * somewhere else. Match accounts are public, so the list is one read away — and
+ * the page a judge can open without a wallet should not start with homework.
+ */
+function SpectateIndex() {
+  const { live, loaded } = useOpenMatches(5000);
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  if (!loaded) {
+    return (
+      <PixelText variant="bodySmall" color={color.textFaint}>
+        READING THE CHAIN…
+      </PixelText>
+    );
+  }
+  // A live status whose clock has run out is a round nobody has settled yet,
+  // not one to watch — the same split /proof makes.
+  const running = live.filter((m) => m.duration - (now - m.startTs) > 0);
+  const over = live.length - running.length;
+
+  return (
+    <Stack gap={space.sm}>
+      <PixelText variant="label" size={8} color={color.textDim}>
+        {`${running.length} DUEL${running.length === 1 ? '' : 'S'} RUNNING`}
+      </PixelText>
+      {running.length === 0 ? (
+        <PixelText variant="bodySmall" color={color.textFaint}>
+          Nothing running right now. A duel opened at /play shows up here while its
+          clock runs; finished ones are at /tape.
+        </PixelText>
+      ) : (
+        <Stack gap={space.xs}>
+          {running.map((m) => (
+            <LiveDuelRow
+              key={m.address.toBase58()}
+              symbol={m.symbol}
+              mint={m.mint.toBase58()}
+              creator={short(m.creator)}
+              joiner={short(m.joiner)}
+              potSol={(m.entry * 2) / 1e9}
+              secondsLeft={Math.max(0, m.duration - (now - m.startTs))}
+              onPress={() => router.push(`/spectate/${m.address.toBase58()}`)}
+            />
+          ))}
+        </Stack>
+      )}
+      {over > 0 ? (
+        <PixelText variant="bodySmall" size={10} color={color.textFaint}>
+          {`${over} more ${over === 1 ? 'duel is' : 'duels are'} past the buzzer and waiting to be settled.`}
+        </PixelText>
+      ) : null}
+    </Stack>
+  );
+}
 
 /**
  * Watching a duel you are not in.
@@ -60,11 +126,7 @@ export default function SpectateScreen({ address }: SpectateScreenProps) {
 
   const body = () => {
     if (!address) {
-      return (
-        <PixelText variant="bodySmall" color={color.textFaint}>
-          Open /spectate/&lt;match address&gt; to watch a duel.
-        </PixelText>
-      );
+      return <SpectateIndex />;
     }
     if (!loaded) {
       return (
@@ -253,7 +315,7 @@ export default function SpectateScreen({ address }: SpectateScreenProps) {
     >
       <Row justify="space-between" align="center">
         <Wordmark size={16} />
-        <Badge label="SPECTATING" tone="quiet" variant="label" />
+        <Badge label={address ? 'SPECTATING' : 'LIVE DUELS'} tone="quiet" variant="label" />
       </Row>
 
       <Stack gap={space.xs}>

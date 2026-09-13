@@ -1,0 +1,247 @@
+.mk-seal__head {
+  display: grid;
+  gap: 22px;
+  margin-bottom: clamp(40px, 7vh, 72px);
+}
+
+.mk-seal__pin {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  gap: clamp(28px, 4vw, 64px);
+  align-items: center;
+  min-height: calc(100dvh - var(--nav-h));
+  padding: 24px 0;
+}
+
+.mk-stage {
+  display: grid;
+  gap: 22px;
+  align-content: center;
+  min-height: 52vh;
+}
+
+.mk-stage__label {
+  min-height: 2.7em;
+  font-family: var(--display);
+  font-size: clamp(18px, 2.5vw, 40px);
+  line-height: 1.32;
+  color: var(--accent);
+}
+
+.mk-stage__meaning {
+  margin: 0;
+  max-width: 34ch;
+  min-height: 3.3em;
+  font-size: clamp(15px, 1.4vw, 20px);
+  line-height: 1.6;
+  color: var(--bright);
+}
+
+.mk-stage__sig {
+  justify-self: start;
+  padding: 12px 14px 10px;
+  background: var(--ink-3);
+  box-shadow: inset 0 0 0 2px var(--ink-5);
+  font-family: var(--display);
+  font-size: clamp(9px, 0.95vw, 13px);
+  color: var(--text);
+}
+
+.mk-stage__meta {
+  font-family: var(--display);
+  font-size: 9px;
+  color: var(--faint);
+  white-space: pre;
+}
+
+.mk-life {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  max-height: 72vh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  list-style: none;
+}
+
+.mk-life__indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 10;
+  width: 4px;
+  height: 44px;
+  background: var(--accent);
+}
+
+.mk-life__row {
+  position: relative;
+}
+
+.mk-life__link {
+  display: grid;
+  gap: 5px;
+  padding: 11px 14px 9px 20px;
+  color: var(--dim);
+  text-decoration: none;
+}
+
+.mk-life__link:focus-visible {
+  outline: 3px solid var(--bright);
+  outline-offset: -3px;
+}
+
+.mk-life__label {
+  font-family: var(--display);
+  font-size: 9px;
+  color: var(--text);
+}
+
+.mk-life__meaning {
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.mk-life__sig {
+  font-family: var(--display);
+  font-size: 7px;
+  color: var(--faint);
+}
+
+.mk-life__row.is-active .mk-life__link {
+  background: var(--ink-3);
+}
+
+.mk-life__row.is-active .mk-life__label {
+  color: var(--accent);
+}
+
+.mk-seal__empty {
+  padding: 40px 0;
+}
+
+/* No duel yet: the pin wrapper still renders, so it must not hold a screen of height. */
+.mk-seal__pin.is-empty {
+  display: block;
+  min-height: 0;
+  padding: 0;
+}
+
+/* ---------- the door ---------- */
+
+.mk-door {
+  display: grid;
+  gap: 24px;
+  margin-top: clamp(56px, 10vh, 110px);
+  padding: clamp(22px, 3vw, 40px);
+  /* The rows slide in from the right. Clipped here, their starting offset
+     cannot widen the page on a phone. */
+  overflow: hidden;
+  background: var(--ink-1);
+  box-shadow: inset 0 0 0 2px var(--ink-5);
+}
+
+.mk-door__head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+}
+
+.mk-door__title {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: clamp(11px, 1.25vw, 16px);
+  color: var(--bright);
+}
+
+.mk-door__verdict {
+  display: inline-block;
+  font-family: var(--display);
+  font-size: clamp(14px, 1.8vw, 22px);
+}
+
+.mk-door__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.mk-door__row {
+  display: grid;
+  gap: 14px;
+  padding: 22px;
+  background: var(--ink-3);
+}
+
+.mk-door__label {
+  font-family: var(--display);
+  font-size: 9px;
+  color: var(--dim);
+}
+
+.mk-door__value {
+  display: inline-block;
+  justify-self: start;
+  font-family: var(--display);
+  font-size: clamp(15px, 2.1vw, 30px);
+}
+
+.mk-door__note {
+  margin: 0;
+  max-width: 70ch;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--dim);
+}
+
+.mk-tone-pass {
+  color: var(--accent);
+}
+
+.mk-tone-fail {
+  color: var(--loss);
+}
+
+.mk-tone-quiet {
+  color: var(--dim);
+}
+
+@media (max-width: 899px) {
+  .mk-seal__pin {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+  }
+
+  .mk-stage,
+  .mk-life__indicator {
+    display: none;
+  }
+
+  .mk-life {
+    max-height: none;
+  }
+
+  .mk-door__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mk-seal__pin {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+  }
+
+  .mk-stage,
+  .mk-life__indicator {
+    display: none;
+  }
+
+  .mk-life {
+    max-height: none;
+  }
+}

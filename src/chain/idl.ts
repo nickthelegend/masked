@@ -244,7 +244,7 @@ export const FOGDUEL_IDL = {
         "Called on the ER once the clock expires, once per side. After both have",
         "landed the positions are readable on L1 again and `settle_match` can run.",
         "",
-        "One at a time, deliberately. A Position is 543 bytes, so two of them do",
+        "One at a time, deliberately. A Position is 559 bytes, so two of them do",
         "not fit in a single 1232-byte transaction, and asking the rollup to",
         "commit both at once pushes its committor onto a chunked buffer path.",
         "Committing them separately keeps every commit inline, and a failure on",
@@ -320,6 +320,283 @@ export const FOGDUEL_IDL = {
           "name": "magic_context",
           "writable": true,
           "address": "MagicContext1111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "crank_commit_round",
+      "docs": [
+        "The buzzer, run by the rollup: commit and release both positions and the",
+        "round status.",
+        "",
+        "Does nothing before the buzzer (the task's first run lands mid-round)",
+        "and skips anything already on its way home, so a player's client that",
+        "got there first costs nothing and fails nothing. Each account is its own",
+        "intent: a position is 559 bytes, and committing two at once sends the",
+        "committor down a chunked path that one at a time never needs."
+      ],
+      "discriminator": [
+        37,
+        195,
+        197,
+        118,
+        33,
+        208,
+        154,
+        175
+      ],
+      "accounts": [
+        {
+          "name": "cranker",
+          "docs": [
+            "As in `CrankLiquidate`. Also the payer of the commits it schedules."
+          ],
+          "signer": true
+        },
+        {
+          "name": "match_account",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  116,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "match_account.creator",
+                "account": "Match"
+              },
+              {
+                "kind": "account",
+                "path": "match_account.match_id",
+                "account": "Match"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position_a",
+          "writable": true
+        },
+        {
+          "name": "position_b",
+          "writable": true
+        },
+        {
+          "name": "round_status",
+          "writable": true
+        },
+        {
+          "name": "magic_context",
+          "writable": true,
+          "address": "MagicContext1111111111111111111111111111111"
+        },
+        {
+          "name": "magic_program",
+          "address": "Magic11111111111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "crank_liquidate",
+      "docs": [
+        "The keeper's beat, run by the rollup: liquidate whichever side has run",
+        "out of equity.",
+        "",
+        "Both sides in one instruction, and quiet about everything that is not a",
+        "blow-up — the round not live, the clock run out — because a task that",
+        "errors is retried and then dropped, and a keeper that stops at the first",
+        "awkward moment is not a keeper."
+      ],
+      "discriminator": [
+        130,
+        105,
+        187,
+        143,
+        21,
+        74,
+        70,
+        126
+      ],
+      "accounts": [
+        {
+          "name": "cranker",
+          "docs": [
+            "On the rollup, the crank signer of whoever scheduled the keeper. Never",
+            "writable: the rollup refuses a task that asks for that."
+          ],
+          "signer": true
+        },
+        {
+          "name": "match_account",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  116,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "match_account.creator",
+                "account": "Match"
+              },
+              {
+                "kind": "account",
+                "path": "match_account.match_id",
+                "account": "Match"
+              }
+            ]
+          }
+        },
+        {
+          "name": "price_feed_a",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "match_account"
+              },
+              {
+                "kind": "account",
+                "path": "match_account.creator",
+                "account": "Match"
+              }
+            ]
+          }
+        },
+        {
+          "name": "price_feed_b",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "match_account"
+              },
+              {
+                "kind": "account",
+                "path": "position_b.owner",
+                "account": "Position"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position_a",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "match_account"
+              },
+              {
+                "kind": "account",
+                "path": "match_account.creator",
+                "account": "Match"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position_b",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "match_account"
+              },
+              {
+                "kind": "account",
+                "path": "position_b.owner",
+                "account": "Position"
+              }
+            ]
+          }
+        },
+        {
+          "name": "round_status",
+          "docs": [
+            "Unsealed on purpose. See `RoundStatus`."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  116,
+                  117,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "match_account"
+              }
+            ]
+          }
         }
       ],
       "args": []
@@ -2128,6 +2405,91 @@ export const FOGDUEL_IDL = {
       "args": []
     },
     {
+      "name": "schedule_round_cranks",
+      "docs": [
+        "Hand the round's upkeep to the rollup itself.",
+        "",
+        "Schedules two tasks on the Ephemeral Rollup, run by the rollup's own",
+        "crank rather than by anybody's browser:",
+        "",
+        "- a keeper that looks for a blown-up position every two seconds until",
+        "just before the buzzer, and liquidates it in public;",
+        "- the buzzer: just past the end of the round, commit both positions and",
+        "the round status back to Solana, and release them.",
+        "",
+        "The access-control lists are not the crank's to release. The permission",
+        "program pays for that commit from whoever signs as the list's authority,",
+        "and a signer the rollup holds delegated — a position PDA — can only pay",
+        "alongside a fee vault the permission program does not pass. So each",
+        "player's client releases its own list after the buzzer, signed by the",
+        "wallet the list names.",
+        "",
+        "Both used to be the players' clients' job. A round whose players had",
+        "closed their tabs was never checked for a blow-up and never came home;",
+        "it sat on the rollup until somebody ran a script.",
+        "",
+        "A task runs once the moment it is scheduled, so the buzzer task gets two",
+        "runs: the first lands mid-round and does nothing, the second lands just",
+        "past the buzzer. Scheduling again replaces a task this signer owns and",
+        "leaves one another signer owns alone, so both players' clients can call",
+        "this and exactly one keeper runs.",
+        "",
+        "Runs on the rollup."
+      ],
+      "discriminator": [
+        254,
+        140,
+        230,
+        200,
+        233,
+        65,
+        30,
+        64
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Signs the schedule. Both tasks run under this key's crank signer."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "match_account",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  116,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "match_account.creator",
+                "account": "Match"
+              },
+              {
+                "kind": "account",
+                "path": "match_account.match_id",
+                "account": "Match"
+              }
+            ]
+          }
+        },
+        {
+          "name": "magic_program",
+          "address": "Magic11111111111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "settle_market_draw",
       "docs": [
         "The oracle's answer: which market the duel is on.",
@@ -3276,6 +3638,23 @@ export const FOGDUEL_IDL = {
             "type": "u16"
           },
           {
+            "name": "window_quote",
+            "docs": [
+              "The quote and base this position held immediately before `fills[0]`.",
+              "",
+              "`fills` keeps only the last MAX_FILLS. Without these, a busy round's",
+              "tape held its last sixteen fills and nothing about where they started,",
+              "so a replay from the entry drew a curve that ended somewhere the chain",
+              "never was. Every fill that falls off the front is folded in here first,",
+              "which makes this snapshot plus `fills` the whole round again."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "window_base",
+            "type": "i64"
+          },
+          {
             "name": "fills",
             "type": {
               "vec": {
@@ -3512,6 +3891,36 @@ export const FOGDUEL_IDL = {
           {
             "name": "settled_ts",
             "type": "i64"
+          },
+          {
+            "name": "start_quote_a",
+            "docs": [
+              "Where each side's stored fills begin, and how many fills it made in",
+              "all. When `fill_count_*` exceeds the stored list the earliest fills are",
+              "gone, and `start_quote_*` / `start_base_*` — the position just before",
+              "the first stored fill — are what let a replay start from the right place."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "start_base_a",
+            "type": "i64"
+          },
+          {
+            "name": "fill_count_a",
+            "type": "u16"
+          },
+          {
+            "name": "start_quote_b",
+            "type": "i64"
+          },
+          {
+            "name": "start_base_b",
+            "type": "i64"
+          },
+          {
+            "name": "fill_count_b",
+            "type": "u16"
           },
           {
             "name": "fills_a",

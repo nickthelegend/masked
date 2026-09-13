@@ -15,6 +15,7 @@
  */
 import { fetchMarket } from './pumpfun';
 import { searchTokens } from './jupiter';
+import { logoCheckUrl } from './marketEndpoints';
 
 /** mint -> logo URL, or null once a lookup has come back empty. */
 const cache = new Map<string, string | null>();
@@ -99,7 +100,7 @@ export async function resolveLogo(mint: string): Promise<string | null> {
 }
 
 /**
- * Whether a logo URL actually yields an image, checked once per URL.
+ * Whether a logo actually yields an image, checked once per logo URL.
  *
  * `<img src>` is the wrong instrument for finding out. When the URL answers
  * with an HTML page — which is what several tokens' `image_uri` genuinely
@@ -108,37 +109,57 @@ export async function resolveLogo(mint: string): Promise<string | null> {
  * console. The fallback tile appears and nothing is broken, but the page has
  * printed an error it cannot suppress.
  *
- * A `fetch` that comes back 415 is a completed request with an unwanted
- * status, not a failure, so it says the same thing silently. The result is
- * cached per URL, and the browser's own HTTP cache makes the `<img>` that
- * follows a hit rather than a second download.
+ * Nor is fetching the image through the relay, which is what this did next: a
+ * dead CDN came back 404, a host that refuses servers 403, an HTML page 415 —
+ * each handled, and each still a failed request in the network log, one per
+ * unshowable logo per page load. The relay's `/img/check` answers the same
+ * question with a 200 and the verdict in the body, reading headers only, so an
+ * unshowable logo costs one quiet request and a showable one is downloaded
+ * once, by the `<img>`, instead of twice.
+ *
+ * Only a verdict is remembered. If the relay cannot be reached, nothing is
+ * cached and the next mount asks again — otherwise a logo first checked during
+ * a market-feed outage would stay a tile after the feed came back.
  */
 const usable = new Map<string, boolean>();
 const checking = new Map<string, Promise<boolean>>();
 
-export function cachedUsable(url: string): boolean | undefined {
-  return usable.get(url);
+export function cachedUsable(uri: string): boolean | undefined {
+  return usable.get(uri);
 }
 
-export async function checkUsable(url: string): Promise<boolean> {
-  const known = usable.get(url);
+export async function checkUsable(uri: string): Promise<boolean> {
+  const known = usable.get(uri);
   if (known !== undefined) return known;
-  const running = checking.get(url);
+  const running = checking.get(uri);
   if (running) return running;
 
   const job = (async () => {
-    let ok = false;
     try {
-      const r = await fetch(url);
-      ok = r.ok && (r.headers.get('content-type') ?? '').startsWith('image/');
+      const check = logoCheckUrl(uri);
+      let ok: boolean;
+      if (check) {
+        const r = await fetch(check);
+        // Not a verdict — the relay itself refused the question — so not remembered.
+        if (!r.ok) return false;
+        const verdict = (await r.json()) as { usable?: unknown };
+        ok = verdict.usable === true;
+      } else {
+        // Outside a browser there is no relay and no console to protect: the
+        // image itself is the thing to ask.
+        const r = await fetch(uri);
+        ok = r.ok && (r.headers.get('content-type') ?? '').startsWith('image/');
+      }
+      usable.set(uri, ok);
+      return ok;
     } catch {
-      // A network-level failure. The tile is the answer.
+      // The relay did not answer at all. Not a verdict either.
+      return false;
+    } finally {
+      checking.delete(uri);
     }
-    usable.set(url, ok);
-    checking.delete(url);
-    return ok;
   })();
 
-  checking.set(url, job);
+  checking.set(uri, job);
   return job;
 }

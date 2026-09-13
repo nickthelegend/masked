@@ -5,8 +5,10 @@ run is measured by. Every row states the specific expected result. "It rendered"
 is never the expected result.
 
 **Method.** Driven through the **production export** (`npx expo export -p web`,
-served on `:4173`) in a real browser, two sessions on two origins
-(`127.0.0.1:4173` / `localhost:4173`) so each gets its own in-page wallet.
+served by `npm run serve` on `:4180`) in a real browser, two sessions on two
+origins (`127.0.0.1:4180` / `localhost:4180`) so each gets its own in-page
+wallet. The recorded run used `:4173`, which is now another project's port on
+this machine.
 Claude in Chrome reported no connected browser (`list_connected_browsers` → `[]`),
 so the in-app Chromium pane drives it. Console and network are read per item.
 
@@ -25,7 +27,7 @@ Legend: **P** pass · **F** fail · **U** untestable (missing real dependency)
 | A2 | ephemeral rollup :7799 | `getSlot` answers | **P** |
 | A3 | permission gate :6699 | answers, and *refuses* a sealed position (this is the product's core claim) | **P** |
 | A4 | market proxy :8791 | `/whoami` returns `{service, upstreams:['/pump/','/jup/']}` | **P** |
-| A5 | static export :4173 | serves `index.html`; SPA rewrite sends every route to it | **P** |
+| A5 | static export :4180 (`npm run serve`; the recorded run used :4173) | serves `index.html`; SPA rewrite sends every route to it | **P** (re-verified on :4180, PLAN.md 0.4) |
 | A6 | fogduel program deployed | `getAccountInfo(3K3v…)` is `executable` | **P** |
 | A7 | delegation program present | `DELeGG…` executable | **P** |
 | A8 | permission program present | `ACLseo…` executable | **P** |
@@ -670,7 +672,7 @@ correct — not "renders".
 | V9 | Pot pill | Prints the pot *and* what the winner takes; the second equals pot × (1 − RAKE) | **P** (after fix) |
 | V10 | Remembered choices | After a reload with no query string, stake, round length and market are the ones last used | **P** |
 | V11 | Bad stored prefs | A hand-edited `masked.prefs.v1` with a NaN stake or a 9999s duration is ignored, not applied | **P** |
-| V12 | `?market=<mint>` | Lobby opens on that mint; an unpriceable mint leaves it unselected rather than erroring | **P** |
+| V12 | `?market=<mint>` | Lobby opens on that mint; an unpriceable mint leaves it unselected rather than erroring | **P** — re-run 2026-09-12 23:45 UTC on the 23:42 export, after the restore effect in `src/screens/useDuel.ts` was fixed to track which mint it restored. With nothing remembered (a fresh origin on :4192), `?market=` for TNT opened on TNT. With WOFI remembered (:4180), the same link opened on TNT, and picking WOFI by hand afterwards stayed WOFI 10 s later. (At 23:20 UTC, before the fix, the remembered market won; that failure is why this row was re-run.) |
 | V13 | `beforeunload`, live | A cancelable `beforeunload` is prevented while a round is live | **P** |
 | V14 | `beforeunload`, not live | The same event is **not** prevented in the lobby or on the reveal | **P** |
 | V15 | `aria-live` regions | Exactly two polite regions on the live round — the clock and the PnL — with the PnL label naming direction and magnitude | **P** |
@@ -796,3 +798,68 @@ in this project.
 The error wording was then aligned to `/health`'s own row labels — "base layer"
 and "ephemeral rollup" — so somebody who follows the pointer finds the row it
 names rather than a third name for the same service.
+
+## X — Phase 7 surfaces (PLAN.md 7.1–7.10), 2026-09-12
+
+Driven in Claude in Chrome against the live local cluster, on the export named
+per row or the dev server (:8082). Rows marked **—** have not been run yet;
+they are listed so the gap is visible, not assumed.
+
+| # | Item | Correct means | St |
+|---|---|---|---|
+| X1 | COPY INVITE LINK | Offered only for this wallet's own open match still inside `MAX_OPEN_AGE`; copies `/play?match=<address>` and says LINK COPIED | **P** — appeared only after opening, copied `/play?match=Gk19…RwiS` (23:31 UTC) |
+| X2 | Invite lands | Opening the link lands on matchmaking with that match first, JOIN offered, and not listed a second time in the book | **P** — one JOIN on the page, the invited creator absent from the book |
+| X3 | Invite join | JOIN from the invite takes the match live and sealed | **P** — joined 23:32:57, SEALED · ACL ON CHAIN, settled on chain 23:35:42 |
+| X4 | Invite refusals | Each reason matches the account: malformed link, an account that is not a match, no account, open past 300 s, cancelled, taken by others, settled, own match | **P** — all eight, each against a real account on the cluster |
+| X5 | Creator reloads onto own open match | When the joiner arrives, the creator's page switches to the live round and settles it | **P** — re-run 2026-09-13 on the 00:36 export: creator A reloaded onto its own invite for `77j3…22im` (00:41:19, YOUR OWN MATCH, its match in the book); B joined through the invite at 00:41:29; A's page was LIVE · SEALED · ACL ON CHAIN by 00:41:47 with no action. (Failed twice before the fixes, at 23:32 and 00:24 UTC.) |
+| X6 | Feed pages | 10 cards, SHOW N MORE · X OF Y, adding 10 per press, reset on filter change | **P** — 10 of 24, then 20 of 24 with SHOW 4 MORE |
+| X7 | MINE history | The count line equals the wallet's settled tapes on chain, newest first | **P** — 3 on screen, 3 on chain for 2Zef…dkXm |
+| X8 | Stake presets by balance | Presets the wallet cannot cover are disabled with a note naming the most it can | **P** — 3.07 ◎ all enabled; 0 ◎ none, with the fund-it note; 0.3 ◎ 0.05/0.10 only, BALANCE COVERS UP TO 0.10◎ |
+| X9 | HUD balance, up | A higher chain read counts up to the new value in steps, tinted green | **P** — 0.25 ◎ airdrop: `rgb(47, 191, 92)` at 3.57, then 3.60, 3.63 … toward 3.82 |
+| X10 | HUD balance, down | A lower chain read counts down, tinted red | **P** — B's 0.50 ◎ join debit on `77j3…22im`: the counter turned `rgb(255, 77, 94)` at 2.70 and counted 2.64, 2.57; a second debit turned it red again at 2.18 and it counted down to 2.14 |
+| X11 | Offline banner | `offline` shows a red alert bar naming the browser's network, `online` removes it | **P** — event wiring only; a real network cut was not simulated |
+| X12 | A crash stays on its screen | A render error shows THIS SCREEN BROKE with RETRY and HOME; the root fallback does not appear | **P** — throwing probe route on :8082, deleted afterwards; HOME reached a working `/` |
+| X13 | Focus ring | A focused button, tab, market row or segment shows a 3 px white outline, removed on blur | **P** — measured on :8082 with the window focused; not re-observable while the window lacks OS focus |
+| X14 | Keyboard activation | Enter on a focused tab or button presses it | **P** — Enter keydown/keyup on the focused FEED tab opened the feed |
+| X15 | Disconnect mid-round | The first press on the wallet chip asks LEAVE ROUND? in red and does not disconnect | **P** — 00:42:22 UTC on `77j3…22im`: LEAVE ROUND? on red, no disconnect; back to `2Zef…dkXm` after 6 s with the round still live |
+| X16 | FADE WINNER | On a lost reveal, opens a match at that stake and length and hands back its invite link | **P** — B lost `77j3…22im`; FADE WINNER at 00:44:09 opened `7bc8…DSQg` (B's own, 0.50 ◎, 60 s, open; checked on chain) and copied its `/play?match=` link |
+| X17 | "ago" on /tape | The label moves on the shared 30 s clock without a reload | **P** — /tape on :8082, no reload: "0s, 2m, 7m, 10m ago" at 00:20:50 → "30s, 3m, 8m, 11m" at 00:21:05 → "1m, 4m, 9m, 12m" at 00:21:35, together and 30 s apart, which is the shared clock rather than the 15 s poll |
+| X18 | Market list skeleton | While the first market list loads, row-shaped placeholders stand where the rows will be, then real rows replace them | **P** — 4 skeletons and LOADING MARKETS… at 00:35:35.903, real rows at 00:35:36.309, on :8082 |
+| X19 | /stats request volume | After 7.14, /stats makes fewer RPC requests in a quiet 120 s window than the 30 measured before | **P** — 30 POSTs to :8999 in 120 s on the 00:08 export, 10 on the 00:36 export, same page and quiet chain |
+| X20 | /stats reacts to a settle | A settle on chain shows on an open /stats page within seconds, not at the next safety poll | **P** — tape `HpzDPZes…` settled 00:43:41; DUELS SETTLED 72 → 73 at 00:43:47 on a page loaded at 00:43:11, before its 60 s poll was due |
+
+## Y — PLAN 7.16–7.18 and the tape window, 2026-09-13
+
+Executed on the local stack after the committor reset (01:11 UTC). Rows marked
+**–** are built and wait on the live check named in their status.
+
+| # | Surface | Expected | Result |
+|---|---|---|---|
+| Y1 | Soak, busy rounds | 21 fills a player commits and settles, crank-committed or client-committed | **P** — `CBJPzsRa…` (crank) and `J7EBtmgp…` (client), 42/42 fills each, both settled, 01:23 UTC; committor rows `DiffBuffer` → `Succeeded` |
+| Y2 | Soak, concurrent | 3 duels × 60 s at the full fill rate all settle | **P** — 360/360 fills, p50 9 ms, p99 15 ms, 3/3 crank-committed and settled, 01:25:29–01:26:36 UTC |
+| Y3 | Majors sort | BY 24H VOL lists Jupiter's busiest verified tokens, descending, with the figure shown; memes say why they cannot be sorted by volume | **P** — 40 rows `VOL $5.08B, $1.34B, $223.3M…`, descending; memes note rendered; :8082, 01:07 UTC |
+| Y4 | Colour-blind palette | The switch reloads into blue/vermillion everywhere, the landing included, and back | **P** — FIND MATCH `rgb(47,191,92)` → `rgb(47,143,255)`, `<html data-palette="safe">`, landing `--win #2f8fff`; reversed; `check:palette` 112.3 ΔE worst case |
+| Y5 | Hero attract mode | Idle 8 s: label on and blinking, masks rebuilt every other beat; any input ends it | **P** — label `data-on=true` with `mk-attract-blink`; rebuild bursts 6.4 s apart × 4; pointermove → off in 0.1 s (`document.hidden` stubbed false for the hidden pane) |
+| Y6 | Arena crosshair | Pointing at the live chart marks the nearest sample with its second, PnL and mark | **P** — live duel 01:58 UTC, readout "16s · +0.000% · MARK 0.016064406◎", then "24s · -0.230% · MARK 0.016064406◎" |
+| Y7 | Result image | SAVE RESULT IMAGE yields a 1200×675 PNG of the settled result with the tape link | **P** — `masked-duel-JCw3xFAz.png`, image/png, 56,589 bytes, 1200×675; ink ground, gold headline, loss badge, chart panel and both lanes present in its pixels; button IMAGE SAVED, 02:01 UTC |
+| Y8 | Tape window | A side with more than 16 fills replays from the tape's snapshot onto the chain's PnL, and says "LAST 16 OF N FILLS" | **P** — program side proven: `anchor test` on the window-snapshot program, 38 passing, 2 pending (01:49:22 UTC), including a busy round's 16 stored fills replaying from `startQuote/startBase` onto `pnl_bps`. Client replay: probe over every tape at 01:53:38 UTC, 16/16 sides on `pnl_bps` including `5mxUqV8K…` A and B (LAST 16 OF 25 FILLS). `npm run check` green 01:58:04 UTC (check:tape 523 assertions, 2 sides past 16 fills). UI: the reveal of a 38-fill side reads "LAST 16 OF 38 FILLS", "YOUR FILLS 38 · THEIRS 0" and "WOFI MOVED +0.11% (LAST 16 OF 38 FILLS)". Control, 02:06 UTC: an 11-fill side's reveal reads "YOUR FILLS 11 · THEIRS 0" and "WOFI MOVED +0.01%" with no window note |
+| Y9 | Jupiter beside the book | After a fill, Jupiter's price for the same size, the book's gap to it, or a plain no-route reason | **P** — after a fix (the first duel showed ASKING all round: each fill abandoned the last quote). Second duel 02:05 UTC: "0.016131150◎ · YOUR BOOK 0.08% WORSE · 1 POOL", refreshed per fill, "FOR AN EARLIER FILL · ASKING ABOUT YOUR LATEST" while a newer one was out |
+| Y10 | Installable shell | The manifest and worker load; after one visit the shell opens with its server stopped | **P** — worker `activated` and controlling, 15 shell files cached; server stopped (uncached fetch "Failed to fetch"), `/play` still rendered from the worker with fonts loaded, 01:57 UTC. INSTALL not exercisable in a hidden pane |
+| Y11 | Optimistic fills | A sent fill shows its predicted price at once, is replaced by the chain's receipt, and a refused one is marked rolled back; a press that sends nothing draws nothing | **P** — predicted 0.016231692◎ → filled 0.016231690◎ and three more pairs within 2e-9◎; a BUY at the buzzer went "REFUSED · ROLLED BACK" with ROUND EXPIRED; NOTHING TO CLOSE and NOTHING LEFT TO LONG drew no row; 02:13–02:18 UTC |
+| Y12 | Trading controls after 7.15 (QA F6, F9–F12) | Size picker, SHORT from flat, CLOSE (incl. while flat), NOTHING LEFT TO LONG, keyboard L/C/S behave as before on the post-7.15 bundle | **P** — size note 0.39% (1/4) → 1.56% (MAX); S from flat → SHORT FILLED; C flat → NOTHING TO CLOSE, no tx; L at MAX twice → LONG FILLED then NOTHING LEFT TO LONG; all driven by keyboard, 02:13 UTC |
+
+## Z — Devnet and the TEE, 2026-09-13
+
+Program `3K3v1bp6uUGVdzRfZmkwZGK82BHgCJxAroXJ3ZRs1Rj1` on devnet, rollup
+`devnet-tee.magicblock.app` (validator `MTEW…`), L1 through
+`rpc.magicblock.app/devnet`. Every row ran against the live cluster.
+
+| # | Surface | Expected | Result |
+|---|---|---|---|
+| Z1 | Devnet deploy | The tested binary is live at the same id | **P** — signature `F6tajCiL…`, slot 497,500,594, ProgramData `7mcpvZnc…`, 935,024 bytes, SHA-256 prefix `b87fbabbfea00b4e` = the local build; 02:46 UTC |
+| Z2 | Full match through the app's client | Create, join, seal, delegate, fill on the TEE, commit, settle, PnL agrees | **P** — `verify:client` "CLIENT OK", 656 vs −12 bps, payout 0.196 SOL, client PnL = chain; 02:51 UTC (a first run's 12 s round expired under 429 retries, fixed to 90 s) |
+| Z3 | TEE read gate, direct probe | With only positions and ACLs delegated, anonymous gets neither, each owner only their own | **P** — match `7zH87FEB…`: anonymous refused/refused; creator token 559 bytes/refused; opponent token refused/559 bytes; 02:53 UTC |
+| Z4 | Privacy proof on the TEE | Mid-round the opponent is refused with or without a token, the owner reads their own; public after settlement | **P** — `prove:privacy` "[cluster: devnet, TEE: YES]", match `3Mr9KAFq…`: own YES, theirs REFUSED, unauthenticated REFUSED; ACLs released, committed, tape written, position public; exit 0, 02:57 UTC |
+| Z5 | VRF on devnet | An oracle fulfils a draw and only the VRF program writes it | **P** — `check:vrf`: `5c2gsE7H…` chosen 1 in 1 s, `2BSAMqwx…` chosen 0 in the same second (default queue picked by the script); the SDK test queue was never answered; 02:50–02:51 UTC |
+| Z6 | TDX attestation | The TEE endpoint's quote verifies against Intel's collateral | **P** — `check-tee.mts` exit 0, report data matching a fresh challenge; 00:51 UTC (solana-magicblock-v8-59) |
+| Z7 | App seal path on a TEE cluster | Sealing completes without error on devnet | **F** — `useDuel.ts:1144–1150` calls `initPositionPrivacy` after `sealAndDelegateMatch`; it creates an ephemeral permission where the delegated L1 permission already is, and devnet-tee refuses it every time (experiment 03:01, match `6FLZ2wAd…`: immediately, after 5 s, and for the joiner). Redundant, since the L1 ACL gates reads; fix (remove the call) pending with the file's owner |

@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import {
   Badge, Box, DurationPicker, MarketPicker, PixelButton, PixelText, Row, Stack, StakePicker,
-  TokenLogo, color, solExact, onInk, space, type MarketKindKey, type PickableMarket,
+  TokenLogo, color, solExact, onInk, space, type MarketKindKey, type MarketSortKey, type PickableMarket,
+  paletteName, paletteSwitchable, setPalette,
 } from '../ui';
 import { useMarkets } from '../chain/useMarkets';
 import { formatCap, formatUsdPrice } from '../chain/units';
 import type { TradableMarket } from '../chain/markets';
 import { roundBadge } from './data';
+import { affordableStake } from '../chain/preflight';
 
 export interface DuelLobbyScreenProps {
   stake: number;
@@ -19,6 +21,8 @@ export interface DuelLobbyScreenProps {
   /** The market the next duel opens on. Null until the player picks one. */
   selected: TradableMarket | null;
   onSelectMarket: (m: TradableMarket) => void;
+  /** The connected wallet's balance in lamports. Limits the stake presets; omit when no wallet. */
+  balanceLamports?: number;
 }
 
 /** Side rails are decorative slots for perks that are not wired up yet. */
@@ -60,10 +64,17 @@ export default function DuelLobbyScreen({
   onFind,
   selected,
   onSelectMarket,
+  balanceLamports,
 }: DuelLobbyScreenProps) {
   const [kind, setKind] = useState<MarketKindKey>('meme');
   const [query, setQuery] = useState('');
-  const { markets, loading, searching, error, refresh } = useMarkets(kind, 12, query);
+  const [sort, setSort] = useState<MarketSortKey>('cap');
+  const [paletteRefused, setPaletteRefused] = useState(false);
+  const { markets, loading, searching, error, refresh } = useMarkets(kind, 12, query, sort);
+
+  // Sorted by volume, a major shows the number it was sorted by, so the
+  // order on screen can be checked against the figures next to it.
+  const byVolume = kind === 'major' && sort === 'volume' && !query.trim();
 
   // The picker takes formatted strings: it renders markets, it does not know
   // what a price scale is.
@@ -73,7 +84,12 @@ export default function DuelLobbyScreen({
     name: m.name,
     imageUri: m.imageUri,
     price: formatUsdPrice(m.priceUsd),
-    cap: m.kind === 'meme' ? formatCap(m.usdMarketCap) : undefined,
+    cap:
+      m.kind === 'meme'
+        ? formatCap(m.usdMarketCap)
+        : byVolume && m.usdVolume24h != null
+          ? `VOL ${formatCap(m.usdVolume24h)}`
+          : undefined,
     source: m.source,
   }));
 
@@ -131,11 +147,18 @@ export default function DuelLobbyScreen({
         searching={searching}
         query={query}
         onQueryChange={setQuery}
+        sort={sort}
+        onSortChange={setSort}
         error={error}
         onRetry={refresh}
       />
 
-      <StakePicker value={stake} onChange={onStakeChange} note={`WINNER TAKES ${solExact(pot)} · 2% RAKE`} />
+      <StakePicker
+        value={stake}
+        onChange={onStakeChange}
+        maxStake={balanceLamports === undefined ? undefined : affordableStake(balanceLamports)}
+        note={`WINNER TAKES ${solExact(pot)} · 2% RAKE`}
+      />
 
       {/* A real argument to `create_match`, not a display setting — see
           DurationPicker. Joining somebody else's match takes their length. */}
@@ -153,6 +176,23 @@ export default function DuelLobbyScreen({
       <PixelText variant="bodySmall" align="center" color={color.textFaint}>
         FOG DUEL 1V1 · PRIVATE ROLLUP · SETTLES ON SOLANA
       </PixelText>
+
+      {/* Here rather than mid-round: switching reloads the page (see
+          ui/palette.ts), and the lobby is the one screen with nothing live. */}
+      {paletteSwitchable ? (
+        <PixelButton
+          tone="quiet"
+          size={8}
+          padY={space.sm}
+          label={paletteName === 'safe' ? 'COLOUR-BLIND COLOURS: ON' : 'COLOUR-BLIND COLOURS: OFF'}
+          onPress={() => setPaletteRefused(!setPalette(paletteName === 'safe' ? 'standard' : 'safe'))}
+        />
+      ) : null}
+      {paletteRefused ? (
+        <PixelText variant="bodySmall" size={9} align="center" color={color.red}>
+          THIS BROWSER WILL NOT STORE THE CHOICE, SO IT CANNOT BE KEPT
+        </PixelText>
+      ) : null}
     </Stack>
   );
 }

@@ -10,3 +10,6 @@ import StatusScreen from '../src/screens/StatusScreen';
 export default function HealthRoute() {
   return <StatusScreen />;
 }
+
+// A render error here stays on this screen — see RouteErrorBoundary.
+export { default as ErrorBoundary } from '../src/ui/RouteErrorBoundary';

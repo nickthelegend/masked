@@ -1,4 +1,5 @@
 import { Linking, Pressable, type ViewStyle } from 'react-native';
+import { useNow } from './useNow';
 import PixelPanel from './PixelPanel';
 import PixelText from './PixelText';
 import Row from './Row';
@@ -26,9 +27,10 @@ export interface TxFeedProps {
 
 const short = (s: string) => `${s.slice(0, 8)}…${s.slice(-6)}`;
 
-const ago = (t: number | null) => {
+/** How long ago, against the shared clock so the label keeps moving between polls. */
+const ago = (t: number | null, now: number) => {
   if (!t) return '';
-  const secs = Math.max(0, Math.floor(Date.now() / 1000 - t));
+  const secs = Math.max(0, Math.floor(now - t));
   if (secs < 60) return `${secs}s`;
   if (secs < 3600) return `${Math.floor(secs / 60)}m`;
   return `${Math.floor(secs / 3600)}h`;
@@ -40,6 +42,7 @@ const ago = (t: number | null) => {
  * — which is the entire point of showing it.
  */
 export default function TxFeed({ items, loaded = true, title = 'ON-CHAIN ACTIVITY', emptyLabel = 'NO TRANSACTIONS YET', style }: TxFeedProps) {
+  const now = useNow();
   return (
     <PixelPanel flat bg={color.chartBg} style={style}>
       <Stack gap={space.sm}>
@@ -68,7 +71,7 @@ export default function TxFeed({ items, loaded = true, title = 'ON-CHAIN ACTIVIT
                     {short(t.signature)}
                   </PixelText>
                   <PixelText variant="bodySmall" size={10} color={color.textFaint}>
-                    {ago(t.blockTime)}
+                    {ago(t.blockTime, now)}
                   </PixelText>
                 </Row>
               </Pressable>
