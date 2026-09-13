@@ -44,6 +44,7 @@ use ephemeral_rollups_sdk::vrf::types::SerializableAccountMeta;
 
 pub mod errors;
 pub mod pyth;
+pub mod sb;
 pub mod state;
 
 use errors::FogError;
@@ -465,6 +466,11 @@ pub mod fogduel {
     /// refuses it. Each later Pyth push must not be older than the pair before
     /// it, and at least one of its two updates must be newer, so a stale signed
     /// update cannot be replayed to drag the mark back.
+    ///
+    /// Pyth's SOL/USD divides every mark, so it is not taken on Pyth's word
+    /// alone: a Switchboard On-Demand SOL/USD feed (Coinbase and Kraken spot,
+    /// pinned by queue and feed hash in `sb.rs`), refreshed within
+    /// `sb::MAX_SB_AGE`, has to agree with it to `sb::MAX_ORACLE_DIVERGENCE_BPS`.
     pub fn push_price_pyth(ctx: Context<PushPricePyth>, owner: Pubkey) -> Result<()> {
         let m = &ctx.accounts.match_account;
         require!(m.status == MatchStatus::Live, FogError::MatchNotLive);
@@ -483,6 +489,7 @@ pub mod fogduel {
 
         let token = pyth::read_checked(&ctx.accounts.token_price_update, &token_feed, now)?;
         let sol = pyth::read_checked(&ctx.accounts.sol_price_update, &pyth::SOL_USD_FEED, now)?;
+        sb::read_checked(&ctx.accounts.switchboard_sol_usd, &sol, now)?;
         let px = pyth::px_from_usd_pair(&token, &sol)?;
 
         let oldest = token.publish_time.min(sol.publish_time);
@@ -1451,6 +1458,11 @@ pub struct PushPricePyth<'info> {
 
     /// CHECK: a Pyth `PriceUpdateV2` for SOL/USD, checked the same way.
     pub sol_price_update: UncheckedAccount<'info>,
+
+    /// CHECK: a Switchboard On-Demand pull feed for SOL/USD. Owner,
+    /// discriminator, queue, feed hash, freshness and agreement with Pyth's
+    /// SOL/USD are checked in `sb::read_checked`.
+    pub switchboard_sol_usd: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts, Session)]

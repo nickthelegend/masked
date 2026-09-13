@@ -64,4 +64,12 @@ pub enum FogError {
     OracleUpdateNotNewer,
     #[msg("This feed takes its price from Pyth for the rest of the round")]
     OracleOwnsFeed,
+    #[msg("Not a Switchboard SOL/USD pull feed on the expected queue")]
+    SecondOracleInvalid,
+    #[msg("Switchboard feed runs different jobs from the pinned SOL/USD feed")]
+    SecondOracleWrongFeed,
+    #[msg("Switchboard result is too old")]
+    SecondOracleStale,
+    #[msg("Pyth and Switchboard disagree on SOL/USD")]
+    OraclesDisagree,
 }

@@ -18,6 +18,12 @@ import { feedPda } from './pdas';
 
 export const PYTH_RECEIVER_ID = new PublicKey('rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ');
 export const SOL_USD_PRICE_UPDATE = new PublicKey('7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE');
+/**
+ * Switchboard's SOL/USD pull feed on devnet, the second oracle the program
+ * checks Pyth's SOL/USD against (`sb.rs`). Refresh it before pushing: see
+ * scripts/switchboard.ts.
+ */
+export const SWITCHBOARD_SOL_USD_FEED = new PublicKey('9Casyq1esMPojvbYHYrSZe5XZZRaWHmXNkkfvYqjQuqP');
 
 /** Mirrors `pyth::MAJOR_FEEDS`, with the sponsored account for each feed. */
 export const PYTH_MAJORS: Record<string, { symbol: string; feedId: string; priceUpdate: PublicKey }> = {
@@ -107,6 +113,8 @@ export async function pushPricePyth(
     owner: PublicKey;
     mint: string;
     tokenPriceUpdate?: PublicKey;
+    /** Defaults to the pinned SOL/USD feed; passed only to test a refusal. */
+    switchboardSolUsd?: PublicKey;
     /** Compute-budget instructions to send first — see priorityFee.ts. */
     computeBudget?: TransactionInstruction[];
   }
@@ -121,6 +129,7 @@ export async function pushPricePyth(
       priceFeed: feedPda(args.match, args.owner),
       tokenPriceUpdate: args.tokenPriceUpdate ?? entry.priceUpdate,
       solPriceUpdate: SOL_USD_PRICE_UPDATE,
+      switchboardSolUsd: args.switchboardSolUsd ?? SWITCHBOARD_SOL_USD_FEED,
     })
     .preInstructions(args.computeBudget ?? [])
     .rpc();

@@ -2240,7 +2240,12 @@ export const FOGDUEL_IDL = {
         "taken a Pyth price its `authority` is the receiver and `push_price`",
         "refuses it. Each later Pyth push must not be older than the pair before",
         "it, and at least one of its two updates must be newer, so a stale signed",
-        "update cannot be replayed to drag the mark back."
+        "update cannot be replayed to drag the mark back.",
+        "",
+        "Pyth's SOL/USD divides every mark, so it is not taken on Pyth's word",
+        "alone: a Switchboard On-Demand SOL/USD feed (Coinbase and Kraken spot,",
+        "pinned by queue and feed hash in `sb.rs`), refreshed within",
+        "`sb::MAX_SB_AGE`, has to agree with it to `sb::MAX_ORACLE_DIVERGENCE_BPS`."
       ],
       "discriminator": [
         153,
@@ -2321,6 +2326,13 @@ export const FOGDUEL_IDL = {
         },
         {
           "name": "sol_price_update"
+        },
+        {
+          "name": "switchboard_sol_usd",
+          "docs": [
+            "discriminator, queue, feed hash, freshness and agreement with Pyth's",
+            "SOL/USD are checked in `sb::read_checked`."
+          ]
         }
       ],
       "args": [
@@ -3251,6 +3263,26 @@ export const FOGDUEL_IDL = {
       "code": 6030,
       "name": "OracleOwnsFeed",
       "msg": "This feed takes its price from Pyth for the rest of the round"
+    },
+    {
+      "code": 6031,
+      "name": "SecondOracleInvalid",
+      "msg": "Not a Switchboard SOL/USD pull feed on the expected queue"
+    },
+    {
+      "code": 6032,
+      "name": "SecondOracleWrongFeed",
+      "msg": "Switchboard feed runs different jobs from the pinned SOL/USD feed"
+    },
+    {
+      "code": 6033,
+      "name": "SecondOracleStale",
+      "msg": "Switchboard result is too old"
+    },
+    {
+      "code": 6034,
+      "name": "OraclesDisagree",
+      "msg": "Pyth and Switchboard disagree on SOL/USD"
     }
   ],
   "types": [

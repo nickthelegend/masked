@@ -17,6 +17,9 @@
  *   9. (PLAN #80) A push priced from the cluster's recent priority fees pays
  *      exactly that: with a floor, base + price x limit; at devnet's usual
  *      zero, the base fee and no compute-budget instruction at all.
+ *  10. (PLAN #77) Switchboard's SOL/USD, refreshed by its oracles, agrees with
+ *      Pyth's; a feed running other jobs and a result past MAX_SB_AGE are
+ *      refused.
  *
  * Needs the program with `push_price_pyth` deployed on devnet.
  *
@@ -44,6 +47,7 @@ import {
   refusal,
 } from '../src/chain/pyth';
 import { fund } from './fund';
+import { MAX_SB_AGE_SECS, SB_OTHER_JOBS_FEED, readSwitchboard, refreshSwitchboardSolUsd } from './switchboard';
 import { estimatePriorityFee, priorityFeeInstructions, priorityFeeLamports } from '../src/chain/priorityFee';
 import { ComputeBudgetProgram } from '@solana/web3.js';
 
@@ -138,7 +142,8 @@ async function main() {
   await me.ensureTreasury(creator.publicKey);
 
   const ENTRY = 0.01 * LAMPORTS_PER_SOL;
-  const ROUND_SECS = 90;
+  // Long enough for the stale-Switchboard case, which waits MAX_SB_AGE out mid-round.
+  const ROUND_SECS = 240;
   const base = Math.floor(Date.now() / 1000);
 
   console.log('[1] a round on two majors: creator USDC, joiner SOL');
@@ -162,7 +167,18 @@ async function main() {
   });
   console.log(`   match ${meme.toBase58()}`);
 
-  console.log('[3] push_price_pyth');
+  console.log('[3] Switchboard SOL/USD, the second oracle');
+  const refreshed = await refreshSwitchboardSolUsd(l1, creator);
+  const pythSolUsd = Number(sol0.price) * 10 ** sol0.exponent;
+  const sbSolUsd = Number(refreshed.value.usd1e18) / 1e18;
+  const gapBps = (Math.abs(sbSolUsd - pythSolUsd) / pythSolUsd) * 10_000;
+  pass(
+    `Switchboard SOL/USD refreshed by oracle ${refreshed.oracles.map((o) => o.slice(0, 8)).join(',')} (tx ${refreshed.signature.slice(0, 8)}…): ` +
+      `${sbSolUsd} vs Pyth ${pythSolUsd}, ${gapBps.toFixed(0)} bps apart`
+  );
+  const refreshedAt = refreshed.value.updatedTs;
+
+  console.log('[3b] push_price_pyth');
   // The cluster clock ticks in whole seconds; a push in the same second as the
   // join would meet the crank's one-second spacing from join's own write.
   await sleep(1500);
@@ -251,6 +267,29 @@ async function main() {
   await refuses('a meme leg', 'NotAMajor', () =>
     pushPricePyth(program, { authority: creator.publicKey, match: meme, owner: creator.publicKey, mint: USDC_MINT })
   );
+
+  await refuses('a Switchboard feed running other jobs', 'SecondOracleWrongFeed', () =>
+    pushPricePyth(program, { authority: creator.publicKey, match: major, owner: creator.publicKey, mint: USDC_MINT, switchboardSolUsd: SB_OTHER_JOBS_FEED })
+  );
+  // Wait the Switchboard result out, then push: the second oracle must now refuse.
+  const staleAt = (refreshedAt + MAX_SB_AGE_SECS + 5) * 1000;
+  console.log(`   waiting ${Math.max(0, Math.round((staleAt - Date.now()) / 1000))}s for the Switchboard result to pass MAX_SB_AGE`);
+  await sleep(Math.max(0, staleAt - Date.now()));
+  const sbNow = await readSwitchboard(l1);
+  if (sbNow.updatedTs !== refreshedAt) {
+    console.log('   (somebody else refreshed the feed meanwhile; stale case not run)');
+  } else {
+    const nowSecs = Math.floor(Date.now() / 1000);
+    const [u, s] = [await readPriceUpdate(l1, usdcUpdate), await readPriceUpdate(l1, solUpdate)];
+    const pythWhy = refusal(u, PYTH_MAJORS[USDC_MINT].feedId, nowSecs) ?? refusal(s, PYTH_MAJORS[WSOL_MINT].feedId, nowSecs);
+    if (pythWhy) {
+      console.log(`   (Pyth itself would be refused first, ${pythWhy}; stale-Switchboard case not run)`);
+    } else {
+      await refuses(`a Switchboard result ${nowSecs - sbNow.updatedTs}s old`, 'SecondOracleStale', () =>
+        pushPricePyth(program, { authority: creator.publicKey, match: major, owner: creator.publicKey, mint: USDC_MINT })
+      );
+    }
+  }
 
   console.log('[5] the buzzer, then settlement');
   for (const m of [major, meme]) {
