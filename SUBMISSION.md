@@ -210,7 +210,7 @@ worse than being told.
   running stack. A full duel (open → join → both arenas with the opponent's row
   fogged → max long against a half-size short → buzzer → both reveals mirroring),
   then the evidence page.
-- **Live URL:** https://claude.ai/code/artifact/55aff865-8675-4492-93b5-96be7804170c
+- **Evidence page:** https://claude.ai/code/artifact/55aff865-8675-4492-93b5-96be7804170c (private until shared; the live app is https://masked-eight.vercel.app)
   — the reel, the four `check:er` assertions, the measured 9.5× rollup speedup,
   the gate's refused/served/owner rows, the ten-step delegation lifecycle, the
   reproduction commands, and the four things this project does **not** prove.

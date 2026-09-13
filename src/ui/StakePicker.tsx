@@ -70,6 +70,15 @@ export default function StakePicker({
               : `BALANCE COVERS UP TO ${sol(maxStake, maxStake < 1 ? 2 : 0)}`}
           </PixelText>
         ) : null}
+        {/* The chosen stake stays chosen when the balance falls under it, and its
+            button is disabled like every other one the wallet cannot cover. So
+            say which stake it is: the note below is priced on it, and without
+            this line it describes a selection the player cannot see. */}
+        {maxStake !== undefined && !covered(value) ? (
+          <PixelText variant="bodySmall" color={color.yellow}>
+            {`CHOSEN STAKE ${sol(value, value < 1 ? 2 : 0)} IS MORE THAN THIS WALLET COVERS`}
+          </PixelText>
+        ) : null}
         {note ? (
           <PixelText variant="bodySmall" color={color.textDim}>
             {note}

@@ -23,6 +23,12 @@ export interface DuelLobbyScreenProps {
   onSelectMarket: (m: TradableMarket) => void;
   /** The connected wallet's balance in lamports. Limits the stake presets; omit when no wallet. */
   balanceLamports?: number;
+  /**
+   * Land on the top market when nothing is selected. Off when the page came
+   * from a `?market=` link: if that token cannot be priced, defaulting would
+   * quietly swap in another market and overwrite the remembered pick.
+   */
+  autoSelectTop?: boolean;
 }
 
 /** Side rails are decorative slots for perks that are not wired up yet. */
@@ -65,6 +71,7 @@ export default function DuelLobbyScreen({
   selected,
   onSelectMarket,
   balanceLamports,
+  autoSelectTop = true,
 }: DuelLobbyScreenProps) {
   const [kind, setKind] = useState<MarketKindKey>('meme');
   const [query, setQuery] = useState('');
@@ -99,8 +106,8 @@ export default function DuelLobbyScreen({
   // list is right there, so this is a default, not a decision taken for the
   // player — and only until they have made one.
   useEffect(() => {
-    if (!selected && markets.length > 0) onSelectMarket(markets[0]);
-  }, [selected, markets, onSelectMarket]);
+    if (autoSelectTop && !selected && markets.length > 0) onSelectMarket(markets[0]);
+  }, [autoSelectTop, selected, markets, onSelectMarket]);
 
   return (
     <Stack pad={space.lg} gap={space.md}>

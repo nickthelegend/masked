@@ -273,6 +273,7 @@ export default function MaskedApp({ initialMarketMint, initialMatch }: MaskedApp
 
             {tab === 'duel' && duel.phase === 'lobby' ? (
               <DuelLobbyScreen
+                autoSelectTop={!initialMarketMint}
                 stake={duel.stake}
                 onStakeChange={duel.setStake}
                 balanceLamports={duel.connected ? Math.round(duel.balance * 1e9) : undefined}
