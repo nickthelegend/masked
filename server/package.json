@@ -1,0 +1,10 @@
+{
+  "name": "masked-market-proxy",
+  "private": true,
+  "description": "CORS shim in front of pump.fun and Jupiter for the MASKED web app. Node built-ins only, no dependencies.",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node market-proxy.mjs"
+  }
+}

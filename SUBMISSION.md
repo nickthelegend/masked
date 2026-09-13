@@ -34,7 +34,7 @@ token, long or short, reveal and pot settlement on Solana.
 > product on Solana is public during the fight; this one is private during the
 > fight and public after.
 
-**Repo:** *(this repository)*
+**Repo:** https://github.com/nickthelegend/masked
 
 **MagicBlock primitives used:**
 - **Ephemeral Rollups** — `delegate_position_to_er`,
@@ -171,11 +171,9 @@ Submissions close **2026-09-13 12:30 UTC** (checked 2026-09-12 20:34 UTC).
 1. [ ] Sign in at `https://build.magicblock.app/?stage=blitz#submit` and check
        whether an entry already exists. If one does, edit it instead of
        submitting twice, and record it here.
-2. [ ] Settle the name the form gets: **MASKED** above, **MASKED** in the app
-       (PLAN.md 2.1).
-3. [ ] Publish the repository and put its URL in **Repo** above. The ledger
-       blobs must be purged from history first or GitHub refuses the push
-       (PLAN.md 1.2, 1.4).
+2. [x] Name settled by the owner: **MASKED** (PLAN.md 2.1).
+3. [x] Repository published: https://github.com/nickthelegend/masked (history purged of the ledger
+       blobs first; PLAN.md 1.2, 1.4).
 4. [x] Video recorded: `docs/masked-demo.mp4`.
 5. [ ] Put the video where the form can link it, paste that URL into
        **Demo video / live URL**, and share the evidence page.

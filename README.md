@@ -1,5 +1,7 @@
 # MASKED
 
+Source: https://github.com/nickthelegend/masked
+
 **Hidden-position 1v1 trading on Solana, built on MagicBlock Ephemeral Rollups.**
 
 Two traders stake an equal entry into an escrowed pot and trade for five
