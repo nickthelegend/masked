@@ -70,11 +70,16 @@ function FillList({ fills, startTs, tone }: { fills: TapeFill[]; startTs: number
           <PixelText variant="bodySmall" size={9} color={tone}>
             {when(f.ts, startTs)} {SIDE_LABEL[f.side]}
           </PixelText>
+          {/* A fill with no price is the buzzer closing what a MAX close left on
+              a coin too cheap to buy back exactly: worth under a lamport, so it
+              cost nothing. It read `0.00 @ —◎`, which looks like a broken feed. */}
           <PixelText variant="bodySmall" size={9} color={color.textDim}>
-            {fillTokens(f).toFixed(2)} @ {formatSolPrice(f.px)}◎
+            {f.px > 0
+              ? `${fillTokens(f).toFixed(2)} @ ${formatSolPrice(f.px)}◎`
+              : `${fillTokens(f).toPrecision(2)} LEFT · UNDER A LAMPORT`}
           </PixelText>
           <PixelText variant="bodySmall" size={9} color={color.textFaint}>
-            {sol(fillValue(f) / 1e9)}
+            {solExact(fillValue(f) / 1e9)}
           </PixelText>
         </Row>
       ))}
@@ -154,7 +159,7 @@ function TapeIndex() {
             </Row>
             <Row justify="space-between" gap={space.sm} wrap>
               <PixelText variant="bodySmall" size={9} color={color.green}>
-                {`${short(t.winner)} ${bpsPct(t.winnerPnlBps)} · paid ${sol(t.potPaid / 1e9)}`}
+                {`${short(t.winner)} ${bpsPct(t.winnerPnlBps)} · paid ${solExact(t.potPaid / 1e9)}`}
               </PixelText>
               <PixelText variant="bodySmall" size={9} color={color.red}>
                 {`${short(t.loser)} ${bpsPct(t.loserPnlBps)}`}

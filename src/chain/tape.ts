@@ -12,7 +12,7 @@
  * the tape it is not returned.
  */
 import { PublicKey } from '@solana/web3.js';
-import { BASE_SCALE, VALUE_DIV } from './units';
+import { BASE_SCALE, isFlat, VALUE_DIV } from './units';
 
 /** Mirrors `BOOK_DEPTH` in state.rs. Needed to undo a fill's own impact. */
 export const BOOK_DEPTH = 64;
@@ -302,6 +302,13 @@ export const fillValue = (f: TapeFill): number => (f.qty * f.px) / VALUE_DIV;
  * takes it back out. Earliest and latest by timestamp,
  * so the window is the round rather than one player's activity.
  *
+ * Only fills with a price count. The buzzer closing a remainder worth under a
+ * lamport costs nothing, so `settle_match` writes it at px 0 — and taking that
+ * as the closing mark dropped the line entirely: a PUMP side that covered to
+ * dust had no move on its reveal or its tape. Skipping it ends the window at
+ * the side's last priced fill, which is where a side that closed exactly
+ * already ended, since flat at the buzzer writes no fill at all.
+ *
  * Returns null when the tape cannot support the claim: fewer than two distinct
  * marks means there is no move to report, and reporting one anyway would be
  * inventing the most interesting number on the screen.
@@ -311,7 +318,7 @@ export function marketMove(
   entry: number
 ): { openPx: number; closePx: number; bps: number } | null {
   if (entry <= 0) return null;
-  const sorted = [...fills].sort((x, y) => x.ts - y.ts);
+  const sorted = fills.filter((f) => f.px > 0).sort((x, y) => x.ts - y.ts);
   if (sorted.length < 2) return null;
 
   const first = sorted[0];
@@ -332,12 +339,20 @@ export function marketMove(
  * `liquidation` fill is the round closing them out, not a direction they
  * chose, and counting it would report every finished player as flat. This is
  * the position that actually produced their PnL.
+ *
+ * A net worth under a lamport is flat, by the round's own rule (`isFlat`),
+ * judged at the mark behind the side's last trade — in practice the cover that
+ * left it. A PUMP side that covered its short down to 15 base, about half a
+ * lamport, read FLAT for the rest of the round and then SHORT on its reveal.
  */
-export function carriedSide(fills: TapeFill[]): 'long' | 'short' | 'flat' {
+export function carriedSide(fills: TapeFill[], entry: number): 'long' | 'short' | 'flat' {
   let net = 0;
+  let lastTrade: TapeFill | null = null;
   for (const f of fills) {
-    if (f.side === 'buy') net += f.qty;
-    else if (f.side === 'sell') net -= f.qty;
+    if (f.side !== 'buy' && f.side !== 'sell') continue;
+    net += f.side === 'buy' ? f.qty : -f.qty;
+    if (!lastTrade || f.ts >= lastTrade.ts) lastTrade = f;
   }
+  if (net !== 0 && lastTrade && isFlat(net, markFromFill(lastTrade, entry))) return 'flat';
   return net > 0 ? 'long' : net < 0 ? 'short' : 'flat';
 }

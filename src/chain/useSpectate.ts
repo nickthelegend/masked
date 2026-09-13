@@ -107,7 +107,13 @@ export function useSpectate(address: string | null, pollMs = 1000) {
         )) as Record<string, any> | null;
         if (!alive) return;
         if (!raw) {
-          setError('No match at that address.');
+          // Anchor reads an account with no data — a wallet, the thing most
+          // often pasted — as absent, not as the wrong shape, so a wallet read
+          // "No match at that address" while a program account said what it
+          // was. Ask whether anything lives there before calling it empty.
+          const held = await withDeadline(l1.getAccountInfo(key), 'the base layer');
+          if (!alive) return;
+          setError(held ? 'That address is a Solana account, but not a duel.' : 'No match at that address.');
           setLoaded(true);
           return;
         }

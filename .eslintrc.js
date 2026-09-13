@@ -13,6 +13,9 @@ module.exports = {
     // The design hand-off the app was ported from, kept for reference and
     // imported by nothing.
     '/ui/*',
+    // esbuild output of server/src/tapes.ts (`npm run build:server`), minified
+    // into one line of bundler globals. Its source is linted; this is not.
+    '/server/tapes.bundle.mjs',
   ],
   rules: {
     // A missing dependency is how stale closures got in (7cf4a83: every match

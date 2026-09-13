@@ -22,6 +22,8 @@ import { ACTIVE_CLUSTER, DELEGATION_PROGRAM_ID, type ClusterConfig } from './con
 import { feedPda, matchPda, positionPda, statsPda, statusPda, tapePda, treasuryPda, vaultPda } from './pdas';
 import { toTapeState, type TapeState } from './tape';
 import { authenticate, type MessageSigner } from './erAuth';
+import { serviceFetch } from './serviceFetch';
+import { confirmByPolling, pollingProvider } from './confirmByPolling';
 import { VALUE_DIV } from './units';
 import { isProgramError } from './errors';
 
@@ -142,20 +144,6 @@ type AnyProgram = Program<Idl> & { account: Record<string, any>; methods: Record
 
 const sideArg = (side: Side) => (side === 'buy' ? { buy: {} } : { sell: {} });
 
-/**
- * The websocket URL for an RPC endpoint, carrying the auth token.
- *
- * web3.js derives ws://host:port+1 on its own, which is right, but it has
- * nowhere to put a token — so the URL is built here.
- */
-const wsUrlFor = (httpUrl: string, token: string): string => {
-  const u = new URL(httpUrl);
-  u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
-  if (u.port) u.port = String(Number(u.port) + 1);
-  u.searchParams.set('token', token);
-  return u.toString();
-};
-
 const decodeStatus = (raw: Record<string, unknown>): MatchState['status'] =>
   (Object.keys(raw)[0] as MatchState['status']) ?? 'open';
 
@@ -196,11 +184,14 @@ export class FogduelClient {
     this.cluster = cluster;
     this.wallet = wallet;
     this.signer = signer;
-    this.l1 = new Connection(cluster.l1, COMMITMENT);
-    this.er = new Connection(cluster.er, COMMITMENT);
+    // Each connection knows which service it is, so an outage can say so — a
+    // browser's failed fetch names neither. See `serviceFetch`.
+    this.l1 = new Connection(cluster.l1, { commitment: COMMITMENT, fetch: serviceFetch('base layer') });
+    this.er = new Connection(cluster.er, { commitment: COMMITMENT, fetch: serviceFetch('rollup') });
 
     const l1Provider = new AnchorProvider(this.l1, wallet, { commitment: COMMITMENT });
-    const erProvider = new AnchorProvider(this.er, wallet, { commitment: COMMITMENT });
+    // Waits by polling, not by subscribing: see `confirmByPolling`.
+    const erProvider = pollingProvider(this.er, wallet, COMMITMENT);
     this.l1Program = new Program(idl as Idl, l1Provider) as AnyProgram;
     this.erProgram = new Program(idl as Idl, erProvider) as AnyProgram;
   }
@@ -238,13 +229,14 @@ export class FogduelClient {
       this.erToken = token;
       this.er = new Connection(this.cluster.er, {
         commitment: COMMITMENT,
+        fetch: serviceFetch('rollup'),
         httpHeaders: { Authorization: `Bearer ${token}` },
-        // The socket cannot carry a header, so it takes the token as a query
-        // param instead. Without this, sending works and *confirming* hangs —
-        // which looks exactly like a slow rollup.
-        wsEndpoint: wsUrlFor(this.cluster.er, token),
+        // No wsEndpoint carrying the token. A browser socket cannot send a
+        // header, so the gate only accepts one with `?token=` in its URL — which
+        // put the credential for this wallet's sealed position into a request
+        // URL. Confirmation polls over HTTP instead: see `confirmByPolling`.
       });
-      const provider = new AnchorProvider(this.er, this.wallet, { commitment: COMMITMENT });
+      const provider = pollingProvider(this.er, this.wallet, COMMITMENT);
       this.erProgram = new Program(idl as Idl, provider) as AnyProgram;
     })();
 
@@ -651,10 +643,13 @@ export class FogduelClient {
     // — by the session key alone.
     const tx = new Transaction().add(ix);
     tx.feePayer = session.signer.publicKey;
-    tx.recentBlockhash = (await this.er.getLatestBlockhash()).blockhash;
+    const latest = await this.er.getLatestBlockhash();
+    tx.recentBlockhash = latest.blockhash;
     tx.sign(session.signer);
     const sig = await this.er.sendRawTransaction(tx.serialize());
-    await this.er.confirmTransaction(sig, COMMITMENT);
+    // Polled over HTTP, not subscribed: the rollup's socket authenticates only
+    // with the session token in its URL. See `confirmByPolling`.
+    await confirmByPolling(this.er, sig, latest.lastValidBlockHeight, COMMITMENT);
     return sig;
   }
 
@@ -922,10 +917,16 @@ export class FogduelClient {
     onEr = false
   ): Promise<void> {
     const program = onEr ? await this.erProgramAuthed() : this.l1Program;
+    // Preflighted against `processed`, not the provider's `confirmed`. Two
+    // clients post each feed — its owner, and the opponent's stale-mark
+    // backstop — and a post one of them landed a moment ago is invisible to a
+    // `confirmed` simulation, so both went through and the loser failed on
+    // chain with PriceTooSoon, in the history a judge opens. Simulated against
+    // `processed`, the second post is refused before it is ever sent.
     await program.methods
       .pushPrice(new BN(px.toString()), owner)
       .accounts({ authority, matchAccount: match, priceFeed: feedPda(match, owner) })
-      .rpc();
+      .rpc({ commitment: COMMITMENT, preflightCommitment: 'processed' });
   }
 
   /**

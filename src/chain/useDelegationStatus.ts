@@ -7,8 +7,9 @@
  * program when it settles, and both transitions are visible as they happen.
  */
 import { useEffect, useState } from 'react';
-import { Connection, PublicKey } from '@solana/web3.js';
+import { Connection, PublicKey, type AccountInfo } from '@solana/web3.js';
 import { DELEGATION_PROGRAM_ID, FOGDUEL_PROGRAM_ID, PERMISSION_PROGRAM_ID, ACTIVE_CLUSTER } from './config';
+import { programCodeBytes } from './programSize';
 
 export interface AccountStatus {
   label: string;
@@ -23,13 +24,31 @@ export interface AccountStatus {
    */
   isPermission: boolean;
   onEr: boolean;
-  bytes: number;
+  /**
+   * A program's code size, or any other account's data length. Null when a
+   * program's code could not be measured: an upgradeable program's own account
+   * is a 36-byte pointer, and /proof used to print that as the program's size.
+   */
+  bytes: number | null;
 }
 
 export interface DelegationStatus {
   accounts: AccountStatus[];
   loaded: boolean;
 }
+
+/** Code sizes already measured. Only an upgrade changes one, and a reload picks that up. */
+const codeBytes = new Map<string, number>();
+
+const sizeOf = async (address: PublicKey, info: AccountInfo<Buffer> | null): Promise<number | null> => {
+  if (!info) return 0;
+  if (!info.executable) return info.data.length;
+  const known = codeBytes.get(address.toBase58());
+  if (known !== undefined) return known;
+  const bytes = await programCodeBytes(ACTIVE_CLUSTER.l1, info).catch(() => null);
+  if (bytes !== null) codeBytes.set(address.toBase58(), bytes);
+  return bytes;
+};
 
 /**
  * Reads account ownership directly from the RPC.
@@ -73,7 +92,7 @@ export function useDelegationStatus(
               delegated: !!owner && owner.equals(DELEGATION_PROGRAM_ID),
               isPermission: !!owner && (owner.equals(PERMISSION_PROGRAM_ID) || owner.equals(DELEGATION_PROGRAM_ID)),
               onEr: !!erInfo,
-              bytes: l1Info?.data.length ?? 0,
+              bytes: await sizeOf(w.address, l1Info),
             };
           })
         );

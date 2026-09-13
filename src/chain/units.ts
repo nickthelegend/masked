@@ -96,6 +96,26 @@ export const tokensFromBase = (baseQty: number): number => baseQty / BASE_SCALE;
 export const valueOfBase = (baseQty: number, px: number): number => (baseQty * px) / VALUE_DIV;
 
 /**
+ * Whether a position is closed, as the program values it.
+ *
+ * Zero is flat, and so is a remainder worth under a lamport at the mark:
+ * `Position::equity` truncates it to nothing, and it is what a MAX close leaves
+ * on a coin too cheap to buy back exactly — see `exactQuoteToCover`. No
+ * whole-lamport buy can take such a short without passing zero, and
+ * `settle_match` closes it at the buzzer for nothing, as a fill with no price.
+ * Reading it as SHORT left that close looking open in the round, and left the
+ * reveal calling a flat player short.
+ *
+ * Exact at the boundary: both factors are integers, so any product near
+ * `VALUE_DIV` is far inside a double's exact range. With no mark yet, only zero
+ * is flat.
+ */
+export function isFlat(baseQty: number, px: number): boolean {
+  if (baseQty === 0) return true;
+  return px > 0 && Math.abs(baseQty) * px < VALUE_DIV;
+}
+
+/**
  * Format a token price for a pixel readout.
  *
  * The list spans $1 coins and 1e-8 ones, so a fixed number of decimals is

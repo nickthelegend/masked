@@ -196,8 +196,10 @@ export default function RevealScreen({
       you: true,
       pnl: myPnl,
       // Nothing is sealed once the tape is written, so the side is read off it
-      // rather than fogged. Null only while the tape has not arrived.
-      side: tape ? carriedSide(myFillList) : null,
+      // rather than fogged. Null only while the tape has not arrived. A
+      // remainder under a lamport is flat here, as it was on the round's own
+      // readout — the entry is what backs the mark out of a fill to judge it.
+      side: tape ? carriedSide(myFillList, entryLamports) : null,
       token: myLeg ? { mint: myLeg.mint.toBase58(), symbol: myLeg.symbol } : null,
       liquidated: tape ? (isPlayerA ? tape.liquidatedA : tape.liquidatedB) : false,
     };
@@ -207,13 +209,13 @@ export default function RevealScreen({
       seed: opponentAddress ?? opponentName,
       you: false,
       pnl: opponentPnl,
-      side: tape ? carriedSide(theirFillList) : null,
+      side: tape ? carriedSide(theirFillList, entryLamports) : null,
       token: theirLeg ? { mint: theirLeg.mint.toBase58(), symbol: theirLeg.symbol } : null,
       liquidated: tape ? (isPlayerA ? tape.liquidatedB : tape.liquidatedA) : false,
     };
     const ordered = won ? [mine, theirs] : [theirs, mine];
     return ordered.map((e, i) => ({ ...e, rank: i + 1 }));
-  }, [won, myPnl, opponentPnl, myLeg, theirLeg, opponentName, myName, myAddress, opponentAddress, tape, isPlayerA]);
+  }, [won, myPnl, opponentPnl, myLeg, theirLeg, opponentName, myName, myAddress, opponentAddress, tape, isPlayerA, entryLamports]);
 
   /**
    * A drawn round, decided by the program's tie-break rather than by trading.
