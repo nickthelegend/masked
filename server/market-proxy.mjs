@@ -22,8 +22,20 @@
  * refuse are recovered: an image served with no content type, and an IPFS
  * logo whose pasted gateway blocks servers (see `fetchLogo`).
  *
- *   node server/market-proxy.mjs        # :8788
+ *   node server/market-proxy.mjs        # :8791
  *   MARKET_PROXY_PORT=9000 node …
+ *
+ * Settled duels are served too (`/api/tapes`, `/og/tape/<match>.png`,
+ * `/t/<match>`; see server/src/tapes.ts). Where they come from and where a
+ * shared link sends a person depend on where this runs:
+ *
+ *   TAPES_L1_URL   the base layer to read tapes from. Default: devnet when
+ *                  hosted (PORT set), http://127.0.0.1:8999 on a laptop.
+ *   TAPES_APP_URL  the app a shared link redirects to. Default: the hosted
+ *                  app when hosted, http://localhost:8081 (expo start) on a
+ *                  laptop; set it for serve-dist or another port.
+ *   PUBLIC_ORIGIN  this server's own public origin, for og:image; otherwise
+ *                  taken from the forwarded headers.
  */
 import { createServer } from 'node:http';
 import { lookup } from 'node:dns/promises';
@@ -606,8 +618,14 @@ async function cachedTape(api, param) {
 const cardCache = new Map();
 const CARD_CACHE_MAX = 200;
 
-/** Where a shared link sends a person: the tape in the hosted app. */
-const APP_ORIGIN = (process.env.APP_ORIGIN ?? 'https://masked-eight.vercel.app').replace(/\/$/, '');
+/**
+ * Where a shared link sends a person: the tape in the app that holds it. A
+ * laptop's tapes live on the local stack, so sending a local visitor to the
+ * hosted devnet app landed them on a match that does not exist there.
+ */
+const APP_ORIGIN = (
+  process.env.TAPES_APP_URL ?? (process.env.PORT ? 'https://masked-eight.vercel.app' : 'http://localhost:8081')
+).replace(/\/$/, '');
 
 /**
  * This server's public origin, for the absolute image URL a link crawler needs.
