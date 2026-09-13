@@ -44,9 +44,9 @@ jobs:
           fi
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
 
-      - name: Cache Photon
+      - name: Restore Photon
         id: photon-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ~/photon
           key: photon-${{ env.PHOTON_REV }}-ubuntu-24.04-v1
@@ -55,6 +55,14 @@ jobs:
         if: steps.photon-cache.outputs.cache-hit != 'true'
         working-directory: ${{ runner.temp }}
         run: cargo install --git https://github.com/lightprotocol/photon.git --rev "$PHOTON_REV" --locked --root "$HOME/photon"
+
+      # Saved straight away, so a later failing step does not throw away a 9-minute compile.
+      - name: Save Photon
+        if: steps.photon-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/photon
+          key: photon-${{ env.PHOTON_REV }}-ubuntu-24.04-v1
 
       - name: Put Photon on PATH
         run: |
