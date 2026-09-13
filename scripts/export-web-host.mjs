@@ -21,7 +21,7 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, sep } from 'node:path';
 
 const flag = (name) => {
   const i = process.argv.indexOf(name);
@@ -45,9 +45,24 @@ const replaceEverywhere = (from, to) => {
   return hits;
 };
 
-rmSync(out, { recursive: true, force: true });
-const exp = spawnSync('npx', ['expo', 'export', '--platform', 'web', '--output-dir', out, '--clear'], { stdio: 'inherit' });
-if (exp.status !== 0) process.exit(exp.status ?? 1);
+// `--reuse` post-processes an `expo export` already in `out` instead of running a
+// new one. Metro's cache is shared by every export on the machine, so when another
+// session is mid-export a finished raw export is safer to finish than to redo.
+// Every check below still runs on it.
+if (process.argv.includes('--reuse')) {
+  if (!existsSync(join(out, 'index.html')) || !existsSync(join(out, '_expo', 'static'))) {
+    console.error(`--reuse: no expo export in ${out}`);
+    process.exit(1);
+  }
+  if (existsSync(join(out, 'vercel.json'))) {
+    console.error(`--reuse: ${out} was already post-processed; renaming twice would break its references`);
+    process.exit(1);
+  }
+} else {
+  rmSync(out, { recursive: true, force: true });
+  const exp = spawnSync('npx', ['expo', 'export', '--platform', 'web', '--output-dir', out, '--clear'], { stdio: 'inherit' });
+  if (exp.status !== 0) process.exit(exp.status ?? 1);
+}
 
 // 1. node_modules assets → vendor
 const vendoredFrom = join(out, 'assets', 'node_modules');
@@ -59,6 +74,18 @@ if (existsSync(vendoredFrom)) {
 const stale = textFiles().filter((f) => readFileSync(f, 'utf8').includes('/assets/node_modules/'));
 if (stale.length) {
   console.error('references to /assets/node_modules/ remain in', stale);
+  process.exit(1);
+}
+// Exported from a tree whose node_modules is a symlink, Metro writes assets under
+// their real path — assets/_______Volumes/…/node_modules/… — which the rename
+// above does not match. Vercel still drops the node_modules folder inside it, the
+// fonts 404, and the app renders nothing: the hosted build was blank from
+// 04:46 to 05:4x UTC on 2026-09-13 for exactly this. Refuse any such path.
+const nested = existsSync(join(out, 'assets'))
+  ? walk(join(out, 'assets')).filter((p) => p.split(sep).includes('node_modules'))
+  : [];
+if (nested.length) {
+  console.error(`${nested.length} asset path(s) still contain node_modules — export from a tree with a real node_modules, not a symlink:`, nested.slice(0, 3));
   process.exit(1);
 }
 
@@ -90,6 +117,18 @@ if (missing.length || leaked.length) {
   process.exit(1);
 }
 console.log(`endpoints: ${mustHave.join(', ') || '(defaults)'} baked in; none of ${mustNotHave.join(', ')}`);
+
+// Every asset the bundle asks for has to be in the output under that path. A
+// host serves what was uploaded; a missing font is a blank app, not a warning.
+// Bounded by the string's own quotes, not by whitespace: a path exported from a
+// folder with a space in its name ("Extreme SSD") is still one asset reference.
+const assetRefs = [...new Set(js.match(/\/assets\/[^"'`]+?\.(?:ttf|otf|woff2?|png|jpe?g|gif|svg)(?=["'`?#])/g) ?? [])];
+const missingAssets = assetRefs.filter((r) => !existsSync(join(out, decodeURIComponent(r))));
+if (missingAssets.length) {
+  console.error(`${missingAssets.length} of ${assetRefs.length} asset(s) the bundle references are not in the output:`, missingAssets.slice(0, 5));
+  process.exit(1);
+}
+console.log(`assets: all ${assetRefs.length} referenced by the bundle are present`);
 
 // 3. host config
 writeFileSync(

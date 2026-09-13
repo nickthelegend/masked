@@ -19,8 +19,14 @@ import { replayEquity, tapeWindowNote, toTapeState, type TapeFill, type TapeStar
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- Anchor's account namespace is untyped. */
 
-/** The base layer the program is deployed on. MagicBlock's devnet RPC by default. */
-export const L1_URL = process.env.TAPES_L1_URL ?? 'https://rpc.magicblock.app/devnet';
+/**
+ * The base layer the tapes are read from. Hosted (the platform sets PORT) it is
+ * MagicBlock's devnet RPC, where the deployed program is; run on a laptop it is
+ * the local validator, like the rest of the local stack. TAPES_L1_URL overrides
+ * either. Defaulting a laptop to devnet made every local match a 404.
+ */
+export const L1_URL =
+  process.env.TAPES_L1_URL ?? (process.env.PORT ? 'https://rpc.magicblock.app/devnet' : 'http://127.0.0.1:8999');
 export const PROGRAM_ID = FOGDUEL_IDL.address;
 /** Named on the share card, so a devnet duel never passes for a mainnet one. */
 export const CLUSTER_LABEL = /devnet/.test(L1_URL) ? 'DEVNET' : /mainnet/.test(L1_URL) ? 'MAINNET' : 'LOCALNET';
