@@ -1,11 +1,16 @@
 import type { ViewStyle } from 'react-native';
 import Badge from './Badge';
 
-export type PriceSource = 'pump.fun' | 'jupiter';
+/**
+ * `pyth` is a major whose mark the program took from Pyth, checked against
+ * Switchboard (`push_price_pyth`); the market API no longer sets it.
+ */
+export type PriceSource = 'pump.fun' | 'jupiter' | 'pyth';
 
 const LABEL: Record<PriceSource, string> = {
   'pump.fun': 'PUMP.FUN',
   jupiter: 'JUPITER',
+  pyth: 'PYTH',
 };
 
 export interface SourceBadgeProps {

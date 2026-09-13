@@ -198,7 +198,7 @@ export interface Duel {
   /** The market's logo, when its feed publishes one. */
   marketImageUri: string | null;
   /** Which feed prices this round. */
-  marketSource: 'pump.fun' | 'jupiter';
+  marketSource: 'pump.fun' | 'jupiter' | 'pyth';
   /** The mark, formatted. */
   priceLabel: string;
   /** What the book charged for the most recent fill, or null. */
@@ -490,6 +490,13 @@ export function useDuel(): Duel {
   const matchKey = match ? match.address.toBase58() : null;
 
   const [price, setPrice] = useState(0);
+  /**
+   * Whether my feed's mark now comes from Pyth, checked by Switchboard, rather
+   * than the market API. The badge on the mark said JUPITER for a USDC leg the
+   * program had been pricing from Pyth, which was true of the list the market
+   * came from and false of the number beside it.
+   */
+  const [markFromPyth, setMarkFromPyth] = useState(false);
   const [series, setSeries] = useState<number[]>([]);
   const [equity, setEquity] = useState<number[]>([0]);
   const [secondsLeft, setSecondsLeft] = useState(ROUND_SECONDS);
@@ -734,6 +741,7 @@ export function useDuel(): Duel {
     let alive = true;
     const ac = new AbortController();
 
+    setMarkFromPyth(false);
     const opponent = m0.creator.equals(me) ? m0.joiner : m0.creator;
     const theirs = legFor(m0, opponent);
 
@@ -797,6 +805,10 @@ export function useDuel(): Duel {
         if (!alive) return;
         if (oracle === 'pyth') {
           await client.pushPricePyth(address, me, me, mint);
+          if (alive) setMarkFromPyth(true);
+        } else if (oracle === 'hold') {
+          // Only a feed Pyth already owns is held.
+          setMarkFromPyth(true);
         } else if (oracle === 'crank') {
           const px = await livePxFor({ kind, mint }, ac.signal);
           if (!alive) return;
@@ -2105,7 +2117,7 @@ export function useDuel(): Duel {
     marketImageUri: selectedMarket && myLeg && selectedMarket.mint === myLeg.mint.toBase58()
       ? selectedMarket.imageUri
       : null,
-    marketSource: myLeg?.marketType === 'major' ? 'jupiter' : 'pump.fun',
+    marketSource: myLeg?.marketType === 'major' ? (markFromPyth ? 'pyth' : 'jupiter') : 'pump.fun',
     opponentAddress: opponentKey ? opponentKey.toBase58() : null,
     opponentMarket: opponentLeg?.symbol || (opponentLeg ? marketLabel(opponentLeg.mint) : ''),
     opponentMarketMint: opponentLeg?.mint.toBase58() ?? '',
