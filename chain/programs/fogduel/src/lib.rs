@@ -43,6 +43,7 @@ use ephemeral_rollups_sdk::vrf::rnd::random_u8_with_range;
 use ephemeral_rollups_sdk::vrf::types::SerializableAccountMeta;
 
 pub mod errors;
+pub mod pyth;
 pub mod state;
 
 use errors::FogError;
@@ -415,8 +416,9 @@ pub mod fogduel {
     /// public, a step at a time, while their opponent watches and trades.
     ///
     /// This is a stand-in for an oracle, and it is the one place where the
-    /// round trusts something off-chain. For a major, the replacement is a
-    /// Pyth price update, which is signed and needs no rate limit.
+    /// round trusts something off-chain. For a major Pyth publishes, the
+    /// replacement is `push_price_pyth`; a feed that has taken a Pyth price is
+    /// refused here for the rest of the round.
     pub fn push_price(ctx: Context<PushPrice>, px: u64, owner: Pubkey) -> Result<()> {
         require!(px > 0, FogError::InvalidPrice);
 
@@ -428,6 +430,8 @@ pub mod fogduel {
         require!(now < m.start_ts + m.duration, FogError::MatchExpired);
 
         let feed = &mut ctx.accounts.price_feed;
+        // A signed mark is not walked away by a crank.
+        require!(feed.authority != pyth::PYTH_RECEIVER_ID, FogError::OracleOwnsFeed);
         require!(
             now - feed.updated_ts >= MIN_PUSH_INTERVAL,
             FogError::PriceTooSoon
@@ -443,6 +447,58 @@ pub mod fogduel {
 
         feed.px = px;
         feed.updated_ts = now;
+        Ok(())
+    }
+
+    /// Post a major's mark from Pyth, and hand that feed to Pyth for the rest
+    /// of the round.
+    ///
+    /// The price is token/USD over SOL/USD, both read from `PriceUpdateV2`
+    /// accounts Pyth's receiver owns — fully verified, fresh, inside the
+    /// confidence band (see `pyth.rs`). It is signed by Pyth's publishers, so
+    /// unlike `push_price` it takes no step limit. Which feed prices which
+    /// mint is fixed in `pyth::MAJOR_FEEDS`, so a caller cannot hand in another
+    /// token's update.
+    ///
+    /// Permissionless like `push_price`, for the same reason. Once a feed has
+    /// taken a Pyth price its `authority` is the receiver and `push_price`
+    /// refuses it. Each later Pyth push must not be older than the pair before
+    /// it, and at least one of its two updates must be newer, so a stale signed
+    /// update cannot be replayed to drag the mark back.
+    pub fn push_price_pyth(ctx: Context<PushPricePyth>, owner: Pubkey) -> Result<()> {
+        let m = &ctx.accounts.match_account;
+        require!(m.status == MatchStatus::Live, FogError::MatchNotLive);
+        let now = Clock::get()?.unix_timestamp;
+        require!(now < m.start_ts + m.duration, FogError::MatchExpired);
+
+        let leg = if owner == m.creator {
+            &m.leg_a
+        } else if m.joiner == Some(owner) {
+            &m.leg_b
+        } else {
+            return err!(FogError::NotAParticipant);
+        };
+        require!(leg.market_type == MarketType::Major, FogError::NotAMajor);
+        let token_feed = pyth::feed_for_mint(&leg.mint).ok_or(FogError::NoOracleForMint)?;
+
+        let token = pyth::read_checked(&ctx.accounts.token_price_update, &token_feed, now)?;
+        let sol = pyth::read_checked(&ctx.accounts.sol_price_update, &pyth::SOL_USD_FEED, now)?;
+        let px = pyth::px_from_usd_pair(&token, &sol)?;
+
+        let oldest = token.publish_time.min(sol.publish_time);
+        let newest = token.publish_time.max(sol.publish_time);
+        let feed = &mut ctx.accounts.price_feed;
+        if feed.authority == pyth::PYTH_RECEIVER_ID {
+            require!(
+                oldest >= feed.updated_ts && newest > feed.updated_ts,
+                FogError::OracleUpdateNotNewer
+            );
+        }
+        feed.px = px;
+        // For a Pyth mark this is the publish time of the older half of the
+        // pair, which is what the replay check above compares against.
+        feed.updated_ts = oldest;
+        feed.authority = pyth::PYTH_RECEIVER_ID;
         Ok(())
     }
 
@@ -1369,6 +1425,32 @@ pub struct PushPrice<'info> {
         constraint = price_feed.owner == owner @ FogError::NotAParticipant,
     )]
     pub price_feed: Account<'info, PriceFeed>,
+}
+
+#[derive(Accounts)]
+#[instruction(owner: Pubkey)]
+pub struct PushPricePyth<'info> {
+    /// Anyone, as for `push_price`. Signing is only so somebody pays the fee.
+    pub authority: Signer<'info>,
+
+    #[account(seeds = [b"match", match_account.creator.as_ref(), &match_account.match_id.to_le_bytes()], bump = match_account.bump)]
+    pub match_account: Account<'info, Match>,
+
+    #[account(
+        mut,
+        seeds = [b"feed", match_account.key().as_ref(), owner.as_ref()],
+        bump = price_feed.bump,
+        constraint = price_feed.owner == owner @ FogError::NotAParticipant,
+    )]
+    pub price_feed: Account<'info, PriceFeed>,
+
+    /// CHECK: a Pyth `PriceUpdateV2` for the leg's token. Owner, discriminator,
+    /// verification level, feed id, freshness and confidence are checked in
+    /// `pyth::read_checked`.
+    pub token_price_update: UncheckedAccount<'info>,
+
+    /// CHECK: a Pyth `PriceUpdateV2` for SOL/USD, checked the same way.
+    pub sol_price_update: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts, Session)]
