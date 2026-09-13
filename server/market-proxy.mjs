@@ -352,7 +352,52 @@ const server = createServer(async (req, res) => {
   // faithfully reported "pump.fun returned 401" about a service that was not
   // pump.fun.
   if (url.pathname === '/whoami') {
-    return send(res, 200, { service: SERVICE, upstreams: Object.keys(ROUTES), imageRelay: '/img?url=' });
+    return send(res, 200, {
+      service: SERVICE,
+      upstreams: Object.keys(ROUTES),
+      imageRelay: '/img?url=',
+      tapes: ['/api/tapes', '/api/tapes/<match>'],
+    });
+  }
+
+  // Settled duels, read from chain. See server/src/tapes.ts.
+  if (url.pathname === '/api/tapes' || url.pathname.startsWith('/api/tapes/')) {
+    let api;
+    try {
+      api = await loadTapesApi();
+    } catch (e) {
+      return send(res, 503, { error: `tapes API not built (npm run build:server): ${e?.message ?? e}` });
+    }
+    const param = url.pathname.slice('/api/tapes/'.length);
+    const key = url.pathname === '/api/tapes' ? 'list' : `tape:${param}`;
+    try {
+      const hit = tapeCache.get(key);
+      let body;
+      let state = 'HIT';
+      if (hit && (hit.forever || Date.now() - hit.at < TAPE_LIST_TTL_MS)) {
+        body = hit.body;
+      } else {
+        let job = inflight.get(key);
+        if (!job) {
+          job = (key === 'list' ? api.listTapes() : api.getTape(param)).finally(() => inflight.delete(key));
+          inflight.set(key, job);
+        }
+        body = await job;
+        state = 'MISS';
+        // A settled tape never changes, so a found one is kept; the list, and
+        // a match with no tape yet, are asked again after the TTL.
+        tapeCache.set(key, { body, at: Date.now(), forever: key !== 'list' && body !== null });
+        while (tapeCache.size > CACHE_MAX_ENTRIES) tapeCache.delete(tapeCache.keys().next().value);
+      }
+      if (body === null) return send(res, 404, { error: 'no tape for that match: it has not settled, or it is not a match' });
+      cors(res);
+      res.writeHead(200, { 'content-type': 'application/json', 'x-cache': state });
+      res.end(JSON.stringify(body));
+      return;
+    } catch (e) {
+      if (e instanceof api.BadMatch) return send(res, 400, { error: e.message });
+      return send(res, 502, { error: `reading tapes from ${api.L1_URL} failed: ${e?.message ?? e}` });
+    }
   }
 
   // Whether `/img` would relay this logo, answered as a verdict.
@@ -424,7 +469,7 @@ const server = createServer(async (req, res) => {
 
   const entry = Object.entries(ROUTES).find(([prefix]) => url.pathname.startsWith(prefix));
   if (!entry) {
-    return send(res, 403, { error: 'not a market route', allowed: Object.keys(ROUTES) });
+    return send(res, 403, { error: 'not a market route', allowed: [...Object.keys(ROUTES), '/img', '/api/tapes'] });
   }
   const [prefix, origin] = entry;
 
@@ -500,6 +545,22 @@ const RETRY_DELAYS_MS = [400, 1_000, 2_000];
 
 const cache = new Map();
 const inflight = new Map();
+
+/**
+ * The tapes API, loaded on first use.
+ *
+ * It is the app's own chain modules bundled by `npm run build:server`, so it
+ * carries Anchor and web3.js; the market routes do not need them and start
+ * without them. Tape answers share `inflight` with the market routes (their
+ * keys cannot collide) and have a cache of their own.
+ */
+let tapesApi = null;
+const loadTapesApi = () => (tapesApi ??= import('./tapes.bundle.mjs').catch((e) => {
+  tapesApi = null;
+  throw e;
+}));
+const tapeCache = new Map();
+const TAPE_LIST_TTL_MS = 15_000;
 
 function ttlFor(pathname) {
   for (const [re, ms] of CACHE_TTL_MS) if (re.test(pathname)) return ms;
