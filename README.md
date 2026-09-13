@@ -1,6 +1,6 @@
 # MASKED
 
-Source: https://github.com/nickthelegend/masked · Live (devnet): https://masked-eight.vercel.app
+Source: https://github.com/nickthelegend/masked · Live (devnet): https://masked-eight.vercel.app · Tapes API: https://market-proxy-production.up.railway.app/api/tapes · Share card: https://market-proxy-production.up.railway.app/og/tape/<match>.png
 
 **Hidden-position 1v1 trading on Solana, built on MagicBlock Ephemeral Rollups.**
 

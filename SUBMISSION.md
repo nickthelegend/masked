@@ -78,6 +78,8 @@ local stack and on **devnet** (deployed 2026-09-13 02:46 UTC, signature
 
 **Live URL:** https://masked-eight.vercel.app — a devnet build: program on devnet, positions sealed on MagicBlock's TEE, markets through https://market-proxy-production.up.railway.app. Connect a devnet wallet to play.
 
+**Public tapes API:** https://market-proxy-production.up.railway.app/api/tapes and `/api/tapes/<match>` — every settled duel read from chain, decoded by the app's own modules. Each tape has a share card at `/og/tape/<match>.png` and a share page at `/t/<match>` (preview tags, then the tape in the app); the tape screen's SHARE ON X posts that link.
+
 **Demo video:** `docs/masked-demo.mp4` (43 s, unedited, captured
 against the running stack) and the evidence page
 https://claude.ai/code/artifact/55aff865-8675-4492-93b5-96be7804170c, both

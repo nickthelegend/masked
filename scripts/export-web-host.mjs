@@ -75,6 +75,22 @@ for (const f of walk(join(out, '_expo', 'static')).filter((p) => /\.(js|css)$/.t
   console.log(`bundle: ${name} → ${renamed}`);
 }
 
+// The endpoints the bundle actually baked in. EXPO_PUBLIC_* values are inlined
+// at transform time, and Metro's transform cache is keyed on file contents, so
+// an export can reuse a config.ts compiled for another cluster. It happened on
+// 2026-09-13: local exports after a devnet host export came out pointed at
+// devnet. `--clear` above should prevent it; this refuses to ship if it didn't.
+const js = walk(join(out, '_expo', 'static')).filter((p) => p.endsWith('.js')).map((p) => readFileSync(p, 'utf8')).join('\n');
+const mustHave = [process.env.EXPO_PUBLIC_L1_URL, process.env.EXPO_PUBLIC_MARKET_PROXY].filter(Boolean);
+const mustNotHave = process.env.EXPO_PUBLIC_CLUSTER === 'devnet' ? ['127.0.0.1:8999'] : ['rpc.magicblock.app/devnet', 'devnet-tee.magicblock.app'];
+const missing = mustHave.filter((s) => !js.includes(s));
+const leaked = mustNotHave.filter((s) => js.includes(s));
+if (missing.length || leaked.length) {
+  console.error(`baked endpoints wrong for cluster ${process.env.EXPO_PUBLIC_CLUSTER ?? 'local'}:`, { missing, leaked });
+  process.exit(1);
+}
+console.log(`endpoints: ${mustHave.join(', ') || '(defaults)'} baked in; none of ${mustNotHave.join(', ')}`);
+
 // 3. host config
 writeFileSync(
   join(out, 'vercel.json'),
