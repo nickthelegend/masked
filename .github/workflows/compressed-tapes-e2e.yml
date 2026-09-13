@@ -1,0 +1,121 @@
+# PLAN 7.18 #82, end to end on a clean runner: build fogduel (anchor-lang 1.2 + light-sdk 0.25) for SBF,
+# start Light's local validator, prover and Photon with it loaded, then settle a round, archive its tape
+# as a compressed account and read it back through Photon (chain/light-e2e). Nothing here uses devnet.
+name: compressed-tapes-e2e
+
+on:
+  push:
+    branches: [compressed-tapes]
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      SOLANA_VERSION: 3.1.11
+      PHOTON_REV: 52ca110cf8e3d5aca6e65e1ef8e98b7632d3a16f
+      PROGRAM_ID: 3K3v1bp6uUGVdzRfZmkwZGK82BHgCJxAroXJ3ZRs1Rj1
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: System packages
+        run: sudo apt-get update -q && sudo apt-get install -yq pkg-config libssl-dev libudev-dev protobuf-compiler clang netcat-openbsd
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Cache Solana CLI and platform tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/share/solana
+            ~/.cache/solana
+          key: solana-${{ env.SOLANA_VERSION }}-ubuntu-24.04-v1
+
+      - name: Install Solana CLI
+        run: |
+          if [ ! -x "$HOME/.local/share/solana/install/active_release/bin/solana" ]; then
+            sh -c "$(curl -sSfL https://release.anza.xyz/v${SOLANA_VERSION}/install)"
+          fi
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Cache Photon
+        id: photon-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/photon
+          key: photon-${{ env.PHOTON_REV }}-ubuntu-24.04-v1
+
+      - name: Install Photon (the revision Light's CLI 0.28.4 checks for)
+        if: steps.photon-cache.outputs.cache-hit != 'true'
+        working-directory: ${{ runner.temp }}
+        run: cargo install --git https://github.com/lightprotocol/photon.git --rev "$PHOTON_REV" --locked --root "$HOME/photon"
+
+      - name: Put Photon on PATH
+        run: |
+          echo "$HOME/photon/bin" >> "$GITHUB_PATH"
+          "$HOME/photon/bin/photon" --version
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: chain
+
+      - name: Build fogduel for SBF
+        working-directory: chain/programs/fogduel
+        run: |
+          solana --version
+          cargo build-sbf --sbf-out-dir ../../target/deploy
+          ls -l ../../target/deploy/fogduel.so
+          sha256sum ../../target/deploy/fogduel.so
+
+      - name: Install e2e dependencies
+        working-directory: chain/light-e2e
+        run: npm ci
+
+      - name: Start Light's validator, prover and Photon
+        working-directory: chain/light-e2e
+        run: |
+          up() {
+            for i in $(seq 1 60); do
+              if nc -z 127.0.0.1 8899 && nc -z 127.0.0.1 8784 && nc -z 127.0.0.1 3001; then return 0; fi
+              sleep 5
+            done
+            return 1
+          }
+          nohup npx light test-validator --sbf-program "$PROGRAM_ID" ../target/deploy/fogduel.so > light-cli.log 2>&1 &
+          if up; then echo "stack up (surfpool)"; tail -20 light-cli.log; exit 0; fi
+          echo "surfpool stack did not come up; retrying with solana-test-validator"; cat light-cli.log
+          pkill -f surfpool || true; pkill -f photon || true; pkill -f prover || true; sleep 3
+          nohup npx light test-validator --no-use-surfpool --sbf-program "$PROGRAM_ID" ../target/deploy/fogduel.so > light-cli.log 2>&1 &
+          if up; then echo "stack up (solana-test-validator)"; tail -20 light-cli.log; exit 0; fi
+          cat light-cli.log; exit 1
+
+      - name: Archive a settled tape and read it back through Photon
+        working-directory: chain/light-e2e
+        run: |
+          npm run e2e 2>&1 | tee e2e.log
+          grep -q 'COMPRESSED-TAPE OK' e2e.log
+
+      - name: Service logs
+        if: always()
+        working-directory: chain/light-e2e
+        run: |
+          for f in light-cli.log test-ledger/*.log; do
+            [ -f "$f" ] || continue
+            echo "===== $f (last 80 lines)"; tail -80 "$f"
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: compressed-tapes-e2e-logs
+          path: |
+            chain/light-e2e/e2e.log
+            chain/light-e2e/light-cli.log
+            chain/light-e2e/test-ledger/*.log
+          if-no-files-found: ignore
