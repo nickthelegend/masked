@@ -119,8 +119,11 @@ jobs:
           PROVER="$HOME/.config/light/bin/prover-linux-amd64"
           pkill -f prover-linux-amd64 || true
           for i in $(seq 1 20); do nc -z 127.0.0.1 3001 || break; sleep 1; done
+          # `--auto-download` is a boolean: written `--auto-download true`, the "true" ends flag parsing and a
+          # later --download-url is silently ignored (measured with the prover binary: it still fetched the
+          # dead Google URL). So --download-url first, and the switch with no value.
           nohup "$PROVER" start --keys-dir "$HOME/.config/light/proving-keys/" --prover-address 0.0.0.0:3001 \
-            --auto-download true --download-url "$KEYS_URL" > prover-restart.log 2>&1 &
+            --download-url "$KEYS_URL" --auto-download > prover-restart.log 2>&1 &
           for i in $(seq 1 60); do nc -z 127.0.0.1 3001 && { echo "prover back on :3001 with $KEYS_URL"; exit 0; }; sleep 2; done
           cat prover-restart.log; exit 1
 
