@@ -14,6 +14,9 @@
  *   6. An account the receiver does not own is refused.
  *   7. A meme leg is refused.
  *   8. Both rounds settle with the marks they finished on.
+ *   9. (PLAN #80) A push priced from the cluster's recent priority fees pays
+ *      exactly that: with a floor, base + price x limit; at devnet's usual
+ *      zero, the base fee and no compute-budget instruction at all.
  *
  * Needs the program with `push_price_pyth` deployed on devnet.
  *
@@ -41,6 +44,8 @@ import {
   refusal,
 } from '../src/chain/pyth';
 import { fund } from './fund';
+import { estimatePriorityFee, priorityFeeInstructions, priorityFeeLamports } from '../src/chain/priorityFee';
+import { ComputeBudgetProgram } from '@solana/web3.js';
 
 if (process.env.EXPO_PUBLIC_CLUSTER !== 'devnet') {
   console.error('check:pyth runs on devnet, where Pyth publishes: set EXPO_PUBLIC_CLUSTER=devnet');
@@ -161,7 +166,18 @@ async function main() {
   // The cluster clock ticks in whole seconds; a push in the same second as the
   // join would meet the crank's one-second spacing from join's own write.
   await sleep(1500);
-  const sig = await pushPricePyth(program, { authority: creator.publicKey, match: major, owner: creator.publicKey, mint: USDC_MINT });
+  // PLAN #80: price this push from the fees the cluster charged recently for the
+  // accounts it writes. Devnet usually charges nothing, so the first push adds a
+  // floor to exercise the paid path; the SOL push below uses the bare estimate.
+  const UNITS = 60_000;
+  const FLOOR = 1_000;
+  const writes = [feedPda(major, creator.publicKey), creator.publicKey];
+  const market = await estimatePriorityFee(l1, writes);
+  const floored = await estimatePriorityFee(l1, writes, { floor: FLOOR });
+  const sig = await pushPricePyth(program, {
+    authority: creator.publicKey, match: major, owner: creator.publicKey, mint: USDC_MINT,
+    computeBudget: priorityFeeInstructions(floored.microLamports, UNITS),
+  });
   const usdcFeed = await program.account.priceFeed.fetch(feedPda(major, creator.publicKey));
   const [usdc1, sol1] = [await readPriceUpdate(l1, usdcUpdate), await readPriceUpdate(l1, solUpdate)];
   const candidates = [pxFromUsdPair(usdc0, sol0), pxFromUsdPair(usdc1, sol1), pxFromUsdPair(usdc0, sol1), pxFromUsdPair(usdc1, sol0)];
@@ -179,10 +195,38 @@ async function main() {
 
   // Signed by the creator for the joiner's feed: the instruction is
   // permissionless, and this shows it.
-  await pushPricePyth(program, { authority: creator.publicKey, match: major, owner: joiner.publicKey, mint: WSOL_MINT });
+  const solSig = await pushPricePyth(program, {
+    authority: creator.publicKey, match: major, owner: joiner.publicKey, mint: WSOL_MINT,
+    computeBudget: priorityFeeInstructions(market.microLamports, UNITS),
+  });
   const solFeed = await program.account.priceFeed.fetch(feedPda(major, joiner.publicKey));
   if (BigInt(solFeed.px.toString()) !== 1_000_000_000_000_000n) fail(`SOL mark is ${solFeed.px}, not exactly 1e15`);
   pass('SOL priced against SOL/USD is exactly one SOL a token (1e15)');
+
+  const landed = async (s: string) => {
+    for (let i = 0; i < 20; i++) {
+      const t = await l1.getTransaction(s, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 });
+      if (t?.meta) return t;
+      await sleep(1000);
+    }
+    return fail(`${s} never became readable`);
+  };
+  const budgetIxs = (t: Awaited<ReturnType<typeof landed>>) => {
+    const keys = t.transaction.message.staticAccountKeys;
+    return t.transaction.message.compiledInstructions.filter((ix) => keys[ix.programIdIndex].equals(ComputeBudgetProgram.programId)).length;
+  };
+  const paid = await landed(sig);
+  const expectPaid = 5_000 + priorityFeeLamports(floored.microLamports, UNITS);
+  if (paid.meta!.fee !== expectPaid || budgetIxs(paid) !== 2) fail(`USDC push paid ${paid.meta!.fee} lamports with ${budgetIxs(paid)} compute-budget instructions; expected ${expectPaid} with 2`);
+  pass(
+    `priority fee: devnet's p${market.percentile} over ${market.samples} slots for these accounts was ${market.microLamports} µ-lamports/CU (${market.nonZero} nonzero); ` +
+      `with a ${FLOOR} floor the USDC push paid ${paid.meta!.fee} lamports = 5000 base + ${priorityFeeLamports(floored.microLamports, UNITS)} priority, using ${paid.meta!.computeUnitsConsumed} of ${UNITS} CU`
+  );
+  const bare = await landed(solSig);
+  const expectBare = 5_000 + priorityFeeLamports(market.microLamports, UNITS);
+  const expectIxs = market.microLamports > 0 ? 2 : 0;
+  if (bare.meta!.fee !== expectBare || budgetIxs(bare) !== expectIxs) fail(`SOL push paid ${bare.meta!.fee} with ${budgetIxs(bare)} compute-budget instructions; expected ${expectBare} with ${expectIxs}`);
+  pass(`at the bare estimate (${market.microLamports}) the SOL push paid ${bare.meta!.fee} lamports with ${expectIxs} compute-budget instructions`);
 
   console.log('[4] refusals');
   await sleep(1500);

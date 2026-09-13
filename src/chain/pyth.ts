@@ -12,7 +12,7 @@
  * say what the program will accept before sending, and so a check can
  * recompute the mark the program wrote from the same bytes.
  */
-import { PublicKey, type Connection } from '@solana/web3.js';
+import { PublicKey, type Connection, type TransactionInstruction } from '@solana/web3.js';
 import { USDC_MINT, WSOL_MINT } from './jupiter';
 import { feedPda } from './pdas';
 
@@ -101,7 +101,15 @@ export function pxFromUsdPair(token: PythPrice, sol: PythPrice): bigint {
 export async function pushPricePyth(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Anchor's method namespace is untyped
   program: any,
-  args: { authority: PublicKey; match: PublicKey; owner: PublicKey; mint: string; tokenPriceUpdate?: PublicKey }
+  args: {
+    authority: PublicKey;
+    match: PublicKey;
+    owner: PublicKey;
+    mint: string;
+    tokenPriceUpdate?: PublicKey;
+    /** Compute-budget instructions to send first — see priorityFee.ts. */
+    computeBudget?: TransactionInstruction[];
+  }
 ): Promise<string> {
   const entry = PYTH_MAJORS[args.mint];
   if (!entry && !args.tokenPriceUpdate) throw new Error(`no Pyth feed for ${args.mint}`);
@@ -114,5 +122,6 @@ export async function pushPricePyth(
       tokenPriceUpdate: args.tokenPriceUpdate ?? entry.priceUpdate,
       solPriceUpdate: SOL_USD_PRICE_UPDATE,
     })
+    .preInstructions(args.computeBudget ?? [])
     .rpc();
 }
