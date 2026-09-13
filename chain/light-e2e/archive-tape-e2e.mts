@@ -99,9 +99,17 @@ async function main() {
     if (acc?.data) {
       const d = Buffer.from(acc.data.data);
       const k = (o: number) => new PublicKey(d.subarray(o, o + 32));
-      const got = { match: k(0), mintA: k(32), mintB: k(64), playerA: k(96), playerB: k(128), winner: k(160), pnlA: d.readBigInt64LE(192), pnlB: d.readBigInt64LE(200), potPaid: d.readBigUInt64LE(208), rake: d.readBigUInt64LE(216), settledTs: d.readBigInt64LE(224), fillsA: d.readUInt16LE(232), fillsB: d.readUInt16LE(234) };
+      // CompressedTape (state.rs): 6 pubkeys, 5 × 8-byte numbers, 2 × u16, 2 × bool = 238 bytes.
+      if (d.length !== 238) fail(`compressed tape is ${d.length} bytes, expected 238`);
+      const got = { match: k(0), mintA: k(32), mintB: k(64), playerA: k(96), playerB: k(128), winner: k(160), pnlA: d.readBigInt64LE(192), pnlB: d.readBigInt64LE(200), potPaid: d.readBigUInt64LE(208), rake: d.readBigUInt64LE(216), settledTs: d.readBigInt64LE(224), fillsA: d.readUInt16LE(232), fillsB: d.readUInt16LE(234), liquidatedA: d[236] === 1, liquidatedB: d[237] === 1 };
       const checks: [string, string, string][] = [
         ['match', got.match.toBase58(), tapeState.matchKey.toBase58()],
+        ['mint_a', got.mintA.toBase58(), tapeState.legA.mint.toBase58()],
+        ['mint_b', got.mintB.toBase58(), tapeState.legB.mint.toBase58()],
+        ['fill_count_a', String(got.fillsA), String(tapeState.fillCountA)],
+        ['fill_count_b', String(got.fillsB), String(tapeState.fillCountB)],
+        ['liquidated_a', String(got.liquidatedA), String(tapeState.liquidatedA)],
+        ['liquidated_b', String(got.liquidatedB), String(tapeState.liquidatedB)],
         ['winner', got.winner.toBase58(), tapeState.winner.toBase58()],
         ['player_a', got.playerA.toBase58(), tapeState.playerA.toBase58()],
         ['player_b', got.playerB.toBase58(), tapeState.playerB.toBase58()],
