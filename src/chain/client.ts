@@ -21,6 +21,7 @@ import { FOGDUEL_IDL as idl } from './idl';
 import { ACTIVE_CLUSTER, DELEGATION_PROGRAM_ID, type ClusterConfig } from './config';
 import { feedPda, matchPda, positionPda, statsPda, statusPda, tapePda, treasuryPda, vaultPda } from './pdas';
 import { toTapeState, type TapeState } from './tape';
+import { pushPricePyth as sendPushPricePyth } from './pyth';
 import { authenticate, type MessageSigner } from './erAuth';
 import { VALUE_DIV } from './units';
 import { isProgramError } from './errors';
@@ -926,6 +927,15 @@ export class FogduelClient {
       .pushPrice(new BN(px.toString()), owner)
       .accounts({ authority, matchAccount: match, priceFeed: feedPda(match, owner) })
       .rpc();
+  }
+
+  /**
+   * Post a major's mark from Pyth, checked against Switchboard's SOL/USD — see
+   * `push_price_pyth` and pyth.ts. Only a mint with a Pyth feed qualifies, and
+   * after the first such push the feed refuses `pushPrice` for the round.
+   */
+  async pushPricePyth(match: PublicKey, authority: PublicKey, owner: PublicKey, mint: string): Promise<string> {
+    return sendPushPricePyth(this.l1Program, { authority, match, owner, mint });
   }
 
   /**
